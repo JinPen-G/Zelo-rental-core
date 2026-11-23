@@ -8,7 +8,7 @@
 2. 将上下文钩子传给 `createRentalPaymentReconciliationAdminContribution`，与其他 Rental 页面合入同一贡献。列表与详情声明共用 `finance:reconcile`，旧宿主沿用 `rental-os:finance:reconcile`。[贡献工厂](index.tsx) · [准入与父级](pages.ts)
 3. 将 `rentalPaymentReconciliationMessages` 并入宿主同一语言目录。批次标题、原处理原因、币种和差异代码继续从服务端返回值展示。[语言资源](messages.ts)
 
-列表与详情分别登记 `/payment-reconciliation` 和 `/payment-reconciliation/:batchId`。旧宿主保留 `/rental/payment-reconciliation` 及原批次深链接，将已匹配的 `batchId` 传入 `CorePageHost.params`。页面跳转经 `CorePageLocation` 定位受权登记目标，详情继承列表菜单和面包屑父级。[位置映射](pages.ts) · [旧宿主上下文](../../../../apps/admin/src/features/settings/legacy-payment-reconciliation-context.tsx) · [旧页面入口](../../../../apps/admin/src/features/settings/PaymentReconciliationPage.tsx)
+列表与详情分别登记 `/payment-reconciliation` 和 `/payment-reconciliation/:batchId`。旧宿主保留 `/rental/payment-reconciliation` 及原批次深链接，将已匹配的 `batchId` 传入 `CorePageHost.params`。页面跳转经 `CorePageLocation` 定位受权登记目标，详情继承列表菜单和面包屑父级。[位置映射](pages.ts) · [旧宿主上下文](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/settings/legacy-payment-reconciliation-context.tsx>) · [旧页面入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/settings/PaymentReconciliationPage.tsx>)
 
 ## 请求与业务依据
 
@@ -29,4 +29,4 @@ CSV 选择保持原单文件、非空、扩展名及 10MB 上限。开始导入�
 
 ## 验证入口
 
-既有文件对账用例覆盖原导入、匹配、差异处理和支付事实边界。页面请求载荷、深链接、会话与范围变化、失败文件保留及异步表单提交按直接消费者定向核对，类型、离线行为与真实宿主证据分别记录。[文件对账用例](../../../../tests/payment-reconciliation-file.test.cjs) · [原支付对账用例](../../../../tests/payment-reconciliation.test.cjs) · [页面实现](PaymentReconciliationPage.tsx)
+既有文件对账用例覆盖原导入、匹配、差异处理和支付事实边界。页面请求载荷、深链接、会话与范围变化、失败文件保留及异步表单提交按直接消费者定向核对，类型、离线行为与真实宿主证据分别记录。[文件对账用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/payment-reconciliation-file.test.cjs>) · [原支付对账用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/payment-reconciliation.test.cjs>) · [页面实现](PaymentReconciliationPage.tsx)

@@ -14,8 +14,8 @@
 
 九个开业项使用固定映射，同时核对服务端项标识与原 `nextHref`。业务目标通过 `CorePageLocation` 解析当前登记页面，再核对目标访问要求。公共人员与角色配置由宿主提供 `accounts` 接点，调用前复核当前账号入口权限。[导航映射](navigation.ts) · [目标访问与跳转](TenantReadinessPage.tsx) · [公共账号接点](page-context.tsx)
 
-原宿主的目标访问复用 `canAccessRoute`，沿当前角色、能力、品类和租户会员权限判断。`TenantReadinessPage` 与 `TenantReadinessBody` 均通过薄适配绑定同一上下文和登记目标。[旧宿主适配](../../../../apps/admin/src/features/settings/legacy-setup-context.tsx) · [旧页面与正文出口](../../../../apps/admin/src/features/settings/TenantReadinessPage.tsx) · [原路由权限](../../../../apps/admin/src/app/navigation.tsx)
+原宿主的目标访问复用 `canAccessRoute`，沿当前角色、能力、品类和租户会员权限判断。`TenantReadinessPage` 与 `TenantReadinessBody` 均通过薄适配绑定同一上下文和登记目标。[旧宿主适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/settings/legacy-setup-context.tsx>) · [旧页面与正文出口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/settings/TenantReadinessPage.tsx>) · [原路由权限](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/app/navigation.tsx>)
 
 ## 验证入口
 
-现有开业用例核对原配置就绪与首单门槛。页面映射、旧范围拒绝、类型、浏览器及真实业务接口的验证证据沿对应宿主阶段记录。[开业与首单用例](../../../../tests/tenant-ready-first-order.test.cjs) · [页面与请求实现](TenantReadinessPage.tsx)
+现有开业用例核对原配置就绪与首单门槛。页面映射、旧范围拒绝、类型、浏览器及真实业务接口的验证证据沿对应宿主阶段记录。[开业与首单用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/tenant-ready-first-order.test.cjs>) · [页面与请求实现](TenantReadinessPage.tsx)

@@ -8,11 +8,11 @@
 2. 将上下文钩子传给 `createRentalChannelsAdminContribution`，与其他 Rental 页面合入同一贡献。页面使用 `channel:manage` 声明，兼容宿主沿原 `system:integration:manage` 核对准入。[贡献工厂](index.tsx) · [兼容权限](pages.ts)
 3. 将本模块语言资源合入宿主的同一个 `LocaleProvider`。租户自定义文案与图片继续由当前配置提供。[语言资源](messages.ts)
 
-客户端、微信和官网页签按首次访问加载并保留已访问表单。顶部保存随当前页签登记，顶部按钮与回车共用 `useCoreForm` 的校验及真实保存 Promise。保存保留原版本、FAQ 过滤、官网动态列表转换和品牌缓存刷新，读取失败与保存失败沿所属表单呈现。[表单与页签](ClientChannelPage.tsx) · [公共保存接点](../../../platform-admin/src/core/CorePage.tsx)
+客户端、微信和官网页签按首次访问加载并保留已访问表单。顶部保存随当前页签登记，顶部按钮与回车共用 `useCoreForm` 的校验及真实保存 Promise。保存保留原版本、FAQ 过滤、官网动态列表转换和品牌缓存刷新，读取失败与保存失败沿所属表单呈现。[表单与页签](ClientChannelPage.tsx) · [公共保存接点](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/core/CorePage.tsx>)
 
 ## 请求与业务来源
 
-客户端请求工厂同时提供登录前的公共 bootstrap 和登录后的配置、凭证及连接测试方法。登录入口直接使用宿主公共传输创建请求工厂，配置页面使用绑定当前会话的上下文。bootstrap 保留原租户编码及 Web 客户端参数。[客户端请求](client.ts) · [旧请求入口](../../../../apps/admin/src/api/clientChannel.ts)
+客户端请求工厂同时提供登录前的公共 bootstrap 和登录后的配置、凭证及连接测试方法。登录入口直接使用宿主公共传输创建请求工厂，配置页面使用绑定当前会话的上下文。bootstrap 保留原租户编码及 Web 客户端参数。[客户端请求](client.ts) · [旧请求入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/api/clientChannel.ts>)
 
 官网请求工厂保留配置读取、保存及图片上传。上传使用原 `FormData` 的 `scene`、`file` 字段和取消信号，图片控件将返回的公开 URL 写入当前表单。草稿预览读取 Form 值，正式配置通过原保存接口提交。[官网请求](website-client.ts) · [草稿预览](ClientBrandPreview.tsx)
 
@@ -20,6 +20,6 @@
 
 ## 原宿主与验证入口
 
-原后台页面通过薄适配提供 `adminRuntime`、会话、查询范围、品牌应用及登录默认文案。原 API 与预览出口继续消费本模块同一实现。[旧宿主适配](../../../../apps/admin/src/features/channel/legacy-channels-context.tsx) · [旧页面](../../../../apps/admin/src/features/channel/ClientChannelPage.tsx) · [旧官网请求](../../../../apps/admin/src/api/websiteChannel.ts)
+原后台页面通过薄适配提供 `adminRuntime`、会话、查询范围、品牌应用及登录默认文案。原 API 与预览出口继续消费本模块同一实现。[旧宿主适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/channel/legacy-channels-context.tsx>) · [旧页面](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/channel/ClientChannelPage.tsx>) · [旧官网请求](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/api/websiteChannel.ts>)
 
-现有定向用例覆盖品牌与圆角归属、原版本和载荷、登录文案及事务 fixture。类型和离线行为、浏览器表单、真实微信与资产服务的证据按各自入口记录。[外观与品牌用例](../../../../tests/admin-appearance-settings.test.cjs) · [渠道契约用例](../../../../tests/client-channel.test.cjs) · [登录准入用例](../../../../tests/client-channel-login-gates.test.cjs)
+现有定向用例覆盖品牌与圆角归属、原版本和载荷、登录文案及事务 fixture。类型和离线行为、浏览器表单、真实微信与资产服务的证据按各自入口记录。[外观与品牌用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/admin-appearance-settings.test.cjs>) · [渠道契约用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/client-channel.test.cjs>) · [登录准入用例](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/client-channel-login-gates.test.cjs>)

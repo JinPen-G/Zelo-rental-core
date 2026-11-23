@@ -6,7 +6,7 @@
 
 ## 接入
 
-宿主创建一个 [RentalWebsiteHost](host.ts)，交给根组件。原浏览器宿主实现见 [website-host.ts](../../../../apps/tenant-website/src/website-host.ts)。
+宿主创建一个 [RentalWebsiteHost](host.ts)，交给根组件。原浏览器宿主实现见 [website-host.ts](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/src/website-host.ts>)。
 
 ```tsx
 import { StrictMode } from "react";
@@ -26,7 +26,7 @@ createRoot(document.getElementById("root")!).render(
 | --- | --- |
 | apiBase、baseDomain、defaultTenant | 原公开构建参数，分别来自 VITE_API_BASE、VITE_BASE_DOMAIN、VITE_DEFAULT_TENANT |
 | publicClient | 使用同一基址的原 [公开客户端工厂](../website/index.ts) |
-| session | 同一 [客户会话协调器](../../../web-client/src/session.ts)的原运输、登录、登出、切空间、代次和订阅函数 |
+| session | 同一 [客户会话协调器](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/web-client/src/session.ts>)的原运输、登录、登出、切空间、代次和订阅函数 |
 | request | 原公开及 AI 公开请求的 fetch，登录态请求仍由客户运输执行 |
 | localStorage、sessionStorage、locks | 原可靠存储与浏览器锁，业务派发前仍核对原引用已保存，缺锁的原受控动作继续拒绝 |
 | assetUrl、photoSources | 原宿主资产 URL 与署名，映射只处理宿主拥有的资产，租户远端配置继续按原投影消费 |
@@ -59,6 +59,6 @@ createRoot(document.getElementById("root")!).render(
 
 ## 资产与验证
 
-字体 @font-face 由宿主样式声明，原规则见 [宿主样式](../../../../apps/tenant-website/src/styles.css)。原摄影、生成图片 sidecar、标志、Manrope 和许可分别保留在 [media](../../../../apps/tenant-website/public/media)、[brand](../../../../apps/tenant-website/public/brand)和[fonts](../../../../apps/tenant-website/public/fonts)的唯一原稿。前端包通过明确宿主映射使用这些资产。
+字体 @font-face 由宿主样式声明，原规则见 [宿主样式](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/src/styles.css>)。原摄影、生成图片 sidecar、标志、Manrope 和许可分别保留在 [media](<https://github.com/JinPen-G/Nativark/tree/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/public/media>)、[brand](<https://github.com/JinPen-G/Nativark/tree/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/public/brand>)和[fonts](<https://github.com/JinPen-G/Nativark/tree/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/public/fonts>)的唯一原稿。前端包通过明确宿主映射使用这些资产。
 
-原验证入口为 [组件与定向行为冒烟](../../../../apps/tenant-website/scripts/storefront-render-cases.tsx)、[租户与本人订单兼容](../../../../tests/tenant-website-resolve.test.cjs)和[企业消费者](../../../../tests/enterprise-consumers.test.cjs)。前端类型／内存构建与离线 fixture 只验证对应源码链路。浏览器、真实业务 HTTP／数据库、支付及生产发布沿各自验收处理。
+原验证入口为 [组件与定向行为冒烟](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/tenant-website/scripts/storefront-render-cases.tsx>)、[租户与本人订单兼容](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/tenant-website-resolve.test.cjs>)和[企业消费者](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/enterprise-consumers.test.cjs>)。前端类型／内存构建与离线 fixture 只验证对应源码链路。浏览器、真实业务 HTTP／数据库、支付及生产发布沿各自验收处理。

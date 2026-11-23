@@ -6,6 +6,8 @@
 
 宿主调用 `createRentalMembershipAdminContribution`，传入当前实现版本与页面上下文 hook，将返回值合入同一个 Rental 贡献。公共 `CoreRoutes` 供给页面宿主，菜单、详情父级和页名从[八页描述](pages.ts)读取，主操作与辅助操作通过公共 `CorePage` 声明进入页头。
 
+个人会员页的“注册设置”和“当前空间证件类型”沿原 `tools` 插槽位于正文辅助区，“新增个人会员”继续使用顶部主操作。会员激励的“补发奖励”沿原 `tools` 插槽与默认按钮样式呈现，表单、弹窗确认与原奖励请求保持同一接点。
+
 上下文 hook 使用[上下文工厂](page-context.tsx)，将原 `AdminRuntime`、当前会员会话、实时会话读取和已有列表查询身份绑定到本页。会话、租户、账号、经营空间或授权范围变化时，旧请求和文件结果会被隔离。
 
 | 业务入口 | 正文与直接消费者 |
@@ -41,6 +43,6 @@
 
 ## 原宿主与验证入口
 
-原[会员宿主适配](../../../../apps/admin/src/features/membership/legacy-membership-context.tsx)供给 Auth、原鉴权 Blob 请求及原 AI 组件，并为页面和表单绑定公共页面宿主。旧会员页、客户预览和企业组件窄转接本模块，旧[会员 API](../../../../apps/admin/src/api/membership.ts)、[客户 API](../../../../apps/admin/src/api/customer.ts)及[列表能力](../../../../apps/admin/src/features/listCapabilities.ts)继续供给同一实现。
+原[会员宿主适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/membership/legacy-membership-context.tsx>)供给 Auth、原鉴权 Blob 请求及原 AI 组件，并为页面和表单绑定公共页面宿主。旧会员页、客户预览和企业组件窄转接本模块，旧[会员 API](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/api/membership.ts>)、[客户 API](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/api/customer.ts>)及[列表能力](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/listCapabilities.ts>)继续供给同一实现。
 
-定向验证沿现有[企业消费者](../../../../tests/enterprise-consumers.test.cjs)、[回款与授信恢复](../../../../tests/admin-session-recovery-review.test.cjs)、[门户授权](../../../../tests/enterprise-portal-access.test.cjs)、[列表交互](../../../../tests/admin-list-interactions.test.cjs)、[客户预览呈现](../../../../tests/rental-order-list-presentation.test.cjs)和[表单/地址操作](../../../../tests/rental-order-command-review.test.cjs)。[客户完整验收](../../../../tests/customer-admin-acceptance.test.cjs)包含真实数据库访问，执行条件按该入口及负责人授权核定。
+定向验证沿现有[企业消费者](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/enterprise-consumers.test.cjs>)、[回款与授信恢复](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/admin-session-recovery-review.test.cjs>)、[门户授权](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/enterprise-portal-access.test.cjs>)、[列表交互](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/admin-list-interactions.test.cjs>)、[客户预览呈现](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/rental-order-list-presentation.test.cjs>)和[表单/地址操作](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/rental-order-command-review.test.cjs>)。[客户完整验收](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/customer-admin-acceptance.test.cjs>)包含真实数据库访问，执行条件按该入口及负责人授权核定。

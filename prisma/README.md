@@ -5,8 +5,8 @@ Rental 自己维护121个模型和5个枚举。公共账号、角色、授权、
 ## 组合新宿主
 
 1. 从部署锁和明确的已准备包目录调用 `requireRentalDataPackage(directory, pin, hostVersions)`。它核对实际完整包、清单、实现/数据版本、范围、schema 和原迁移摘要；缺少标准清单的源码目录不能充当安装证明。将返回的 `prisma` 贡献交给公共 `composeCorePrismaSchema`，宿主在自己的目录生成组合 Client。[固定包读取](../src/data-package.ts) · [源码组合](../src/prisma-schema.ts)
-2. 使用同次固定包读取返回的 `dataPlan`，将其 `publicForeignKeys` 传给公共 `createPublicPlatformDataPlan`。两份计划分别检查公共表和 Rental 表；迁移执行状态从同一数据库的原 `_prisma_migrations` 读取。原 `createRentalMysqlDataPlan()` 保留给包内已核定源码消费者，新宿主不从另一作者目录混读迁移。[Rental 数据计划](../src/mysql-data.ts) · [公共数据计划](../../../apps/platform-api/src/platform-data.ts) · [原账读取](../../core-host/src/mysql-deployment.ts)
-3. 固定包和版本后，使用公共 `createCoreMigrationDeployment` 准备公共迁移与所选 Core 的新部署目录，再按部署流程应用、初始化与验证。准备文件、应用迁移和租户授权分别办理。[部署组合](../../core-contracts/src/deployment.ts) · [完整接入步骤](../../core-contracts/README.md#五步快速接入)
+2. 使用同次固定包读取返回的 `dataPlan`，将其 `publicForeignKeys` 传给公共 `createPublicPlatformDataPlan`。两份计划分别检查公共表和 Rental 表；迁移执行状态从同一数据库的原 `_prisma_migrations` 读取。原 `createRentalMysqlDataPlan()` 保留给包内已核定源码消费者，新宿主不从另一作者目录混读迁移。[Rental 数据计划](../src/mysql-data.ts) · [公共数据计划](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/platform-api/src/platform-data.ts>) · [原账读取](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/core-host/src/mysql-deployment.ts>)
+3. 固定包和版本后，使用公共 `createCoreMigrationDeployment` 准备公共迁移与所选 Core 的新部署目录，再按部署流程应用、初始化与验证。准备文件、应用迁移和租户授权分别办理。[部署组合](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/core-contracts/src/deployment.ts>) · [完整接入步骤](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/core-contracts/README.md#五步快速接入>)
 
 ```ts
 import { composeCorePrismaSchema } from "@rental-os/core-contracts/prisma";
@@ -33,6 +33,6 @@ const platformData = createPublicPlatformDataPlan(rental.dataPlan.publicForeignK
 
 Rental 数据版本、可读范围、迁移 ID、包内路径和原文摘要由同一[发行声明](../src/data.ts)提供。包内目录名定位 SQL；部署目录及原账名称使用公共 `corePrismaMigrationName`，与 `deploymentMigrationNames` 保持一致。已应用 SQL 不因换行、编码或打包变化改写。
 
-已有混合数据库继续使用原[组合迁移链](../../../apps/api/prisma/migrations)及原收据。不能将新空库基线套用已有库，或把新计划的版本当作存量数据已经迁移。存量切换、备份、迁移与回退另按对应部署验证办理。
+已有混合数据库继续使用原[组合迁移链](<https://github.com/JinPen-G/Nativark/tree/0d7620f04f212736059645a8e745248ee7a90f9d/apps/api/prisma/migrations>)及原收据。不能将新空库基线套用已有库，或把新计划的版本当作存量数据已经迁移。存量切换、备份、迁移与回退另按对应部署验证办理。
 
 普通业务、客户、企业、渠道、支付和检查的物理字段及业务外键沿原 schema 保留。无 AI 组合省略 AI 的反向关系，原组合 schema 继续保留可选 AI 的历史关联；启用 AI 的新组合还须接其正式数据贡献。

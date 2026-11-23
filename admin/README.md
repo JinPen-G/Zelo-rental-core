@@ -1,6 +1,6 @@
 # Rental 后台宿主
 
-Rental 后台的统一页面贡献通过一个宿主供给器取得订单、工单、能力、地点、商品资产、商业、治理、会员客户、工作台报表、渠道、开业和支付对账上下文。公共应用继续负责登录、外壳、登记路由、主题、语言和查询缓存。[统一页面贡献](index.tsx) · [宿主工厂与正式输入](host-context.tsx) · [公共应用](../../platform-admin/src/application.tsx)
+Rental 后台的统一页面贡献通过一个宿主供给器取得订单、工单、能力、地点、商品资产、商业、治理、会员客户、工作台报表、渠道、开业和支付对账上下文。公共应用继续负责登录、外壳、登记路由、主题、语言和查询缓存。[统一页面贡献](index.tsx) · [宿主工厂与正式输入](host-context.tsx) · [公共应用](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/application.tsx>)
 
 ## 装配
 
@@ -37,11 +37,11 @@ export function RentalAdminApplication() {
 }
 ```
 
-`rentalPorts.runtime` 与公共应用的 `session.runtime` 使用同一对象。`currentRentalContainer(coreId, pageId)` 来自原宿主当前已验证的业务投影；按页面返回原 Rental 容器或租户范围，不能从地址参数或本地缓存授予范围。宿主采用服务端新范围后，同步调用 `session.invalidateBusinessScope()`，让同一请求、缓存及页面代次失效。工厂提供上下文和登记目标导航，各页面及服务端继续核验自己的准入和业务条件。[标准路由范围](../../platform-admin/src/core/CoreRoutes.tsx) · [组合输入](../../platform-admin/src/application-context.ts) · [登记位置解析](../../core-contracts/src/admin.ts)
+`rentalPorts.runtime` 与公共应用的 `session.runtime` 使用同一对象。`currentRentalContainer(coreId, pageId)` 来自原宿主当前已验证的业务投影；按页面返回原 Rental 容器或租户范围，不能从地址参数或本地缓存授予范围。宿主采用服务端新范围后，同步调用 `session.invalidateBusinessScope()`，让同一请求、缓存及页面代次失效。工厂提供上下文和登记目标导航，各页面及服务端继续核验自己的准入和业务条件。[标准路由范围](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/core/CoreRoutes.tsx>) · [组合输入](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/application-context.ts>) · [登记位置解析](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/core-contracts/src/admin.ts>)
 
 ## 语言资源
 
-`rentalAdminMessages` 汇集原组合宿主和六组业务模块的词条。原后台语言入口及两个标准宿主从同一 `/admin/messages` 正式出口取资源，通过公共应用的 `messages` 接点供给同一 `LocaleProvider`。语言状态和变量翻译由公共提供器维护，业务录入事实由原页面展示。[词条资源](messages.ts) · [原宿主薄适配](../../../apps/admin/src/app/locale.tsx) · [公共语言提供器](../../platform-admin/src/AdminUiProvider.tsx)
+`rentalAdminMessages` 汇集原组合宿主和六组业务模块的词条。原后台语言入口及两个标准宿主从同一 `/admin/messages` 正式出口取资源，通过公共应用的 `messages` 接点供给同一 `LocaleProvider`。语言状态和变量翻译由公共提供器维护，业务录入事实由原页面展示。[词条资源](messages.ts) · [原宿主薄适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/app/locale.tsx>) · [公共语言提供器](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/AdminUiProvider.tsx>)
 
 ## 真实输入
 
@@ -85,11 +85,11 @@ export function RentalAdminApplication() {
 
 公共应用、Rental Provider 和其他 Core 复用这一份会话与 QueryClient。工单使用自己的租户范围，Rental 页面按当前服务端目录和已验证会话取得经营空间；未选经营空间不影响获权工单和公共设置。Core、成员授权或会话变化后，原请求和导航继续复验当前范围。
 
-宿主按当前页面传入 `contextSwitcher`。`undefined` 使用 Rental 原经营空间选择器，`null` 显式留空，也可传入自己的公共上下文组件。同一个 Shell 和通知 Provider 持续挂载，切换页面或撤销其他 Core 时保留当前正文的原操作状态。完整双 Core 装配只需宿主入口、薄壳和固定部署锁。[双Core示范](../../../apps/example-multi-core-admin/README.md) · [单Rental宿主](../../../apps/rental-admin/README.md)
+宿主按当前页面传入 `contextSwitcher`。`undefined` 使用 Rental 原经营空间选择器，`null` 显式留空，也可传入自己的公共上下文组件。同一个 Shell 和通知 Provider 持续挂载，切换页面或撤销其他 Core 时保留当前正文的原操作状态。完整双 Core 装配只需宿主入口、薄壳和固定部署锁。[双Core示范](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/example-multi-core-admin/README.md>) · [单Rental宿主](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/rental-admin/README.md>)
 
 ## 验证入口
 
-`admin/tsconfig.json` 直接复用公共 `platform-admin` 包的配置，覆盖十二组页面、统一宿主、浏览器会话与通知。源码宿主同时准备公共 UI 使用的 `ui-arc` 和 `ui-motiq` 保留源码，入口与取出范围见独立应用导读。[类型配置](tsconfig.json) · [独立应用](../../../apps/rental-admin/README.md#源码取出范围)
+`admin/tsconfig.json` 直接复用公共 `platform-admin` 包的配置，覆盖十二组页面、统一宿主、浏览器会话与通知。源码宿主同时准备公共 UI 使用的 `ui-arc` 和 `ui-motiq` 保留源码，入口与取出范围见独立应用导读。[类型配置](tsconfig.json) · [独立应用](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/rental-admin/README.md#源码取出范围>)
 
 直接依赖沿 Rental 包的可选 peer 声明及宿主实际依赖准备。使用这些后台出口的宿主声明与 Core 同版本的 `@rental-os/shared`，供给原运行协议。日期使用 `dayjs`，订单列表使用 `@tanstack/react-table`，HTTP 兼容处理使用 `axios`，保留的卡片与报表动效使用 `motion`。[正式包声明](../package.json)
 

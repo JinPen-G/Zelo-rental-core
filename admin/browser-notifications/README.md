@@ -1,10 +1,10 @@
 # Rental 浏览器通知
 
-`createRentalBrowserNotifications` 将原待办、个人消息状态与内联详情绑定到一个 Rental 浏览器宿主，返回 `NotificationProvider`、`useNotifications` 和 `NoticeActions`。旧组合后台与独立后台消费同一实现。[正式工厂](index.tsx) · [原后台适配](../../../../apps/admin/src/features/notifications/NotificationProvider.tsx) · [独立外壳](../../../../apps/rental-admin/src/RentalShell.tsx)
+`createRentalBrowserNotifications` 将原待办、个人消息状态与内联详情绑定到一个 Rental 浏览器宿主，返回 `NotificationProvider`、`useNotifications` 和 `NoticeActions`。旧组合后台与独立后台消费同一实现。[正式工厂](index.tsx) · [原后台适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/notifications/NotificationProvider.tsx>) · [独立外壳](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/rental-admin/src/RentalShell.tsx>)
 
 ## 宿主输入
 
-`session` 使用同一 `createRentalBrowserAdminSession` 实例。`resolveHref` 按当前身份、已登记页面和实际 Core 使用权返回路径或 `null`。标准 Core 宿主提供 `hasPageAccess`，从当前使用目录核对工作台及工单页面，目录更新同步重渲染 Provider。公共铃铛直接消费 `useNotifications()`，内联展开区渲染同一工厂的 `NoticeActions`。[输入类型](types.ts) · [公共铃铛](../../../platform-admin/src/features/notifications/HeaderNotifications.tsx)
+`session` 使用同一 `createRentalBrowserAdminSession` 实例。`resolveHref` 按当前身份、已登记页面和实际 Core 使用权返回路径或 `null`。标准 Core 宿主提供 `hasPageAccess`，从当前使用目录核对工作台及工单页面，目录更新同步重渲染 Provider。公共铃铛直接消费 `useNotifications()`，内联展开区渲染同一工厂的 `NoticeActions`。[输入类型](types.ts) · [公共铃铛](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/features/notifications/HeaderNotifications.tsx>)
 
 ```tsx
 import type { ReactNode } from "react";
