@@ -77,6 +77,16 @@ export interface WorkspaceCategoryConfigSnapshot extends TenantConfigSnapshot {
   isDefault: boolean;
 }
 
+/** 当前页面的分离配置视图；各集合保留完整原字段，不可作为全量缓存快照发布。 */
+export type RentalWorkspaceConfigurationRead = Pick<WorkspaceCategoryConfigSnapshot, "tenantId" | "workspaceId" | "definition" | "binding"> & (
+  | { kind: "profile"; profile?: TenantRentalProfile; isDefault: boolean }
+  | { kind: "category" }
+  | { kind: "locations"; locations: RentalFulfillmentLocation[] }
+  | { kind: "operators"; operators: RentalFulfillmentOperator[] }
+  | { kind: "item-groups"; itemGroups: RentalItemGroup[] }
+);
+export type RentalWorkspaceConfigurationKind = RentalWorkspaceConfigurationRead["kind"];
+
 /**
  * 事务客户端。租户初始化必须把品类配置写在 `bootstrapTenant` 的同一事务内（需求 4.1），
  * 因此每个写方法都允许调用方传入外层事务；不传时各自独立提交。
@@ -145,6 +155,11 @@ export type RentalQuoteConfigurationFacts = Omit<BusinessContext, 'category'> & 
 export interface RentalConfigStore<TTransaction extends RentalCoreConfigurationTransaction = RentalCoreConfigurationTransaction> {
   loadAll(): Promise<TenantConfigSnapshot[]>;
   loadWorkspaceSnapshot?(tenantId: string, workspaceId: string, tx?: TTransaction): Promise<WorkspaceCategoryConfigSnapshot>;
+  /** 同一当前品类锁下仅取页面所需完整配置，不初始化、发布缓存或共享跨请求结果。 */
+  readWorkspaceConfiguration?(tenantId: string, workspaceId: string, kind: RentalWorkspaceConfigurationKind, tx?: TTransaction): Promise<RentalWorkspaceConfigurationRead>;
+  /** Core绑定就绪只检查原档案和设置，不扫描商品/价格等业务集合。 */
+  readReadinessConfiguration?(tenantId: string, workspaceId: string, tx?: TTransaction): Promise<
+    Pick<WorkspaceCategoryConfigSnapshot, "tenantId" | "workspaceId" | "profile" | "businessSettings">>;
   readDefaultWorkspaceInitialization?(tenantId: string, categoryCode: RentalCategoryCode, tx: TTransaction): Promise<RentalDefaultWorkspaceInitializationState | undefined>;
   readQuoteConfigurationFacts?(tenantId: string, workspaceId: string): Promise<RentalQuoteConfigurationFacts>;
   readReportConfigurationFacts?(tenantId: string, workspaceId: string): Promise<RentalReportConfigurationFacts>;
@@ -297,6 +312,84 @@ export class RentalCoreConfigRepository<TTransaction extends RentalCoreConfigura
         hasPersistedConfig: Boolean(settings || operators.length || locations.length || groups.length || pricing.length || coupons.length || inspections.length) };
     };
     return existingTx ? read(existingTx) : this.store.$transaction(read, { isolationLevel: "ReadCommitted" });
+  }
+
+  /** 五类R0页各自持原Tenant/Core/采用锁，只读本页配置。不能把部分集合
+   * 交给全量刷新，否则会抹掉其他配置或把模板值发布为当前事实。 */
+  async readWorkspaceConfiguration(tenantId: string, workspaceId: string, kind: RentalWorkspaceConfigurationKind,
+    existingTx?: TTransaction): Promise<RentalWorkspaceConfigurationRead> {
+    const assertScope = this.configurationReadScope(tenantId, workspaceId);
+    const read = async (tx: TTransaction): Promise<RentalWorkspaceConfigurationRead> => {
+      assertScope();
+      const { definition, binding } = await lockActiveCategoryBinding(tx, tenantId, workspaceId);
+      const scope = { tenantId, workspaceId, definition, binding }, where = { tenantId, workspaceId };
+      let result: RentalWorkspaceConfigurationRead;
+      switch (kind) {
+        case "profile": {
+          result = { ...scope, kind, ...await this.readLockedWorkspaceProfile(tx, tenantId, workspaceId, definition) }; break;
+        }
+        case "category": result = { ...scope, kind }; break;
+        case "locations": {
+          const rows = await tx.rentalFulfillmentLocation.findMany({ where, orderBy: { createdAt: "desc" } });
+          result = { ...scope, kind, locations: rows.map(row => this.toLocation(row)) }; break;
+        }
+        case "operators": {
+          const rows = await tx.rentalFulfillmentOperator.findMany({ where, orderBy: { createdAt: "desc" } });
+          result = { ...scope, kind, operators: rows.map(row => this.toOperator(row)) }; break;
+        }
+        case "item-groups": {
+          const rows = await tx.rentalItemGroup.findMany({ where, orderBy: { createdAt: "desc" }, include: { bundleComponents: true } });
+          const byId = new Map(rows.map(row => [row.id, row]));
+          if (rows.some(row => row.bundleComponents.some(component => !byId.has(component.componentItemGroupId))))
+            throw new ConflictException("空间配置包含空间外的组成，不能读取其他空间资料补齐");
+          result = { ...scope, kind, itemGroups: rows.map(row => this.toItemGroup({ ...row,
+            bundleComponents: row.bundleComponents.map(component => ({ ...component,
+              componentItemGroup: { code: byId.get(component.componentItemGroupId)!.code, name: byId.get(component.componentItemGroupId)!.name } })) })) }; break;
+        }
+        default: throw new BadRequestException("页面配置读取类型未登记");
+      }
+      assertScope();
+      return result;
+    };
+    return existingTx ? read(existingTx) : this.store.$transaction(read, { isolationLevel: "ReadCommitted" });
+  }
+
+  /** 就绪检查和首次绑定复用本次原事务，不把部分配置发布到业务缓存。 */
+  async readReadinessConfiguration(tenantId: string, workspaceId: string, existingTx?: TTransaction): Promise<
+    Pick<WorkspaceCategoryConfigSnapshot, "tenantId" | "workspaceId" | "profile" | "businessSettings">> {
+    const assertScope = this.configurationReadScope(tenantId, workspaceId);
+    const read = async (tx: TTransaction) => {
+      assertScope();
+      const { definition } = await lockActiveCategoryBinding(tx, tenantId, workspaceId);
+      const [{ profile }, settings] = await Promise.all([
+        this.readLockedWorkspaceProfile(tx, tenantId, workspaceId, definition),
+        tx.rentalTenantBusinessSettings.findFirst({ where: { tenantId, workspaceId } })
+      ]);
+      assertScope();
+      return { tenantId, workspaceId, profile, businessSettings: this.toBusinessSettings(settings ?? undefined) };
+    };
+    return existingTx ? read(existingTx) : this.store.$transaction(read, { isolationLevel: "ReadCommitted" });
+  }
+
+  private configurationReadScope(tenantId: string, workspaceId: string) {
+    const requestTenant = this.contacts.getRequestTenantId(), requestWorkspace = this.contacts.getRequestWorkspaceId();
+    const locationScope = JSON.stringify(this.contacts.getRequestStaffLocationIds());
+    return () => {
+      if (requestTenant !== undefined && requestTenant !== tenantId || requestWorkspace !== undefined && requestWorkspace !== workspaceId
+        || this.contacts.getRequestTenantId() !== requestTenant || this.contacts.getRequestWorkspaceId() !== requestWorkspace
+        || JSON.stringify(this.contacts.getRequestStaffLocationIds()) !== locationScope)
+        throw new ForbiddenException("页面配置读取期间租户、经营空间或地点范围变化");
+    };
+  }
+
+  /** 调用方已持当前采用锁，档案仍只读原默认行或有界非默认快照。 */
+  private async readLockedWorkspaceProfile(tx: TTransaction, tenantId: string, workspaceId: string, definition: RentalCategoryDefinition) {
+    const workspace = await tx.businessWorkspace.findFirst({ where: { tenantId, id: workspaceId }, select: { defaultMarker: true } });
+    const isDefault = workspace?.defaultMarker === "default";
+    const profile = isDefault
+      ? this.readDefaultWorkspaceProfile(await tx.tenantRentalProfile.findUnique({ where: { tenantId } }), tenantId, definition)
+      : await this.readSavedWorkspaceProfile(tx, tenantId, workspaceId, definition.code);
+    return { profile, isDefault };
   }
 
   private readDefaultWorkspaceProfile(

@@ -27,9 +27,9 @@ import {
 } from "@rental-os/platform-admin/ui";
 import { CorePage, QueryState, UnsavedChangesGuard, useCorePageHost } from "@rental-os/platform-admin/core";
 import { useLocale } from "@rental-os/platform-admin/locale";
-import { PlusOutlined } from "@rental-os/platform-admin/source/components/ui/icons";
-import { SettingsWorkspace } from "@rental-os/platform-admin/source/components/settings/SettingsWorkspace";
-import { ADMIN_TABLE_COLUMN_WIDTH } from "@rental-os/platform-admin/source/app/designTokens";
+import { PlusOutlined } from "@rental-os/platform-admin/ui";
+import { SettingsWorkspace } from "@rental-os/platform-admin/forms";
+import { ADMIN_TABLE_COLUMN_WIDTH } from "@rental-os/platform-admin/ui";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOrderEditor } from "../orders/useOrderEditor";
 import { locationCapabilities, operatorCapabilities } from "./listCapabilities";
@@ -78,7 +78,9 @@ function LocationWorkspace({
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const host = useCorePageHost();
-  const active = useRef(false);
+  // 首次渲染已持有当前受权范围，命中新鲜缓存也要立即生成原导入/批量入口。
+  // ref 变化不会触发渲染；退出后仍以同一标记拒绝迟到的列表操作。
+  const active = useRef(true);
   useLayoutEffect(() => {
     active.current = true;
     return () => {
@@ -214,12 +216,22 @@ function LocationWorkspace({
     edit: openEditor,
   });
 
+  const reportEditorError = (error: unknown, text: string) => {
+    if (!isCurrentScope() || error && typeof error === "object"
+      && ("errorFields" in error || "name" in error && error.name === "AbortError")) return;
+    message.error(t(text));
+  };
+  const reportLocationError = (error: unknown) =>
+    reportEditorError(error, "保存失败，请检查地点类型、编码、经营主体和履约能力");
+  const reportOperatorError = (error: unknown) => reportEditorError(error, "经营主体保存失败");
+
   const locationEditor = useOrderEditor<SaveRentalFulfillmentLocationRequest>({
     form,
     identity: locationEditorState
       ? JSON.stringify([scopeKey, "location", locationEditorState.generation, editing?.id])
       : undefined,
     onSave: submitLocation,
+    onError: reportLocationError,
     disabled: locationUnavailable,
   });
   const operatorEditor = useOrderEditor<SaveRentalFulfillmentOperatorRequest>({
@@ -228,6 +240,7 @@ function LocationWorkspace({
       ? JSON.stringify([scopeKey, "operator", operatorEditorState.generation, editingOperator?.id])
       : undefined,
     onSave: submitOperator,
+    onError: reportOperatorError,
     disabled: operatorUnavailable,
   });
   const locationForm = useMemo(
@@ -606,10 +619,7 @@ function LocationWorkspace({
               form={locationForm}
               pending={save.isPending}
               onSave={locationEditor.submit}
-              onActionError={(error) => {
-                if (isCurrentScope() && !(error && typeof error === "object" && "errorFields" in error))
-                  message.error(t("保存失败，请检查地点类型、编码、经营主体和履约能力"));
-              }}
+              onActionError={reportLocationError}
             />
           </>
         }
@@ -621,9 +631,6 @@ function LocationWorkspace({
           disabled={locationUnavailable || save.isPending}
           {...locationEditor.formProps}
         >
-          {locationEditor.error instanceof Error && (
-            <Alert type="error" showIcon title={locationEditor.error.message} />
-          )}
           <SettingsWorkspace
             sections={[
               {
@@ -840,10 +847,7 @@ function LocationWorkspace({
               form={boundOperatorForm}
               pending={saveOperator.isPending}
               onSave={operatorEditor.submit}
-              onActionError={(error) => {
-                if (isCurrentScope() && !(error && typeof error === "object" && "errorFields" in error))
-                  message.error(t("经营主体保存失败"));
-              }}
+              onActionError={reportOperatorError}
             />
           </>
         }
@@ -855,9 +859,6 @@ function LocationWorkspace({
           disabled={operatorUnavailable || saveOperator.isPending}
           {...operatorEditor.formProps}
         >
-          {operatorEditor.error instanceof Error && (
-            <Alert type="error" showIcon title={operatorEditor.error.message} />
-          )}
           <div>
             <Row gutter={16}>
               <Col span={24}>

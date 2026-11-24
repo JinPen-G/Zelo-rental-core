@@ -4,20 +4,22 @@
 
 ## 接入入口
 
-- [页面贡献](index.tsx)绑定当前宿主上下文，[页面声明](pages.ts)供路由、菜单和面包屑共用。
-- [请求工厂](client.ts)复用宿主唯一认证请求，直接读取方法支持取消信号。
-- [页面上下文](page-context.tsx)绑定当前已验证会话、Rental 经营空间、原权限、原单次请求和现有引用库，并由宿主供给客户预览、商品图片和 AI 事实入口。
-- [原列表入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/rental-core/RentalOrdersPage.tsx>)、[原新建入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/rental-core/RentalOrderCreatePage.tsx>)与[原详情入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/rental-core/RentalOrderDetailPage.tsx>)通过薄适配消费同一实现，保留旧深链接。
+- [页面贡献](<index.tsx>)绑定当前宿主上下文，[页面声明](<pages.ts>)供路由、菜单和面包屑共用。
+- [请求工厂](<client.ts>)复用宿主唯一认证请求，直接读取方法支持取消信号。
+- [页面上下文](<page-context.tsx>)绑定当前已验证会话、Rental 经营空间、原权限、原单次请求和现有引用库，并由宿主供给客户预览、商品图片和 AI 事实入口。
+- [原列表入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/rental-core/RentalOrdersPage.tsx>)、[原新建入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/rental-core/RentalOrderCreatePage.tsx>)与[原详情入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/rental-core/RentalOrderDetailPage.tsx>)通过薄适配消费同一实现，保留旧深链接。
 
-宿主使用 `createRentalOrderPageContext` 固定页面的会话与范围。上下文的 `requestOriginal` 复用公共 HTTP 的单次模式，`references` 绑定[公共引用库](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/operation-reference.ts>)。三个换货 hook 在派发前保留原键，恢复沿原查询与收据进行。
+宿主使用 `createRentalOrderPageContext` 固定页面的会话与范围。上下文的 `requestOriginal` 复用公共 HTTP 的单次模式，`references` 绑定[公共引用库](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/operation-reference.ts>)。三个换货 hook 在派发前保留原键，恢复沿原查询与收据进行。
 
-订单和[养护工单](../work-orders/README.md)通过[Rental 贡献组合](../index.tsx)登记为同一个 Core。宿主通过已登记目标处理列表、新建、详情和养护导航。新建页面使用订单列表作为父级，继承原创建权限和 `/rental/orders/new` 兼容地址。
+订单和[养护工单](<../work-orders/README.md>)通过[Rental 贡献组合](<../index.tsx>)登记为同一个 Core。宿主通过已登记目标处理列表、新建、详情和养护导航。新建页面使用订单列表作为父级，继承原创建权限和 `/rental/orders/new` 兼容地址。
 
 ## 公共接点与装配
 
+列表、新建、详情和单据使用 `@rental-os/platform-admin/ui` 的原图标、列表宽度及 `PageEnter`，加载反馈使用 `/shell` 的同一 `LoadingState`。原列表列定义、页面参数和阶段动作继续由本模块提供。[UI 出口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/components/ui/index.ts>) · [加载出口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/shell.ts>)
+
 包配置提供 `admin/orders`、`admin/orders/client`、`admin/orders/logic` 与 `admin/orders/pages` 正式出口，分别指向 `index.tsx`、`client.ts`、`logic.ts` 和 `pages.ts`。后台类型配置同时包含贡献组合、订单和养护页面。旧宿主的列表、新建与详情导航均投影本模块声明，公共配置与最终授权映射由宿主装配维护。
 
-[旧宿主适配](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/apps/admin/src/features/rental-core/legacy-order-context.tsx>)从同源页面声明投影旧路径和权限，绑定原 `adminRuntime`、实际 AuthStore、原跨领域组件及引用库。订单编辑以打开代次隔离异步校验。原生提交直接等待本代次的 `validateFields`，按钮、回车与浮层确认共用公共表单保存方法。实际请求在途时保留编辑对象，失败保留原输入与未决引用。
+[旧宿主适配](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/rental-core/legacy-order-context.tsx>)从同源页面声明投影旧路径和权限，绑定原 `adminRuntime`、实际 AuthStore、原跨领域组件及引用库。订单编辑以打开代次隔离异步校验。原生提交直接等待本代次的 `validateFields`，按钮、回车与浮层确认共用公共表单保存方法。实际请求在途时保留编辑对象，失败保留原输入与未决引用。
 
 `requestOriginal` 使用公共请求的 `retryAuthentication: false` 保持原单次派发，继承同一会话取消与迟到响应围栏。操作引用库从公共 `forms` 出口接入，原引用路径保留同源兼容转接。
 
@@ -27,16 +29,18 @@
 
 检查打开动作声明真实 `pending`，手动开始／结束办理和部分归还入口共用准备状态。公共打开驱动同步调用 `open`，订单准备等待和防重由本模块承担，通用异步打开合同仍由公共装配维护。直接交接、确认和结算返回原命令 Promise。
 
+续租、取货后换货和部分取消的试算使用原 `Button`，沿原文案、位置和加载状态呈现。异步校验按当前编辑代次执行，同代次的重复点击共用在途试算。续租提交同样保留原 primary 按钮，按钮与回车继续通过现有编辑驱动等待校验和原提交结果。[订单详情](<RentalOrderDetailPage.tsx>) · [编辑驱动](<useOrderEditor.ts>)
+
 ## 新建报价与客户原委托
 
-[新建页面](RentalOrderCreatePage.tsx)复用原会员、预约身份、地址、租期、定价分组、优惠和增值服务控件，所有读取键绑定当前会话与 Rental 范围。先通过公共保存按钮或原生回车等待字段校验及服务端报价，再通过当前页命令提交该报价的原快照。创建后的列表、详情和继续新建动作沿正式页面声明处理。
+[新建页面](<RentalOrderCreatePage.tsx>)复用原会员、预约身份、地址、租期、定价分组、优惠和增值服务控件，所有读取键绑定当前会话与 Rental 范围。报价与创建保留原大尺寸满宽按钮，按钮与原生回车共用字段校验和服务端报价；创建提交该报价的原快照。消息提示复用公共 UI 出口的原 `App` 适配。创建后的列表、详情和继续新建动作沿正式页面声明处理。尚未创建订单的字段、报价及增值服务选择通过公共 `UnsavedChangesGuard` 提示放弃或继续编辑，报价与创建在途时保留当前页面。报价结果仍属于未提交的订单草稿。
 
-[表单绑定](useOrderEditor.ts)保留原 `validateFields` 的字段与选项两种重载。同一编辑代次复用绑定对象，查询刷新期间的校验继续使用原对象。会员、字段或增值服务改变时清除已显示报价，旧代次的响应保持隔离。创建请求在途时保留输入，失败原因显示在原表单中，按钮使用公共等待与失败反馈。
+[表单绑定](<useOrderEditor.ts>)保留原 `validateFields` 的字段与选项两种重载。同一编辑代次复用绑定对象，查询刷新期间的校验继续使用原对象。会员、字段或增值服务改变时清除已显示报价，旧代次的响应保持隔离。创建请求在途时保留输入，报价与创建失败沿原消息提示反馈，页面保留原表单布局。
 
-[客户委托面板](EnterpriseMerchantOrderDelegationPanel.tsx)与[原来源 hook](enterprise-merchant-order-delegation.ts)读取客户已签原 D，分别处理来源核对、明确执行和 Core 原结果读取。原企业管理及订单操作权限、浏览器引用协调、来源字段核验和历史存储键继续生效，单次传输使用上下文 `requestOriginal`。执行结果为 `unknown` 时保留同一 D，后续从原结果入口核对。
+[客户委托面板](<EnterpriseMerchantOrderDelegationPanel.tsx>)与[原来源 hook](<enterprise-merchant-order-delegation.ts>)读取客户已签原 D，分别处理来源核对、明确执行和 Core 原结果读取。原企业管理及订单操作权限、浏览器引用协调、来源字段核验和历史存储键继续生效，单次传输使用上下文 `requestOriginal`。执行结果为 `unknown` 时保留同一 D，后续从原结果入口核对。
 
 ## 验证入口
 
-复用[订单列表呈现](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/rental-order-list-presentation.test.cjs>)、[订单命令边界](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/rental-order-command-review.test.cjs>)、[日期时间消费者](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/admin-datetime-range.test.cjs>)、[服务原引用](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/rental-service-execution.test.cjs>)和[企业消费者](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/tests/enterprise-consumers.test.cjs>)的现有断言，类型检查消费正式包出口。列表语言呈现与原型同名文本的回退语义由[公共语言入口](<https://github.com/JinPen-G/Nativark/blob/0d7620f04f212736059645a8e745248ee7a90f9d/packages/platform-admin/src/app/locale.tsx>)提供。
+复用[订单列表呈现](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-order-list-presentation.test.cjs>)、[订单命令边界](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-order-command-review.test.cjs>)、[日期时间消费者](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-datetime-range.test.cjs>)、[服务原引用](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-service-execution.test.cjs>)和[企业消费者](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/enterprise-consumers.test.cjs>)的现有断言，类型检查消费正式包出口。列表语言呈现与原型同名文本的回退语义由[公共语言入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/app/locale.tsx>)提供。
 
 宿主验收分别核对浏览器、真实 HTTP／数据库、对象存储及完整标准 Core 装配。

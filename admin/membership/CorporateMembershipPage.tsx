@@ -60,7 +60,7 @@ import {
 } from "@rental-os/platform-admin/ui";
 import { BadgeCheck, Landmark, Users } from "lucide-react";
 import { RecordDetailLayout, RecordFacts } from "@rental-os/platform-admin/ui";
-import recordStyles from "@rental-os/platform-admin/source/components/RecordDetailLayout.module.css";
+import recordStyles from "@rental-os/platform-admin/record-detail.module.css";
 import { useEffect, useRef, useState } from "react";
 import {
   bindCorporateCreditDraft,
@@ -2042,6 +2042,7 @@ function CorporateMembershipWorkspace({ scope }: { scope: string }) {
       {customerId && (
         <RecordDetailLayout
           title={selected?.corporateName ?? selected?.name ?? t("企业资料")}
+          brandName={host.brandName}
           onBack={() =>
             host.navigate(resolveCorePageLocation(host.pages, rentalCorporateMemberLocation()))
           }

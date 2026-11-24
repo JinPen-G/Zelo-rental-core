@@ -35,7 +35,7 @@ import { orderStatusTagColor } from "../orders/orderStatusSemantics";
 import type { UploadFile, UploadProps } from "antd";
 import type { ReactNode } from "react";
 import { RecordDetailLayout, RecordFacts } from "@rental-os/platform-admin/ui";
-import profileStyles from "@rental-os/platform-admin/source/components/RecordDetailLayout.module.css";
+import profileStyles from "@rental-os/platform-admin/record-detail.module.css";
 import { useEffect, useState } from "react";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { isTransientRefreshError } from "@rental-os/platform-admin/runtime";
@@ -1308,6 +1308,7 @@ export function CustomerProfileDetails({
           current && (
             <RecordDetailLayout
               title={current.profile.name || t("个人会员资料")}
+              brandName={host.brandName}
               onBack={onClose}
               actions={
                 <Button type="primary" disabled={!editable} onClick={onEdit}>

@@ -5,6 +5,7 @@ import { PlatformAuthGuard, platformHttpPolicy, type PlatformApplicationBindings
 import { matchableRequestPath } from "@rental-os/platform-server/request-path";
 import { createPlatformCoreHttpAccess, type CoreHostHttpApplication } from "@rental-os/platform-core-host";
 import type { RentalApplication } from "./application";
+import { rentalTenantSummaryProjection } from "./public-management-compatibility";
 
 export interface RentalPlatformRequest {
   method: string;
@@ -17,8 +18,17 @@ export function createRentalPlatformApplications(application: RentalApplication,
   legacyGuard: CanActivate;
   /** 宿主将实际挂载的公共 Core 管理/包管理政策组成同一准入；不能来自请求或 Core 清单。 */
   coreHttp?: RegisteredCoreHttpAccess;
+  /** 精确原SaaS创建入口，由同一初始化应用在原事务复验；不作为普通业务准入豁免。 */
+  tenantBootstrapHttp?: RegisteredCoreHttpAccess;
 }): PlatformApplicationBindings & { routesToPlatform(request: RentalPlatformRequest): boolean } {
-  const coreAccess = input.coreHttp ?? createPlatformCoreHttpAccess(input.core);
+  const managedCoreAccess = input.coreHttp ?? createPlatformCoreHttpAccess(input.core);
+  const bootstrap = input.tenantBootstrapHttp;
+  const coreAccess: RegisteredCoreHttpAccess = bootstrap ? {
+    registered: (method, path, audience) => bootstrap.registered(method, path, audience)
+      || managedCoreAccess.registered(method, path, audience),
+    authorize: (method, path) => bootstrap.registered(method, path, "operator")
+      ? bootstrap.authorize(method, path) : managedCoreAccess.authorize(method, path)
+  } : managedCoreAccess;
   const publicGuard = new PlatformAuthGuard({
     async resolveAccessContext(authorization, options) {
       const current = await application.auth.resolveAccessContext(authorization, {
@@ -50,6 +60,8 @@ export function createRentalPlatformApplications(application: RentalApplication,
     integrationStore: integrations.integrationStore, integrationBusiness: integrations.integrationBusiness,
     integrationRuntimeProviders: integrations.integrationRuntimeProviders, integrations: integrations.integrations,
     notifications: integrations.notifications, email: integrations.email, connectivity: integrations.connectivity,
-    files: integrations.files, payments: integrations.payments, officialCalendarSources: application.officialCalendarSources
+    files: integrations.files, payments: integrations.payments, officialCalendarSources: application.officialCalendarSources,
+    demoRequestRateLimit: application.client.rateLimit,
+    tenantSummaryProjection: rentalTenantSummaryProjection
   };
 }

@@ -256,9 +256,24 @@ export interface AssetStatusHistoryMetadata {
   operator?: string;
 }
 
+/** 原到期worker调用内的候选位置。期限、资金和执行收据仍由原Core核定。 */
+export interface RentalExpiredDraftOrderScan {
+  after?: { createdAt: Date; id: string };
+}
+
+/** 领取逾期/爽约worker调用内的位置，时间字段由对应原队列决定。 */
+export interface RentalPickupOrderScan {
+  after?: { at: Date; id: string };
+}
+
+export type RentalPickupOrderCandidate = Pick<RentalOrder,
+  "id" | "status" | "startAt" | "pickupOverdueAt" | "noShowNoticeAt" | "ruleSnapshot">;
+
 /** 原服务消费的事实端口；事务由宿主选择，租户/空间、库侧约束和恢复仍按正式业务核验。 */
 export interface RentalCoreFactStore<TTransaction extends RentalCoreFactTransaction = RentalCoreFactTransaction> {
   listOrders(tenantId: string): Promise<RentalOrder[]>;
+  /** 仅有界读取原领取逾期/爽约事实，规则期限与执行继续由Core核定。 */
+  listPickupOrderCandidates(tenantId: string, kind: "overdue" | "no_show", take: number, scan: RentalPickupOrderScan): Promise<RentalPickupOrderCandidate[]>;
   /** 读取订单承运里程碑类型；取消、改配等资源释放动作在同一事务内复核它。 */
   listCarrierShipmentEventTypes(tenantId: string, orderId: string, tx?: TTransaction): Promise<string[]>;
   /**
@@ -266,8 +281,8 @@ export interface RentalCoreFactStore<TTransaction extends RentalCoreFactTransact
    * 租户与空间范围与 `listOrders` 完全一致。
    */
   queryOrders(tenantId: string, query: RentalOrderListQuery & { skip?: number; take?: number }): Promise<{ items: RentalOrder[]; total: number; summary?: RentalOrderListSummary }>;
-  /** 找出当前空间中仍处于待确认、且至少一条软预占已过期的订单候选。 */
-  listExpiredDraftOrderIds(tenantId: string, expiredBefore: string, take?: number): Promise<string[]>;
+  /** 原软预占/无预占草稿候选；可选scan只安排有界读取，逐单到期与资金由Core核验。 */
+  listExpiredDraftOrderIds(tenantId: string, expiredBefore: string, take?: number, scan?: RentalExpiredDraftOrderScan): Promise<string[]>;
   findOrder(tenantId: string, orderId: string, tx?: TTransaction): Promise<RentalOrder | undefined>;
   readOrderFacts?(tenantId: string, workspaceId: string, orderId: string): Promise<RentalOrderReadFacts | undefined>;
   readOrderExplanationState?: RentalCoreFactRepository<TTransaction>['readOrderExplanationState'];
@@ -749,6 +764,37 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     return rows.map((row) => this.toDomainOrder(row));
   }
 
+  /** 按原业务时间/ID续读，不用调度位置替代原范围或通知事实。 */
+  async listPickupOrderCandidates(tenantId: string, kind: "overdue" | "no_show", take: number,
+    scan: RentalPickupOrderScan): Promise<RentalPickupOrderCandidate[]> {
+    const workspaceId = await this.contacts.resolveWorkspaceId(this.store, tenantId);
+    const noShow = kind === "no_show";
+    const candidates: Prisma.RentalOrderWhereInput = noShow
+      ? { status: "PICKUP_OVERDUE", pickupOverdueAt: { not: null }, noShowNoticeAt: { not: null } }
+      : { OR: [
+        { status: { in: ["RESERVED", "READY_FOR_PICKUP"] } },
+        { status: "PICKUP_OVERDUE", noShowNoticeAt: null }
+      ] };
+    const orderBy: Prisma.RentalOrderOrderByWithRelationInput[] = noShow
+      ? [{ pickupOverdueAt: "asc" }, { id: "asc" }]
+      : [{ startAt: "asc" }, { id: "asc" }];
+    const read = (after?: RentalPickupOrderScan["after"]) => {
+      const successor: Prisma.RentalOrderWhereInput = after ? (noShow
+        ? { OR: [{ pickupOverdueAt: { gt: after.at } }, { pickupOverdueAt: after.at, id: { gt: after.id } }] }
+        : { OR: [{ startAt: { gt: after.at } }, { startAt: after.at, id: { gt: after.id } }] }) : {};
+      return this.store.rentalOrder.findMany({
+        where: { tenantId, workspaceId, AND: [this.requestOrderVisibilityWhere(), candidates, successor] },
+        select: { id: true, status: true, startAt: true, pickupOverdueAt: true, noShowNoticeAt: true, ruleSnapshot: true },
+        orderBy, take: Math.min(Math.max(1, take), 200)
+      });
+    };
+    let rows = await read(scan.after);
+    if (!rows.length && scan.after) rows = await read();
+    return rows.map(row => ({ id: row.id, status: lower<RentalCoreOrderStatus>(row.status),
+      startAt: iso(row.startAt), pickupOverdueAt: optionalIso(row.pickupOverdueAt), noShowNoticeAt: optionalIso(row.noShowNoticeAt),
+      ruleSnapshot: row.ruleSnapshot as unknown as RentalRuleConfig }));
+  }
+
   /**
    * ORDER-LIST-01：筛选 + 计数 + 分页全部在 MySQL 里做。
    *
@@ -852,11 +898,43 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     return { items: rows.map((row) => this.toDomainOrder(row)), total, summary };
   }
 
-  async listExpiredDraftOrderIds(tenantId: string, expiredBefore: string, take = 50): Promise<string[]> {
+  async listExpiredDraftOrderIds(tenantId: string, expiredBefore: string, take = 50, scan?: RentalExpiredDraftOrderScan): Promise<string[]> {
     const workspaceId = await this.contacts.resolveWorkspaceId(this.store, tenantId);
     const cutoff = new Date(expiredBefore);
     const cap = Math.min(Math.max(1, take), 200);
-    // 1) 有软预占的草稿单：全部软预占都已过期。
+    if (scan) {
+      // 按原两类候选的并集先取有界窗口，未到期或资金待核的前排仍推进调度位置。
+      // 当前范围嵌入AND，避免续读条件覆盖原地点/本人范围中的AND。
+      const read = (after?: RentalExpiredDraftOrderScan["after"]) => this.store.rentalOrder.findMany({
+        where: {
+          tenantId, workspaceId, status: "DRAFT",
+          AND: [
+            this.requestOrderVisibilityWhere(),
+            { OR: [
+              { reservations: { some: { status: "SOFT", expiresAt: { lt: cutoff } } } },
+              { reservations: { none: {} } }
+            ] },
+            ...(after ? [{ OR: [
+              { createdAt: { gt: after.createdAt } },
+              { createdAt: after.createdAt, id: { gt: after.id } }
+            ] }] : [])
+          ]
+        },
+        select: { id: true, createdAt: true, ruleSnapshot: true, reservations: { select: { id: true }, take: 1 } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: cap
+      });
+      let rows = await read(scan.after);
+      if (!rows.length && scan.after) rows = await read();
+      const cutoffMs = cutoff.getTime();
+      const ids = rows.filter(row => row.reservations.length > 0
+        || row.createdAt.getTime() + effectiveUnpaidHoldRule(row.ruleSnapshot as unknown as RentalRuleConfig).unpaidHoldMinutes * 60_000 <= cutoffMs)
+        .map(row => row.id);
+      // 查询和快照判定都成功后才推进；短批次下轮回绕，尾空当轮回读起点。
+      const last = rows[rows.length - 1];
+      scan.after = rows.length === cap ? { createdAt: new Date(last.createdAt.getTime()), id: last.id } : undefined;
+      return ids;
+    }
+    // 1) 至少一条软预占已到期的草稿候选，全部到期由Core在订单锁内核验。
     const withSoftExpired = await this.store.rentalOrder.findMany({
       where: {
         tenantId,
