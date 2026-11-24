@@ -1,6 +1,6 @@
 # 本地归档组件接入记录
 
-日期：2026-10-27。来源：`D:\工作文件\uiarc-pro-archive\preview`。
+日期：2026-10-27。来源：`uiarc-pro-archive/preview`。
 
 ## 来源边界
 
@@ -26,4 +26,4 @@ AI chat 为归档作者独立完成的实现；Agent run 保留公开归档 CSS 
 
 - [AI chat](<docs/ai-chat.md>)
 - [Agent run](<docs/agent-run.md>)
-- [平台演示与能力说明](<../README.md>)
+- [Agent 工作台与 Copilot 接入](<../../README.md>)

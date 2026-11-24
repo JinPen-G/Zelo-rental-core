@@ -4,6 +4,14 @@
   "private": true,
   "license": "MIT",
   "description": "Rental业务Core的独立领域合同与运行时，原组合通过兼容出口消费",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JinPen-G/nativark-rental-core.git"
+  },
+  "homepage": "https://github.com/JinPen-G/nativark-rental-core#readme",
+  "bugs": {
+    "url": "https://github.com/JinPen-G/nativark-rental-core/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -4701,7 +4709,11 @@
     "@tanstack/react-table": "8.21.3",
     "@rental-os/shared": "0.1.0",
     "@rental-os/ai-native-admin": "0.1.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@animate-ui/react": "2.3.0",
+    "react-markdown": "10.1.0",
+    "ajv-formats": "2.1.1",
+    "@nestjs/config": "^3.3.0"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
@@ -4783,6 +4795,18 @@
       "optional": true
     },
     "typescript": {
+      "optional": true
+    },
+    "@animate-ui/react": {
+      "optional": true
+    },
+    "react-markdown": {
+      "optional": true
+    },
+    "ajv-formats": {
+      "optional": true
+    },
+    "@nestjs/config": {
       "optional": true
     }
   }
