@@ -7,6 +7,8 @@ Nativark 的首个开源业务 Core，提供租赁商品、库存、订单、履
 
 `@rental-os/rental-core` 是原租赁业务源码的独立归属。当前已迁入原核心聚合、报价/营销服务、配置与业务请求DTO、订单确认及商户委托、配货/办理锁及自动扫描、工作台/报表与到期作业、换货试算、检查准备/专用影像与不可变凭证、经营空间边界、合同、品类身份与发布/历史解析、营业日、计价、器材、能力执行/条件判定、恢复快照/历史回填、员工线下收款与归还计价、客户主档/账号/会员与企业客户资格/订单/财务投影及读取审计、原债权核定收据、原操作收据、配置及订单/资产/库存/检查/工单、报价/券/奖励/通知事实仓储、资金事实门禁、企业应收核销、服务容量、原换货批准、客户检查同意及批准执行、绑定规则/日历草稿、批准设置应用及品类草稿/发布/开通政策、采用准备与最终提交链，以及检查、换货、续租、优惠和资金规则。原共享包和 API 通过兼容出口消费同一实现。常规 Rental 标准包已包含原 Controller、数据/迁移、各端贡献和作业接点，由独立宿主显式选择；AI Native 另按可选组合装配。完整兼容与独立更新验证按实际支持范围继续收口。
 
+已发布的安装示例使用 Nativark 测试底座 `0.1.16` 与 Rental Core `0.1.12`，标准包为 `rental-0.1.12.tgz`。仓库阅读指南从下面的 `CORE_GUIDE.md` 进入，运行文件按指南中的路径在解包目录读取。源码开发按[固定支持源码](#源码开发工作区)准备。[底座发行](https://github.com/JinPen-G/Nativark/releases/tag/v0.1.16) · [Rental 发行](https://github.com/JinPen-G/nativark-rental-core/releases/tag/v0.1.12) · [仓库阅读指南](CORE_GUIDE.md)
+
 ## 阅读路线
 
 | 入口 | 职责与直接消费者 |
@@ -431,12 +433,14 @@ Core 使用底座的正式 API 和已声明能力扩展业务，底座与 Core �
 
 ### 源码开发工作区
 
-独立 Core 开发先用[源码工作区准备入口](<https://github.com/JinPen-G/Nativark/blob/17fcb2722971c602cfb84c2bd6c55d04c888f6cf/scripts/prepare-rental-workspace.cjs>)组合固定底座支持源码和 Core 自己的版本标签。Core 的配置与 npm 脚本以组合工作区为根，准备时将本仓库放入 `packages/rental-core`，各端薄宿主和原构建工具由所选底座支持提交提供。
+包含客户和员工小程序的源码开发使用支持提交 `357147d90249c5dd40b67e24824247d80107d33d` 与 Rental `v0.1.12` 的源码提交 `50ba3335592893a3b7a4d440ba85b764b2ca8e24`。准备入口的 `supportScripts` 从 `--commit` 指定的 Git 提交读取 `scripts/miniprogram-ai-runtime.cjs`，两端构建由此取得 `platform-contracts/ai-gateway` 和 `ai-task` 的正式打包接点。取得该固定支持源码后，按原锁文件与各端构建前置准备工作区。[固定支持源码](https://github.com/JinPen-G/Nativark/tree/357147d90249c5dd40b67e24824247d80107d33d)
 
-从发行说明取得兼容底座的完整 SHA，取得该固定提交与 Core 的 `v0.1.12` 标签。在底座支持源码的 Git 检出根目录，按其 `package-lock.json` 执行 `npm ci --ignore-scripts` 和 `npm run build -w @rental-os/core-contracts`，随后调用准备入口。`--repo` 与 `--core-repo` 分别指向两个 Git 根目录，`--core-commit` 为版本标签解析后的完整提交 SHA，输出使用新的 `.tgz` 路径。
+独立 Core 开发先用[源码工作区准备入口](<https://github.com/JinPen-G/Nativark/blob/357147d90249c5dd40b67e24824247d80107d33d/scripts/prepare-rental-workspace.cjs>)组合固定底座支持源码和 Core 自己的版本标签。Core 的配置与 npm 脚本以组合工作区为根，准备时将本仓库放入 `packages/rental-core`，各端薄宿主和原构建工具由所选底座支持提交提供。
+
+源码开发先取得上面指定的支持提交与 Core 的 `v0.1.12` 标签。在底座支持源码的 Git 检出根目录，按其 `package-lock.json` 执行 `npm ci --ignore-scripts` 和 `npm run build -w @rental-os/core-contracts`，随后调用准备入口。`--repo` 与 `--core-repo` 分别指向两个 Git 根目录，`--core-commit` 为版本标签解析后的完整提交 SHA，输出使用新的 `.tgz` 路径。
 
 ```text
-node scripts/prepare-rental-workspace.cjs --repo <固定底座Git目录> --repository https://github.com/JinPen-G/Nativark --commit <底座支持SHA> --core-repo <独立CoreGit目录> --core-commit <版本Tag的提交SHA> --out <新开发归档.tgz>
+node scripts/prepare-rental-workspace.cjs --repo <固定底座Git目录> --repository https://github.com/JinPen-G/Nativark --commit 357147d90249c5dd40b67e24824247d80107d33d --core-repo <独立CoreGit目录> --core-commit 50ba3335592893a3b7a4d440ba85b764b2ca8e24 --out <新开发归档.tgz>
 ```
 
 在新目录解包，执行 `npm ci`、`npm run check:types`，修改 `packages/rental-core` 后执行 `npm run check:core`。可选 AI 开发组合在准备时显式加 `--ai`；Client 生成、构建、迁移和启动按 [Rental 宿主](<https://github.com/JinPen-G/Nativark/blob/17fcb2722971c602cfb84c2bd6c55d04c888f6cf/apps/rental-api/README.md>)办理。包内 `development.workspace.json` 记录两个来源和文件摘要，开发组合不依赖维护者私有文档、旧生成物或聊天记忆。
