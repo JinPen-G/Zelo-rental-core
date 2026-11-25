@@ -1,5 +1,7 @@
 # Rental Core
 
+> 0.1.13 补齐独立安装所需的六张换货工作流表。已有部署须先应用追加迁移，再启动新版本；原授权与 0.1.0 绑定保留。升级后不能直接退回不识别新迁移的 0.1.12。详见[数据升级说明](prisma/README.md#迁移与历史)。
+
 Nativark 的首个开源业务 Core，提供租赁商品、库存、订单、履约与结算。公共账号、租户、权限和后台外壳由 Nativark 提供。
 
 先取得兼容的 Nativark 底座，按[五步接入手册](https://github.com/JinPen-G/Nativark/blob/b2fc4fef6e7968ecd49e4308247c1faa749474e8/packages/core-contracts/README.md#五步快速接入)接入；固定发布包及同版本 CORE_GUIDE 从[版本发行](https://github.com/JinPen-G/nativark-rental-core/releases)取得。安装、部署注册、租户授权与成员分配分别办理。Core 与底座可单独更新。
