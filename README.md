@@ -17,6 +17,8 @@ Nativark 的首个开源业务 Core，提供租赁商品、库存、订单、履
 
 Base `0.1.17` 与 Rental `0.1.13` 的已发布宿主包属于该固定组合。使用 0.1.14 时按新的 Core 包和部署锁准备宿主。[Rental 0.1.13 历史发行](https://github.com/JinPen-G/nativark-rental-core/releases/tag/v0.1.13)
 
+Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作、回答和模型结果的只读核对入口。登记须来自实际 Controller/handler 的封闭集合，仅限已审定的 POST 缓冲或审计读取；请求字段不能选择此模式。入口绑定原请求正文摘要，原读取器继续核对 Task/Run、原操作键、对象归属和当前权限，返回前复验成员分配、业务绑定及物理可用性。新任务、批准、输入提交和模型派发仍拒绝；缺省不登记时不开放停用后的读取。[请求准入](src/application-access.ts)
+
 ## 阅读路线
 
 | 入口 | 职责与直接消费者 |
