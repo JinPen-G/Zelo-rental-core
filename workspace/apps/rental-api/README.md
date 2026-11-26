@@ -2,7 +2,17 @@
 
 这是 Rental 的普通业务宿主，使用同一所选 Prisma Client 连接 Zelo 公共能力与 Rental 业务。授权、订单、库存、原收据和后台所用接口仍走原处理器。宿主不启用 AI/MCP；兼容的 AI 数据读取代码仅用于明确的准备和检查，不能据此认定已装配 AI。
 
-先按照[双仓准备步骤](https://github.com/JinPen-G/Zelo-rental-core#源码开发工作区)从固定版本准备 `host` 或 `full`，在解包后的组合根目录安装锁定依赖并执行 `npm run check:types`。构建前按[原宿主开发说明](https://github.com/JinPen-G/Zelo/blob/ee15ae5f1441836977ea1085fdce17f3e011efb3/apps/rental-api/README.md)分别准备公共与所选 Rental Client，明确设置 `RENTAL_PRISMA_CLIENT` 后执行 `npm run build`；不要使用默认 Prisma Client。构建无需启动服务。部署和运行 `npm run start -w @rental-os/rental-api` 还须准备固定 Core 包、部署锁、数据库和原迁移账。
+先按照[双仓准备步骤](https://github.com/JinPen-G/Zelo-rental-core#源码开发工作区)从固定版本准备 `host` 或 `full`，在解包后的组合根目录安装锁定依赖并执行 `npm run check:types`。构建前按[宿主开发说明](https://github.com/JinPen-G/Zelo/blob/6c41063f8be4d3ac02d4857c87ec2712a5aa6755/apps/rental-api/README.md)分别准备公共与所选 Rental Client，明确设置 `RENTAL_PRISMA_CLIENT` 后执行 `npm run build`；不要使用默认 Prisma Client。构建无需启动服务。部署和运行 `npm run start -w @rental-os/rental-api` 还须准备固定 Core 包、部署锁、数据库和原迁移账。
+
+## 固定双仓普通开发运行包
+
+从已按锁准备编译依赖的 Zelo Git 根目录运行以下命令。两个 SHA 都使用完整提交；归档路径须为尚不存在的绝对路径。`6c41063f8be4d3ac02d4857c87ec2712a5aa6755` 是已包含该工具的 Zelo 示例提交。
+
+```sh
+node scripts/package-rental-host.cjs --development --repo <Zelo目录> --repository https://github.com/JinPen-G/Nativark --commit <Zelo完整SHA> --core-repo <Rental目录> --core-commit <Rental完整SHA> --output <新归档绝对路径.tgz>
+```
+
+解包后按归档 README 安装原锁依赖、生成两份所选 Client、验证运行包和迁移。只对为本次启动准备的空 MySQL 库应用归档内 `apps/rental-api/prisma-deployment` 的迁移；该开发入口不接管旧库。设置该库的 `DATABASE_URL` 与本机 `AUTH_TOKEN_SECRET`，按归档步骤初始化。`RENTAL_AI_MODE=disabled`、`RENTAL_DEPLOYMENT_LOCK` 指向随包锁的绝对路径，启动 `node apps/rental-api/dist/main.js` 后检查 `/api/health`。API 和后台须使用同一个包与锁。开发归档不满足正式版本 Tag 或服务器更新资格。
 
 - [启动](src/main.ts) → [宿主装配](src/app.module.ts) → [同实例应用](src/assembly.ts)与[所选数据访问](src/database.ts)
 - [实际 HTTP 策略](src/http-policy.ts)、[兼容路径和 OpenAPI](src/openapi.ts)

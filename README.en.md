@@ -145,6 +145,8 @@ In the `full` profile, build the four clients with `npm run build:tenant-website
 
 [Independent development CI](.github/workflows/development-ci.yml) uses the Zelo commit pinned in the workflow to compile the ordinary API, admin UI, and four clients for the current Rental commit. Its report records both source revisions, the dependency lock, and compiled digests. It is development evidence; a release still needs pinned versions, a deployment lock, and runtime artifacts.
 
+To run the ordinary API locally, use the pinned Zelo `--development` tool to prepare the [runtime bundle](workspace/apps/rental-api/README.md#固定双仓普通开发运行包). Initialize and start it against a dedicated new MySQL database. It cannot upgrade an existing installation or pass the production release gate. Prepare the admin UI and clients from the same pair of source commits.
+
 ### Packaging a Standard Core Release
 
 Build a portable `.tgz` Core artifact (`core.manifest.json`, compiled entrypoints, portable OpenAPI, `CORE_GUIDE.md`, `README.md`, `LICENSE`, and raw SQL migrations) and optional Linux Docker host bundle:
