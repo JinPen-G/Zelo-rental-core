@@ -17,6 +17,12 @@
       ]
     },
     {
+      "source": "workspace/apps/rental-api",
+      "target": "apps/rental-api",
+      "roles": ["host"],
+      "required": ["package.json", "README.md", "tsconfig.json", "src/main.ts", "src/app.module.ts", "src/assembly.ts", "src/database.ts", "src/openapi.ts", "src/package.ts", "src/prepare-deployment.ts"]
+    },
+    {
       "source": "workspace/apps/rental-admin",
       "target": "apps/rental-admin",
       "roles": ["host"],

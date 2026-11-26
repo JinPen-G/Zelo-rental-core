@@ -1,0 +1,94 @@
+{
+  "name": "@rental-os/rental-api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "公共底座与 Rental Core 的独立普通业务宿主",
+  "exports": {
+    "./package": {
+      "types": "./dist/package.d.ts",
+      "default": "./dist/package.js"
+    },
+    "./http-policy": {
+      "types": "./dist/http-policy.d.ts",
+      "default": "./dist/http-policy.js"
+    },
+    "./openapi": {
+      "types": "./dist/openapi.d.ts",
+      "default": "./dist/openapi.js"
+    },
+    "./assembly": {
+      "types": "./dist/assembly.d.ts",
+      "default": "./dist/assembly.js"
+    },
+    "./app-module": {
+      "types": "./dist/app.module.d.ts",
+      "default": "./dist/app.module.js"
+    },
+    "./additional-cores": {
+      "types": "./dist/additional-cores.d.ts",
+      "default": "./dist/additional-cores.js"
+    },
+    "./bootstrap": {
+      "types": "./dist/bootstrap.d.ts",
+      "default": "./dist/bootstrap.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "package": [
+        "dist/package.d.ts"
+      ],
+      "http-policy": [
+        "dist/http-policy.d.ts"
+      ],
+      "openapi": [
+        "dist/openapi.d.ts"
+      ],
+      "assembly": [
+        "dist/assembly.d.ts"
+      ],
+      "app-module": [
+        "dist/app.module.d.ts"
+      ],
+      "additional-cores": [
+        "dist/additional-cores.d.ts"
+      ],
+      "bootstrap": [
+        "dist/bootstrap.d.ts"
+      ]
+    }
+  },
+  "scripts": {
+    "prebuild": "npm run build -w @rental-os/platform-api && npm run build -w @rental-os/rental-core && npm run build -w @rental-os/ai-native-data",
+    "build": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.json --mode rental",
+    "prelint": "npm run prebuild",
+    "lint": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.json --mode rental --noEmit",
+    "start": "node dist/main.js",
+    "prepare:deployment": "node dist/prepare-deployment.js"
+  },
+  "dependencies": {
+    "@rental-os/platform-api": "0.1.0",
+    "@rental-os/platform-contracts": "0.1.0",
+    "@rental-os/platform-server": "0.1.0",
+    "@rental-os/platform-core-host": "0.1.0",
+    "@rental-os/core-contracts": "0.1.0",
+    "@rental-os/core-host": "0.1.0",
+    "@rental-os/rental-core": "0.1.14",
+    "@rental-os/shared": "0.1.0",
+    "@rental-os/ai-native-data": "0.1.1",
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/platform-express": "^10.4.15",
+    "@prisma/client": "^5.22.0",
+    "class-validator": "^0.14.1",
+    "class-transformer": "^0.5.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "5.9.3"
+  }
+}
