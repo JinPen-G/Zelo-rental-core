@@ -19,7 +19,15 @@ Base `0.1.17` 与 Rental `0.1.13` 的已发布宿主包属于该固定组合。�
 
 Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作、回答和模型结果的只读核对入口。登记须来自实际 Controller/handler 的封闭集合，仅限已审定的 POST 缓冲或审计读取；请求字段不能选择此模式。入口绑定原请求正文摘要，原读取器继续核对 Task/Run、原操作键、对象归属和当前权限，返回前复验成员分配、业务绑定及物理可用性。新任务、批准、输入提交和模型派发仍拒绝；缺省不登记时不开放停用后的读取。[请求准入](src/application-access.ts)
 
+## 当前开发源码与已发行版本
+
+本分支补回框架固定提交 `6587e178ea36a50195e7f61e13bb5a7387bbd95b` 中的领域修复，同时保留退出撤销与停用 Core 原收据读取。这里的开发源码尚未作为新版本发行；上方 `0.1.14`、根发现清单、`CORE_GUIDE.md`、既有 Tag/资产及其来源仍表示原发行，不能把当前源码重新打包冒充原 `0.1.14`。新版本须重新核定版本、固定源码和宿主组合后另行发布。
+
+源码变化包括新报价配置组合的同事务核验、客户建单来源参加者、库存与资产写入前重读、冷实例配置与历史订单/工单读取、日历原键比较、渠道权限投影及官网目录结构门禁。原页面布局、样式、Token及业务迁移不随本次补齐改动。
+
 ## 阅读路线
+
+新报价的[配置组合依据](src/quote-configuration.ts)由报价服务捕获，在原事实事务内复核经营设置、商品与履约配置、价格计划、优惠、服务、日历、规则及不可变价格版本。[仓储组合](src/application-repositories.ts)通过 `mysql-business-facts` 正式出口的 `createRentalQuoteConfigurationReader` 复用同一配置仓储和调用方事务；自行装配事实仓储的宿主也须提供此读口。缺依据或读口时新报价不可保存，已有报价和原操作收据沿原历史事实读取，不重新采用当前配置。
 
 | 入口 | 职责与直接消费者 |
 | --- | --- |
@@ -65,7 +73,7 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 | [企业请求DTO](<src/http-enterprise-request.dto.ts>)、[订单查询DTO](<src/http-enterprise-order-query.dto.ts>)、[客户请求DTO](<src/http-client-request.dto.ts>) | 原企业申请/成员、客户注册/报价/履约及文件完成校验单源；续租、换货、委托与交接DTO各从同名HTTP子出口使用，输入校验不授予执行权 |
 | [本人地址与交付快照](<src/mysql-client-delivery-address.ts>)、[本人注销](<src/mysql-client-account-closure.ts>)、[配送区域](<src/client-delivery-service-area.ts>)、[宿主参加者](<src/client-lifecycle-ports.ts>) | 客户地址按租户与本人校验，报价/订单快照保持原值；注销沿原短信证明、会员/账号状态及会话撤销顺序。原客户Controller、报价及AI场景消费同一实现 |
 | [浏览器会话与页面装配](<admin/browser/README.md>)、[认证合同](<src/auth-contracts.ts>) | 一个宿主创建一份真实会话、刷新运输和查询缓存，向十二组页面供给当前服务端身份；旧后台消费同一实现，登录、空间切换及本机存储命名空间保持 |
-| [清单与页面权限](<src/permissions.ts>)、[清单工厂](<src/manifest.ts>) | `/permissions` 同源声明原权限及页面 OR 准入，`/manifest` 生成固定来源的发行清单；标准码只投影当前原租户/空间权限，声明不授予Core，原HTTP码保持 |
+| [清单与页面权限](<src/permissions.ts>)、[清单工厂](<src/manifest.ts>) | `/permissions` 同源声明原权限及页面 OR 准入，`/manifest` 生成固定来源的发行清单。客户端渠道沿原 Auth 选择有效空间身份；无有效空间身份时只核租户原集成管理权限，其他空间页面不回退。标准码不授予 Core，租户授权、成员分配与原 HTTP 权限仍须分别通过 |
 | [原角色目录参加者](<src/public-management-compatibility.ts>)、[公共登记事务](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/packages/platform-core-host/src/platform-core-permissions.ts>) | `/public-management-compatibility` 导出 `createRentalPermissionRegistrationParticipant()`，受控宿主将其传入同一 Serializable 登记事务；只选所用清单对应的原业务码，包含经营空间品类版本采用，保留名称、说明、按钮类型、历史模块及权限 ID，角色编辑继续保存原码。采用仍须原预览开关、业务权限与空间范围 |
 | [存量授权准备](<src/legacy-access-preparation.ts>) | `/legacy-access-preparation` 在同库只读快照中对照原身份、空间权限与现有 Rental 授权/绑定，给出缺失候选和差异；实际变更仍需原管理事务 |
 | [存量单项接管](<src/legacy-access-adoption.ts>) | `/legacy-access-adoption` 将确认的单项候选交回原管理服务，在同一事务复验来源、当前身份和修订，沿原操作键保存授权/分配/绑定及审计 |
@@ -331,7 +339,7 @@ Core绑定和空间就绪检查可通过 `readReadinessConfiguration` 在同一�
 
 缓存观察的 `Source` 沿 `rentalNotificationLog.findFirst` 的租户、空间、原行 ID 和原键读取，删除账由原 `aiDataErasure.findUnique` 按稳定收据 ID 查询。这两个窄接点兼容独立组合与原 API 的生成客户端。涉及原通知草稿且缺少维护删除账时明确不可用。[原行合同](<src/notification-log-cache.ts>) · [删除账接点](<src/notification-draft.ts>)
 
-订单确认从 `@rental-os/rental-core/mysql-order-confirmation` 导入，供给同一核心、业务、事实、幂等、Hook、客户/会员、服务容量和企业政策实例。新订单在原ReadCommitted事务重查客户/资格、责任主体、地点/经营者、库存和企业政策，再一起提交订单、报价消费、券、容量、原幂等及批准；批准事务保留原等待与执行上限。返回的 `replayed` 供调用方判断是否发送首次下单通知。原键恢复只读取原收据和批准消费关联，失应答不换键重做。[确认Nest接线](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/apps/api/src/modules/rental-core/rental-order-confirmation.service.ts>) · [确认范围验证](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/tests/rental-order-quote-scope.test.cjs>) · [原批准事务验证](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/tests/ai-native-fork-execution-approved-core.test.cjs>)
+订单确认从 `@rental-os/rental-core/mysql-order-confirmation` 导入，供给同一核心、业务、事实、幂等、Hook、客户/会员、服务容量和企业政策实例。新订单在原ReadCommitted事务重查客户/资格、责任主体、地点/经营者、库存和企业政策，再一起提交订单、报价消费、券、容量、原幂等及批准；批准事务保留原等待与执行上限。原客户预约来源可向 `createOrder` 传入服务器侧 `RentalOrderCreationParticipant`，ClientApi 将其传入同一次订单事务；参加者在首个 Tenant 锁前取得来源会话权威，并在订单、报价及幂等写入后复核原材料与自然期限。此端口不接受 HTTP 内容或提供批准，原普通及企业批准调用保持原事务顺序。返回的 `replayed` 供调用方判断是否发送首次下单通知。原键恢复只读取原收据和批准消费关联，失应答不换键重做。[确认Nest接线](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/apps/api/src/modules/rental-core/rental-order-confirmation.service.ts>) · [确认范围验证](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/tests/rental-order-quote-scope.test.cjs>) · [原批准事务验证](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/tests/ai-native-fork-execution-approved-core.test.cjs>)
 
 商户委托端口把原私有企业来源所有者与同一订单确认实例组合，宿主用真实事务类型实例化 `RentalMerchantDelegatedOrderPort<TTransaction>`。当前营运身份、原D/K、请求指纹和参加者回调在同一模块封存；历史读取和已消费委托不进入新提交准备。企业政策使用原Core证明对象，JSON投影只用于参加者的数据传递。原API兼容入口绑定Prisma事务类型并再导出同一构造器和校验函数。[原委托接线](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/apps/api/src/modules/rental-core/rental-merchant-delegated-order.authority.ts>) · [企业直接消费者](<https://github.com/JinPen-G/Nativark/blob/68303f7abedc8c70540662f70e268eacb132e2a1/apps/api/src/modules/enterprise/enterprise-merchant-order-submission.service.ts>)
 

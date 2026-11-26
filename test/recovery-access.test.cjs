@@ -7,6 +7,7 @@ const { createRentalApplicationAccess, createRentalRecoveryAuthority } = require
 const { createRentalPublicApplicationAccess, enterRentalPublicTarget } = require("../dist/application-public-access.js");
 const { createMysqlCoreDeploymentAdmission } = require("@rental-os/core-host/mysql-deployment-admission");
 const { RentalAuthService } = require("../dist/auth-service.js");
+const { createRentalMemberAuthority } = require("../dist/application-member-authority.js");
 const { ClientAuthService } = require("../dist/mysql-client-auth.js");
 const { createHmac } = require("node:crypto");
 const { RentalWorkspacePrincipalRepository } = require("../dist/mysql-workspace-principal.js");
@@ -162,7 +163,9 @@ function fixture(audience = "operator", corporateParticipants = false, originalP
   const principal = new RentalWorkspacePrincipalRepository(db, { findUserById: async () => copy(state.user),
     projectWorkspace: row => row, projectRoleScope: scope => scope.toLowerCase(), projectDataScope: scope => scope.toLowerCase() });
   const auth = new RentalAuthService({ lockWorkspaceSessionUser: principal.lockWorkspaceSessionUser.bind(principal),
-    readWorkspaceSessionUser: principal.readWorkspaceSessionUser.bind(principal) }, { get: () => undefined });
+    readWorkspaceSessionUser: principal.readWorkspaceSessionUser.bind(principal),
+    lockMemberSessionUser: principal.lockMemberSessionUser.bind(principal),
+    readMemberSessionUser: principal.readMemberSessionUser.bind(principal) }, { get: () => undefined });
   // Only initial signed transport is a fixture. Current request leases below run
   // the real Auth and original principal/role/session implementation.
   auth.resolveAccessContext = async (_token, { audience }) => ({ user: copy(state.user), tenantUser: copy(state.user),
@@ -188,6 +191,8 @@ function fixture(audience = "operator", corporateParticipants = false, originalP
     exchanges: new EnterpriseExchangeApprovalService(db, commands, {}, enterpriseAccess, {}, {}, {}, {}),
     management: new EnterpriseManagementRequestService(db, commands, enterpriseAccess) };
   const access = createRentalApplicationAccess({ database: db, authorization,
+    // Normal requests use the same real Auth/principal lease as the production assembly.
+    memberAuthority: createRentalMemberAuthority({ auth, authorization }),
     recoveryAuthority: createRentalRecoveryAuthority({ auth, clientAuth,
       ...(originalParticipants ? { originalHistory: originals } : {}),
       ...(corporateParticipants ? { corporateHistory: { access: enterpriseAccess, orders: enterpriseOrders } } : {}) }),
