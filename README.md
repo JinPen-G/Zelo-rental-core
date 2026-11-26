@@ -1,10 +1,5 @@
 # Zelo Rental Core
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JinPen-G/Zelo/main/assets/01_Logo/zelo-logo-bw/zelo-logo-white.svg">
-  <img src="https://raw.githubusercontent.com/JinPen-G/Zelo/main/assets/01_Logo/zelo-logo-bw/zelo-logo-black.svg" alt="Zelo" width="220">
-</picture>
-
 **开源多租户 SaaS 底座 [Zelo](https://github.com/JinPen-G/Zelo) 的首个官方生产级业务 Core —— 覆盖多品类租赁全链路的独立业务包与架构参考实现。**
 
 *The first official production business Core for [Zelo](https://github.com/JinPen-G/Zelo) — a full-featured, multi-category rental SaaS package and vertical Core reference implementation.*
