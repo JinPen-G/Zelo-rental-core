@@ -137,9 +137,11 @@ Use two fixed Git commits and the framework checkout's pinned Node dependencies.
 node tools/prepare-workspace.cjs --framework-repo "<base-checkout>" --repository https://github.com/JinPen-G/Nativark --framework-commit "<full-base-sha>" --core-commit "<full-rental-sha>" --profile domain --out "<new-archive-path>"
 ```
 
-Use the full 40-character commit SHAs. Development also supports commits without a tag. Portable releases require the corresponding version tag and are prepared separately. [The source layout](rental.source.json) currently provides the `domain` profile. The `host` and `full` profiles require the standalone host and client sources, respectively. Use `--ai` for the independent business AI adapter. Add `--mcp` to select the MCP adapter as well.
+Use the full 40-character commit SHAs. Development also supports commits without a tag. Portable releases require the corresponding version tag and are prepared separately. [The source layout](rental.source.json) includes the domain, [admin host](workspace/apps/rental-admin), [website](workspace/apps/tenant-website), [enterprise portal](workspace/apps/enterprise-portal), and [customer](workspace/apps/miniprogram) and [staff](workspace/apps/staff-miniprogram) mini-program sources. Their original pages and build entries are intended for the prepared combined workspace, where application-document links resolve. The API host and its shared integration points are still pending, so `host` and `full` cannot yet be prepared. `--ai` and `--mcp` additionally require their independent business adapters; existing client integrations must be verified against those final interfaces.
 
 After unpacking, run `npm ci` and `npm run check:types`. Run `npm run check:core` after editing the Core. The archive's `development.workspace.json` records both commits, file origins, generated entries, and SHA-256 digests.
+
+Once the `full` host and dependencies are available, build the four clients with `npm run build:tenant-website`, `npm run build:enterprise-portal`, `npm run build:miniprogram`, and `npm run build:staff-miniprogram`. The website and portal also expose `dev:tenant-website` and `dev:enterprise-portal`. Their original build prerequisites and deployment-lock checks still apply.
 
 ### Packaging a Standard Core Release
 

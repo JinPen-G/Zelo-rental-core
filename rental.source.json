@@ -15,6 +15,36 @@
         "src/prisma-public-relations.ts",
         "prisma/schema.prisma"
       ]
+    },
+    {
+      "source": "workspace/apps/rental-admin",
+      "target": "apps/rental-admin",
+      "roles": ["host"],
+      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/RentalShell.tsx", "src/navigation.ts"]
+    },
+    {
+      "source": "workspace/apps/tenant-website",
+      "target": "apps/tenant-website",
+      "roles": ["client"],
+      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/App.tsx", "src/styles.css", "src/website-host.ts", "public/media/photo-sources.json"]
+    },
+    {
+      "source": "workspace/apps/enterprise-portal",
+      "target": "apps/enterprise-portal",
+      "roles": ["client"],
+      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/App.tsx", "src/styles.css"]
+    },
+    {
+      "source": "workspace/apps/miniprogram",
+      "target": "apps/miniprogram",
+      "roles": ["client"],
+      "required": ["package.json", "project.config.json", "tsconfig.json", "scripts/build.cjs", "src/app.json", "src/app.ts", "src/app.wxss", "src/config/public.ts"]
+    },
+    {
+      "source": "workspace/apps/staff-miniprogram",
+      "target": "apps/staff-miniprogram",
+      "roles": ["client"],
+      "required": ["package.json", "project.config.json", "tsconfig.json", "scripts/build.cjs", "src/app.json", "src/app.ts", "src/app.wxss", "src/config/public.ts"]
     }
   ]
 }

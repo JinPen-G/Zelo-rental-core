@@ -151,9 +151,11 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 开发快照可使用未打 Tag 的已提交源码。正式标准包继续通过底座的 `scripts/verify-rental-distribution.cjs --portable` 核对版本 Tag、发行来源、实际构建字节与归档摘要。旧 Tag 的根目录布局仍可读取，运行部署继续使用正式部署锁。
 
-独立源码路径由 [rental.source.json](rental.source.json) 声明。目前 `domain` 提供领域源码。迁入独立 API 和后台后可使用 `host`，迁入官网、企业门户及客户和员工小程序后可使用 `full`。`--ai` 需要独立仓交付业务 AI 适配。再加 `--mcp` 时还需 MCP 适配。每项映射填写仓库内的 `source`、组合中的 `target`、职责 `roles` 以及必需文件 `required`。公共框架和工具来自固定底座。声明缺件会中止准备，根私有 `docs/`、环境文件、缓存、生成物和依赖目录不随包交付。
+独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 提供领域源码；[后台宿主](workspace/apps/rental-admin)及[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)源码也已列入清单。它们沿固定底座版本的原页面与构建入口保留，需在准备后的组合工作区内使用；各应用文档中的相对路径以该组合目录为准。API 宿主及其共享接点尚待交付，故 `host` 和 `full` 暂不可用。`--ai` 需要独立仓交付业务 AI 适配，再加 `--mcp` 时还需 MCP 适配；已有页面中的相关入口仍需按最终正式接口组合验证。公共框架和工具来自固定底座。声明缺件会中止准备，根私有 `docs/`、环境文件、缓存、生成物和依赖目录不随包交付。
 
 归档内的 `development.workspace.json` 记录两仓完整提交、源码来源、生成文件标识和所有条目的 SHA-256，以及组合工作区列表。可以从两仓各自的新固定提交重新准备。解包后执行 `npm ci` 和 `npm run check:types`，修改 Core 后可执行 `npm run check:core`。若独立仓声明自己的 npm v3 锁，重叠依赖冲突需要先在源码锁中解决。
+
+待 `full` 组合的宿主与依赖交齐后，四端分别使用 `npm run build:tenant-website`、`npm run build:enterprise-portal`、`npm run build:miniprogram` 和 `npm run build:staff-miniprogram`。官网和企业门户还可分别用 `npm run dev:tenant-website`、`npm run dev:enterprise-portal` 运行开发入口；这些命令保留各端原有的构建前置和部署锁校验。
 
 ### 标准包发行
 
