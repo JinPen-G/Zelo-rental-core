@@ -6,3 +6,5 @@ export { createOriginalMcpCoreAccess } from "./original-mcp-core-access";
 export * from "./workspace-management";
 export { OperationLogService as OriginalMcpOperationLogService } from "./operation-log.service";
 export type { OriginalOAuthAuditRecord, OriginalMcpReadGoalAuditRecord, OriginalMcpRequestSaveAuditRecord, OriginalMcpCatalogGoalAdoptionAuditRecord } from "./operation-log.service";
+export * from "./selected-mcp-host";
+export { readFreshRentalMcpData } from "./selected-mcp-data";
