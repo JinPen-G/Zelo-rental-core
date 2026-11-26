@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  ZELO_COMMIT: 439c4b78f35859506645aa5df21ad513def01b1c
+  ZELO_COMMIT: af0381d4ed992d6ddf1e702f5dfd46a0af51536b
 
 jobs:
   development-build:
@@ -70,3 +70,48 @@ jobs:
           path: output/.tmp/rental-ci/development-build.json
           if-no-files-found: error
           retention-days: 7
+      - name: 从同一双仓提交生成 v2 新装包
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/output/.tmp/rental-ci"
+          mkdir "$task/fresh"
+          export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
+          export AI_OFFLINE_WRITE_ROOT="$task/fresh" AI_OFFLINE_AUDIT="$task/fresh/audit.log"
+          export TEMP="$task/fresh" TMP="$task/fresh" TMPDIR="$task/fresh" XDG_CACHE_HOME="$task/fresh"
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
+            "$task/zelo/scripts/package-rental-host.cjs" --development --fresh-ai \
+            --repo "$task/zelo" --repository https://github.com/JinPen-G/Nativark --commit "$ZELO_COMMIT" \
+            --core-repo "$GITHUB_WORKSPACE" --core-commit "$GITHUB_SHA" --output "$task/fresh/host.tgz"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          mkdir "$task/fresh/host"
+          tar -xzf "$task/fresh/host.tgz" -C "$task/fresh/host"
+          node - "$task/fresh/host" <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.argv[2];
+          const read = name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
+          const receipt = read('rental-host.context.json');
+          assert.equal(receipt.installation, 'fresh-ai');
+          assert.equal(receipt.sourceMode, 'development');
+          assert.equal(receipt.releaseApproved, false);
+          assert.equal(receipt.serverUpdateEligible, false);
+          const layout = read('development.workspace.json');
+          assert.equal(layout.platform.source.commit, process.env.ZELO_COMMIT);
+          assert.equal(layout.core.source.commit, process.env.GITHUB_SHA);
+          const deployment = path.join(root, 'apps/rental-api/prisma-deployment');
+          const lock = read('apps/rental-api/prisma-deployment/core.deployment.lock.json');
+          assert.equal(lock.lockVersion, 2);
+          assert.deepEqual(lock.base.dataCapabilities.map(entry => entry.id), ['ai-native']);
+          assert.equal(lock.postCapability.length, 1);
+          const names = fs.readdirSync(path.join(deployment, 'migrations'), { withFileTypes: true })
+            .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+          assert.equal(names.length, 18);
+          assert.equal(names.at(-1), 'post-capability.rental.rental.20261127000000-ai-extension');
+          assert.ok(fs.statSync(path.join(root, 'apps/rental-api/dist-ai/ai-fresh-main.js')).size > 0);
+          assert.ok(fs.statSync(path.join(root, 'apps/rental-api/dist-ai/ai-fresh-initialize.js')).size > 0);
+          assert.ok(!fs.existsSync(path.join(root, 'packages/rental-mcp-host')));
+          console.log('固定双仓 v2 开发包：18 份原迁移、完整 v2 锁及实际启动入口回读通过；不可发布。');
+          NODE
