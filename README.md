@@ -157,6 +157,8 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 在 `full` 组合中，四端分别使用 `npm run build:tenant-website`、`npm run build:enterprise-portal`、`npm run build:miniprogram` 和 `npm run build:staff-miniprogram`。官网和企业门户的开发入口为 `npm run dev:tenant-website`、`npm run dev:enterprise-portal`。各端仍须满足原构建前置和部署锁校验。
 
+[独立开发 CI](.github/workflows/development-ci.yml) 使用工作流中固定的 Zelo 提交，编译本次 Rental 提交的普通 API、后台和四端。报告记录两仓来源、依赖锁和编译产物摘要，只用于开发验证；正式发行仍须按下节准备固定版本、部署锁和运行产物。
+
 ### 标准包发行
 
 打包独立可分发的标准 Core `.tgz` 资产（含 `core.manifest.json`、编译入口、可移植 OpenAPI、`CORE_GUIDE.md`、`README.md`、`LICENSE` 与原始 SQL 迁移）及生成 `SHA256SUMS`：

@@ -1,0 +1,72 @@
+name: Rental 独立开发构建
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ZELO_COMMIT: 8b32ff653c390390f70ea7fb12b84f6aed04dd74
+
+jobs:
+  development-build:
+    if: github.repository == 'JinPen-G/Zelo-rental-core'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: 检出待核对的 Rental 提交
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 检出固定 Zelo 工具和依赖锁
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: JinPen-G/Zelo
+          ref: ${{ env.ZELO_COMMIT }}
+          path: output/.tmp/rental-ci/zelo
+          persist-credentials: false
+      - name: 固定 Node 工具链
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.13.0
+      - name: 安装固定编译依赖
+        working-directory: output/.tmp/rental-ci/zelo
+        shell: bash
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$GITHUB_WORKSPACE/output/.tmp/rental-ci/npm-cache"
+      - name: 从固定双仓源码重建普通开发组合
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/output/.tmp/rental-ci"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C "$task/zelo" rev-parse HEAD)" = "$ZELO_COMMIT"
+          mkdir -p "$task/temporary"
+          export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
+          export AI_OFFLINE_WRITE_ROOT="$task/temporary" AI_OFFLINE_AUDIT="$task/temporary/audit.log"
+          export TEMP="$task/temporary" TMP="$task/temporary" TMPDIR="$task/temporary" XDG_CACHE_HOME="$task/temporary"
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
+            "$task/zelo/scripts/ops/release-rental-development.cjs" \
+            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" full | tee "$task/build.log"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          tail -n 1 "$task/build.log" > "$task/development-build.json"
+          node -e '
+            const report = require(process.argv[1]);
+            if (report.format !== "rental-development-build-1" || report.mode !== "development" || report.profile !== "full" ||
+                report.platform.commit !== process.env.ZELO_COMMIT || report.rental.commit !== process.env.GITHUB_SHA ||
+                report.deployment !== "not-prepared" || report.releaseApproved !== false || report.serverUpdateEligible !== false) {
+              throw new Error("双仓开发报告身份不一致");
+            }
+          ' "$task/development-build.json"
+      - name: 保留开发构建证明
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rental-development-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/.tmp/rental-ci/development-build.json
+          if-no-files-found: error
+          retention-days: 7

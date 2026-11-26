@@ -143,6 +143,8 @@ After unpacking, run `npm ci` and `npm run check:types`. Run `npm run check:core
 
 In the `full` profile, build the four clients with `npm run build:tenant-website`, `npm run build:enterprise-portal`, `npm run build:miniprogram`, and `npm run build:staff-miniprogram`. The website and portal also expose `dev:tenant-website` and `dev:enterprise-portal`. Their original build prerequisites and deployment-lock checks still apply.
 
+[Independent development CI](.github/workflows/development-ci.yml) uses the Zelo commit pinned in the workflow to compile the ordinary API, admin UI, and four clients for the current Rental commit. Its report records both source revisions, the dependency lock, and compiled digests. It is development evidence; a release still needs pinned versions, a deployment lock, and runtime artifacts.
+
 ### Packaging a Standard Core Release
 
 Build a portable `.tgz` Core artifact (`core.manifest.json`, compiled entrypoints, portable OpenAPI, `CORE_GUIDE.md`, `README.md`, `LICENSE`, and raw SQL migrations) and optional Linux Docker host bundle:
