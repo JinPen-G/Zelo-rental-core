@@ -131,20 +131,15 @@ npm run lint -w @rental-os/rental-core
 
 ### Preparing a Standalone Dev Workspace
 
-Use Zelo's [prepare-rental-workspace.cjs](https://github.com/JinPen-G/Zelo/blob/68303f7abedc8c70540662f70e268eacb132e2a1/scripts/prepare-rental-workspace.cjs) script to combine the pinned Zelo base support commit (`68303f7abedc8c70540662f70e268eacb132e2a1`) with a tagged commit from this repository into a reproducible dev archive:
+Use two fixed Git commits and the framework checkout's pinned Node dependencies. Choose a framework commit that contains the dual-repository tool. Run [the workspace entry point](tools/prepare-workspace.cjs) from this repository:
 
-```bash
-# Run from the Zelo support commit root (after npm ci --ignore-scripts && npm run build -w @rental-os/core-contracts)
-node scripts/prepare-rental-workspace.cjs \
-  --repo <zelo-base-git-dir> \
-  --repository https://github.com/JinPen-G/Nativark \
-  --commit 68303f7abedc8c70540662f70e268eacb132e2a1 \
-  --core-repo <zelo-rental-core-git-dir> \
-  --core-commit <tag-commit-sha> \
-  --out rental-dev-workspace.tgz
+```sh
+node tools/prepare-workspace.cjs --framework-repo "<base-checkout>" --repository https://github.com/JinPen-G/Nativark --framework-commit "<full-base-sha>" --core-commit "<full-rental-sha>" --profile domain --out "<new-archive-path>"
 ```
 
-Unpack the archive, run `npm ci` and `npm run check:types`, and run `npm run check:core` after editing `packages/rental-core` (pass `--ai` to enable optional AI Native development).
+Use the full 40-character commit SHAs. Development also supports commits without a tag. Portable releases require the corresponding version tag and are prepared separately. [The source layout](rental.source.json) currently provides the `domain` profile. The `host` and `full` profiles require the standalone host and client sources, respectively. Use `--ai` for the independent business AI adapter. Add `--mcp` to select the MCP adapter as well.
+
+After unpacking, run `npm ci` and `npm run check:types`. Run `npm run check:core` after editing the Core. The archive's `development.workspace.json` records both commits, file origins, generated entries, and SHA-256 digests.
 
 ### Packaging a Standard Core Release
 

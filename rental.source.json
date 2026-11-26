@@ -1,0 +1,20 @@
+{
+  "format": "rental-source-layout-1",
+  "paths": [
+    {
+      "source": ".",
+      "target": "packages/rental-core",
+      "roles": ["domain"],
+      "required": [
+        "package.json",
+        "LICENSE",
+        "tsconfig.json",
+        "tsconfig.contracts.json",
+        "src/index.ts",
+        "src/server.ts",
+        "src/prisma-public-relations.ts",
+        "prisma/schema.prisma"
+      ]
+    }
+  ]
+}

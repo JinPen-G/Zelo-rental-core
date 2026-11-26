@@ -143,20 +143,17 @@ npm run lint -w @rental-os/rental-core
 
 ### 源码开发工作区
 
-使用 Zelo 底座提供的 [源码工作区准备脚本](https://github.com/JinPen-G/Zelo/blob/68303f7abedc8c70540662f70e268eacb132e2a1/scripts/prepare-rental-workspace.cjs)，可将固定底座支持提交（`68303f7abedc8c70540662f70e268eacb132e2a1`）与本仓库的指定提交/标签自动组合为独立开发工作区归档（无需维护者私有资料）：
+准备两份 Git 检出和底座已有的锁定 Node 依赖，选择包含双仓工具的底座提交与独立 Rental 提交。下面两个 SHA 都填写完整的 40 位提交值，输出使用尚不存在的 `.tgz` 路径。
 
-```bash
-# 在 Zelo 底座支持提交检出根目录执行（先 npm ci --ignore-scripts && npm run build -w @rental-os/core-contracts）
-node scripts/prepare-rental-workspace.cjs \
-  --repo <Zelo底座Git目录> \
-  --repository https://github.com/JinPen-G/Nativark \
-  --commit 68303f7abedc8c70540662f70e268eacb132e2a1 \
-  --core-repo <Zelo-rental-core本地Git目录> \
-  --core-commit <版本Tag对应的完整SHA> \
-  --out rental-dev-workspace.tgz
+```sh
+node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository https://github.com/JinPen-G/Nativark --framework-commit "<底座完整SHA>" --core-commit "<Rental完整SHA>" --profile domain --out "<新归档路径>"
 ```
 
-解包后执行 `npm ci` 与 `npm run check:types`，修改 `packages/rental-core` 后执行 `npm run check:core`；如需同时启用 AI Native 开发组合，在准备命令中追加 `--ai`。
+开发快照可使用未打 Tag 的已提交源码。正式标准包继续通过底座的 `scripts/verify-rental-distribution.cjs --portable` 核对版本 Tag、发行来源、实际构建字节与归档摘要。旧 Tag 的根目录布局仍可读取，运行部署继续使用正式部署锁。
+
+独立源码路径由 [rental.source.json](rental.source.json) 声明。目前 `domain` 提供领域源码。迁入独立 API 和后台后可使用 `host`，迁入官网、企业门户及客户和员工小程序后可使用 `full`。`--ai` 需要独立仓交付业务 AI 适配。再加 `--mcp` 时还需 MCP 适配。每项映射填写仓库内的 `source`、组合中的 `target`、职责 `roles` 以及必需文件 `required`。公共框架和工具来自固定底座。声明缺件会中止准备，根私有 `docs/`、环境文件、缓存、生成物和依赖目录不随包交付。
+
+归档内的 `development.workspace.json` 记录两仓完整提交、源码来源、生成文件标识和所有条目的 SHA-256，以及组合工作区列表。可以从两仓各自的新固定提交重新准备。解包后执行 `npm ci` 和 `npm run check:types`，修改 Core 后可执行 `npm run check:core`。若独立仓声明自己的 npm v3 锁，重叠依赖冲突需要先在源码锁中解决。
 
 ### 标准包发行
 
