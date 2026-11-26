@@ -3,7 +3,7 @@
   "id": "rental",
   "name": "Rental Core",
   "description": "保留品类、经营空间、会员、报价订单、履约资金及各端接口的租赁业务 Core",
-  "author": "Nativark contributors",
+  "author": "Zelo contributors",
   "version": "0.1.14",
   "source": {
     "repository": "https://github.com/JinPen-G/nativark-rental-core",

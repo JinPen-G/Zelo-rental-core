@@ -6,11 +6,11 @@
   "description": "Rental业务Core的独立领域合同与运行时，原组合通过兼容出口消费",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JinPen-G/nativark-rental-core.git"
+    "url": "https://github.com/JinPen-G/Zelo-rental-core.git"
   },
-  "homepage": "https://github.com/JinPen-G/nativark-rental-core#readme",
+  "homepage": "https://github.com/JinPen-G/Zelo-rental-core#readme",
   "bugs": {
-    "url": "https://github.com/JinPen-G/nativark-rental-core/issues"
+    "url": "https://github.com/JinPen-G/Zelo-rental-core/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
