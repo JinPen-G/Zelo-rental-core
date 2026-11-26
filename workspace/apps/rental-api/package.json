@@ -32,6 +32,14 @@
     "./bootstrap": {
       "types": "./dist/bootstrap.d.ts",
       "default": "./dist/bootstrap.js"
+    },
+    "./ai-app-module": {
+      "types": "./dist-ai/ai-app.module.d.ts",
+      "default": "./dist-ai/ai-app.module.js"
+    },
+    "./ai-data-extension": {
+      "types": "./dist-ai/ai-data-extension.d.ts",
+      "default": "./dist-ai/ai-data-extension.js"
     }
   },
   "typesVersions": {
@@ -56,6 +64,12 @@
       ],
       "bootstrap": [
         "dist/bootstrap.d.ts"
+      ],
+      "ai-app-module": [
+        "dist-ai/ai-app.module.d.ts"
+      ],
+      "ai-data-extension": [
+        "dist-ai/ai-data-extension.d.ts"
       ]
     }
   },
@@ -65,7 +79,13 @@
     "prelint": "npm run prebuild",
     "lint": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.json --mode rental --noEmit",
     "start": "node dist/main.js",
-    "prepare:deployment": "node dist/prepare-deployment.js"
+    "prepare:deployment": "node dist/prepare-deployment.js",
+    "prebuild:ai": "npm run prebuild && npm run build -w @rental-os/ai-native-server",
+    "build:ai": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.ai.json --mode rental-ai",
+    "prelint:ai": "npm run prebuild:ai",
+    "lint:ai": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.ai.json --mode rental-ai --noEmit",
+    "start:ai:fresh": "node dist-ai/ai-fresh-main.js",
+    "initialize:ai:fresh": "node dist-ai/ai-fresh-initialize.js"
   },
   "dependencies": {
     "@rental-os/platform-api": "0.1.0",
@@ -90,5 +110,13 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@rental-os/ai-native-server": "0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@rental-os/ai-native-server": {
+      "optional": true
+    }
   }
 }

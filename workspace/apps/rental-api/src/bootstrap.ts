@@ -13,6 +13,7 @@ import { AI_STAFF_INSPECTION_HTTP_DRAFT, AI_INSPECTION_RECOGNITION_TASK_HTTP_DRA
 import type { createRentalHttpRequestScope } from "./http-request-scope";
 import { attachRentalBootstrapIngress, type RentalBootstrapIngress } from "./bootstrap-ingress";
 import { createRentalHostPortableHttp } from "./openapi";
+import { readCorePackageOrdinaryFile } from "@rental-os/platform-core-host/core-package-preflight";
 
 export interface RentalBootstrapExtension {
   createIngress(application: NestExpressApplication): RentalBootstrapIngress | Promise<RentalBootstrapIngress>;
@@ -67,6 +68,23 @@ export async function bootstrapRentalComposition(aiMode: "enabled" | "disabled",
   const stat = statSync(settings.lockPath);
   if (!stat.isFile() || stat.size > 8 * 1024 * 1024) throw new Error("Rental 部署锁须为不超过 8 MiB 的实际文件");
   const lock = CoreDeploymentLockSchema.parse(JSON.parse(readFileSync(settings.lockPath, "utf8")));
+  return startRentalComposition(settings, lock, register, extension);
+}
+
+/** Only the explicit fresh entry supplies a selector for the complete phased lock.
+ * Original v1, MCP and teaching hosts keep their original parser. */
+export async function bootstrapFreshRentalComposition(select: (value: unknown) => Promise<{
+  base: CoreDeploymentLock; register(): DynamicModule | Promise<DynamicModule>
+}>) {
+  const settings = readRentalStartupConfiguration(process.env, "enabled");
+  const bytes = await readCorePackageOrdinaryFile(settings.lockPath, 8 * 1024 * 1024);
+  const selected = await select(JSON.parse(bytes.toString("utf8")));
+  return startRentalComposition(settings, selected.base, selected.register);
+}
+
+async function startRentalComposition(settings: ReturnType<typeof readRentalStartupConfiguration<"enabled" | "disabled">>,
+  lock: CoreDeploymentLock, register: (lock: CoreDeploymentLock) => DynamicModule | Promise<DynamicModule>,
+  extension?: RentalBootstrapExtension) {
   if (lock.platform.versions.node !== process.versions.node || lock.platform.versions.contract !== CORE_CONTRACT_VERSION)
     throw new Error(`Rental 部署锁须与当前 Node ${process.versions.node} 和 Core 合同 ${CORE_CONTRACT_VERSION} 一致`);
   const { RENTAL_HTTP_REQUEST_SCOPE } = await import("./app.module.js");

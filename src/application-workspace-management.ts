@@ -33,14 +33,15 @@ export interface RentalWorkspaceManagementDependencies {
 }
 
 export function createRentalWorkspaceManagementApplication(application: RentalApplication,
-  options?: Pick<RentalTenantBootstrapDependencies, "deploymentForTransaction">) {
+  options?: Pick<RentalTenantBootstrapDependencies, "deploymentForTransaction"> & { freshAi?: boolean }) {
   const repository = new RentalWorkspaceManagementRepository(application.database);
   return new RentalWorkspaceManagementApplication({ configService: application.configuration,
     repository,
     rentalCoreService: application.primary.core, workspaceCapabilityService: application.foundation.capabilities,
     tenantBootstrap: options ? new RentalTenantBootstrapApplication({ database: application.database,
       repository, users: application.authSource, core: application.primary.core,
-      seed: createRentalTenantBootstrapSeed, deploymentForTransaction: options.deploymentForTransaction }) : undefined,
+      seed: () => createRentalTenantBootstrapSeed({ freshAi: options.freshAi }),
+      deploymentForTransaction: options.deploymentForTransaction }) : undefined,
     logger: new Logger(RentalWorkspaceManagementApplication.name) });
 }
 

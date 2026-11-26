@@ -268,8 +268,11 @@ export function createRentalBootstrapNumberRules(): PlatformNumberRule[] { retur
     buildBootstrapNumberRule("VEHICLE_LICENSE", "车辆证照编号", "车辆资产", "VL", "yyyyMM", 4)
   ]; }
 
-export function createRentalTenantBootstrapSeed() {
-  return { systemRules: createRentalBootstrapSystemRules(), dictionaries: createRentalBootstrapDictionaries(), numberRules: createRentalBootstrapNumberRules() };
+export function createRentalTenantBootstrapSeed(options: { freshAi?: boolean } = {}) {
+  const systemRules: Omit<SystemRulesConfig, "aiModel"> & Partial<Pick<SystemRulesConfig, "aiModel">> = createRentalBootstrapSystemRules();
+  // The v2 host must not create a fake legacy credential to migrate later.
+  if (options.freshAi) delete systemRules.aiModel;
+  return { systemRules, dictionaries: createRentalBootstrapDictionaries(), numberRules: createRentalBootstrapNumberRules() };
 }
 
 export function createRentalTenantBootstrapPreview(seed: Pick<ReturnType<typeof createRentalTenantBootstrapSeed>, "dictionaries" | "numberRules">): TenantBootstrapPreview {

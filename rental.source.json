@@ -4,7 +4,9 @@
     {
       "source": ".",
       "target": "packages/rental-core",
-      "roles": ["domain"],
+      "roles": [
+        "domain"
+      ],
       "required": [
         "package.json",
         "LICENSE",
@@ -19,38 +21,161 @@
     {
       "source": "workspace/apps/rental-api",
       "target": "apps/rental-api",
-      "roles": ["host"],
-      "required": ["package.json", "README.md", "tsconfig.json", "src/main.ts", "src/app.module.ts", "src/assembly.ts", "src/database.ts", "src/openapi.ts", "src/package.ts", "src/prepare-deployment.ts"]
+      "roles": [
+        "host"
+      ],
+      "required": [
+        "package.json",
+        "README.md",
+        "tsconfig.json",
+        "src/main.ts",
+        "src/app.module.ts",
+        "src/assembly.ts",
+        "src/database.ts",
+        "src/openapi.ts",
+        "src/package.ts",
+        "src/prepare-deployment.ts"
+      ],
+      "aiFiles": [
+        "prisma/ai-extension/.gitattributes",
+        "prisma/ai-extension/20261126000000-initial.sql",
+        "prisma/ai-extension/20261127000000-initial.sql",
+        "prisma/ai-extension/20261127000000-provenance.json",
+        "prisma/ai-extension/provenance.json",
+        "prisma/ai-extension/schema.prisma",
+        "src/ai-app.module.ts",
+        "src/ai-assembly.ts",
+        "src/ai-budget-http.ts",
+        "src/ai-client-http.ts",
+        "src/ai-client-request.ts",
+        "src/ai-composition.ts",
+        "src/ai-credit-http.ts",
+        "src/ai-data-extension.ts",
+        "src/ai-file-cleanup-source.ts",
+        "src/ai-fresh-deployment.ts",
+        "src/ai-fresh-initialize.ts",
+        "src/ai-fresh-main.ts",
+        "src/ai-fresh-schema.ts",
+        "src/ai-fresh-selection.ts",
+        "src/ai-http-policy.ts",
+        "src/ai-inspection-http.ts",
+        "src/ai-inspection-transactions.ts",
+        "src/ai-main.ts",
+        "src/ai-openapi.ts",
+        "tsconfig.ai.json"
+      ]
     },
     {
       "source": "workspace/apps/rental-admin",
       "target": "apps/rental-admin",
-      "roles": ["host"],
-      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/RentalShell.tsx", "src/navigation.ts"]
+      "roles": [
+        "host"
+      ],
+      "required": [
+        "package.json",
+        "index.html",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/RentalShell.tsx",
+        "src/navigation.ts"
+      ]
     },
     {
       "source": "workspace/apps/tenant-website",
       "target": "apps/tenant-website",
-      "roles": ["client"],
-      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/App.tsx", "src/styles.css", "src/website-host.ts", "public/media/photo-sources.json"]
+      "roles": [
+        "client"
+      ],
+      "required": [
+        "package.json",
+        "index.html",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/website-host.ts",
+        "public/media/photo-sources.json"
+      ]
     },
     {
       "source": "workspace/apps/enterprise-portal",
       "target": "apps/enterprise-portal",
-      "roles": ["client"],
-      "required": ["package.json", "index.html", "tsconfig.json", "vite.config.ts", "src/main.tsx", "src/App.tsx", "src/styles.css"]
+      "roles": [
+        "client"
+      ],
+      "required": [
+        "package.json",
+        "index.html",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css"
+      ]
     },
     {
       "source": "workspace/apps/miniprogram",
       "target": "apps/miniprogram",
-      "roles": ["client"],
-      "required": ["package.json", "project.config.json", "tsconfig.json", "scripts/build.cjs", "src/app.json", "src/app.ts", "src/app.wxss", "src/config/public.ts"]
+      "roles": [
+        "client"
+      ],
+      "required": [
+        "package.json",
+        "project.config.json",
+        "tsconfig.json",
+        "scripts/build.cjs",
+        "src/app.json",
+        "src/app.ts",
+        "src/app.wxss",
+        "src/config/public.ts"
+      ]
     },
     {
       "source": "workspace/apps/staff-miniprogram",
       "target": "apps/staff-miniprogram",
-      "roles": ["client"],
-      "required": ["package.json", "project.config.json", "tsconfig.json", "scripts/build.cjs", "src/app.json", "src/app.ts", "src/app.wxss", "src/config/public.ts"]
+      "roles": [
+        "client"
+      ],
+      "required": [
+        "package.json",
+        "project.config.json",
+        "tsconfig.json",
+        "scripts/build.cjs",
+        "src/app.json",
+        "src/app.ts",
+        "src/app.wxss",
+        "src/config/public.ts"
+      ]
+    },
+    {
+      "source": "workspace/packages/web-client",
+      "target": "packages/web-client",
+      "roles": [
+        "host"
+      ],
+      "required": [
+        "package.json",
+        "src/index.ts",
+        "src/session.ts",
+        "src/enterprise-entry.ts",
+        "src/enterprise-invite.ts"
+      ]
+    },
+    {
+      "source": "workspace/packages/rental-mcp-host",
+      "target": "packages/rental-mcp-host",
+      "roles": [
+        "mcp"
+      ],
+      "required": [
+        "package.json",
+        "LICENSE",
+        "tsconfig.json",
+        "src/index.ts",
+        "src/original-mcp-host.ts"
+      ]
     }
   ]
 }

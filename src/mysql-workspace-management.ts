@@ -38,7 +38,7 @@ export class RentalWorkspaceManagementRepository extends PlatformAuthenticationR
     input: TenantBootstrapRequest,
     preview: TenantBootstrapPreview,
     seed: {
-      systemRules: SystemRulesConfig;
+      systemRules: Omit<SystemRulesConfig, "aiModel"> & Partial<Pick<SystemRulesConfig, "aiModel">>;
       dictionaries: PlatformDictionaryGroup[];
       numberRules: PlatformNumberRule[];
     },

@@ -1,5 +1,6 @@
 /** 构建核对与 API 同一固定部署锁和 Rental 标准包，向浏览器提供已核定清单。 */
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,8 @@ import {
   coreDeploymentHostVersions,
 } from "@rental-os/core-contracts";
 import { requireCorePackagePin } from "@rental-os/core-contracts/install";
+import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName } from "@rental-os/core-contracts/deployment";
+import { readPlatformDataCapabilityPackage } from "@rental-os/core-contracts/platform-data-package";
 import { rentalHostLegacyApiRoutes } from "@rental-os/rental-api/openapi";
 import { platformAdminVite } from "@rental-os/platform-admin/vite";
 import { apiProxyTarget, loadViteEnvironment, publicEnvironmentDefinitions } from "../../config/environment.cjs";
@@ -21,7 +24,11 @@ export default defineConfig(({ mode }) => {
   const env = loadViteEnvironment(mode, fileURLToPath(new URL(".", import.meta.url)), loadEnv,
     { offline: mode === "ai-offline" });
   if (!process.env.CORE_DEPLOYMENT_LOCK) throw new Error("Rental 后台构建须提供与 API 相同的 CORE_DEPLOYMENT_LOCK");
-  const lock = CoreDeploymentLockSchema.parse(JSON.parse(readFileSync(process.env.CORE_DEPLOYMENT_LOCK, "utf8")));
+  const path = process.env.CORE_DEPLOYMENT_LOCK;
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const freshAi = mode === "rental-fresh-ai";
+  const phased = freshAi ? CorePhasedMigrationLockSchema.parse(value) : undefined;
+  const lock = phased?.base ?? CoreDeploymentLockSchema.parse(value);
   if (lock.cores.length !== 1 || lock.cores[0].manifest.id !== "rental")
     throw new Error("Rental 后台只装配所选 Rental Core");
   const host = coreDeploymentHostVersions(lock);
@@ -35,6 +42,19 @@ export default defineConfig(({ mode }) => {
   const require = createRequire(import.meta.url);
   const root = resolve(dirname(require.resolve("@rental-os/rental-core")), "..");
   const { manifest } = requireCorePackagePin(root, lock.cores[0], host, rentalHostLegacyApiRoutes());
+  if (phased) {
+    const [extension] = phased.postCapability, [capability] = lock.dataCapabilities ?? [];
+    if (phased.postCapability.length !== 1 || extension.coreId !== "rental" || lock.dataCapabilities?.length !== 1
+      || capability.id !== "ai-native" || extension.prerequisites.capability.id !== capability.id)
+      throw new Error("新装后台须选择与 API 相同的完整 v2 数据组合");
+    const publicData = process.env.RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR;
+    if (!publicData) throw new Error("新装后台须核同一固定公共 AI 数据包");
+    readPlatformDataCapabilityPackage(publicData, capability);
+    const sql = readFileSync(resolve(dirname(path), "migrations",
+      corePostCapabilityPrismaMigrationName(extension.coreId, extension.migration.id), "migration.sql"));
+    if (createHash("sha256").update(sql).digest("hex") !== extension.migration.sha256)
+      throw new Error("新装后台锁内的原 Rental 扩展与实际迁移材料不同");
+  }
   const platform = platformAdminVite();
   const virtual = "\0selected-rental-manifest";
   return {

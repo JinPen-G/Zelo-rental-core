@@ -5,7 +5,7 @@ import { ForbiddenException } from "@nestjs/common";
 import type { ConfigService } from "@nestjs/config";
 import { isDeepStrictEqual } from "node:util";
 import * as shared from "@rental-os/shared";
-import { CoreDeploymentLockSchema, type CoreDeploymentLock, type CorePlatformDataCapabilityRelease, type CoreRemovalAssessment } from "@rental-os/core-contracts";
+import { CoreDeploymentLockSchema, type CoreDataObservation, type CoreDeploymentLock, type CorePlatformDataCapabilityRelease, type CoreRemovalAssessment } from "@rental-os/core-contracts";
 import { createCoreDeployedCatalogue, createCoreTransactionCatalogues, type CoreDeployedCatalogue } from "@rental-os/core-host";
 import type { CoreHostSqlTransaction } from "@rental-os/core-host/mysql";
 import { createMysqlCoreDeploymentObservation, type CoreMysqlDataPlan } from "@rental-os/core-host/mysql-deployment";
@@ -44,6 +44,9 @@ export interface RentalHostAiSetup<Binding> {
   dataPlan: CoreMysqlDataPlan;
   /** 已选能力的原完整安装包读取器；无 AI 宿主不导入能力实现。 */
   readDataPackages(): readonly { root: string; release: CorePlatformDataCapabilityRelease }[];
+  /** Fresh v2 admission includes the extension's original receipt on this reader. */
+  phasedData?: (database: Pick<CoreHostSqlTransaction, "$queryRaw">) => Promise<CoreDataObservation>;
+  verifyDataPackage?(): void;
   fileCleanupKnowledge: NonNullable<RentalFileCleanupAuthorityDependencies["knowledge"]>;
   participants: RentalApplicationParticipants;
   /** 从实际 AI Controller/handler 闭集生成；只保留原结果/控制入口，新工作仍在原事务检查。 */
@@ -114,12 +117,16 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   if (!isDeepStrictEqual(lock.platform.data, platformPlan.data)) throw new Error("部署锁公共基线与当前宿主不一致");
   const { database, configuration } = input;
   const dependencies = createPublicCoreDependencies<RentalDatabaseTransaction>(database);
-  const observation = (reader: Pick<CoreHostSqlTransaction, "$queryRaw">) => createMysqlCoreDeploymentObservation({
-    database: reader, platform: platformPlan,
-    cores: [{ ...rentalPackage.dataPlan, coreId: rentalPackage.manifest.id },
-      ...additional.map(item => ({ ...item.dataPlan, coreId: item.coreId }))],
-    ...(input.aiMode === "enabled" ? { dataCapabilities: [{ ...input.ai.dataPlan, capabilityId: "ai-native" }] } : {})
-  });
+  const phasedData = input.aiMode === "enabled" ? input.ai.phasedData : undefined;
+  const verifyDataPackage = input.aiMode === "enabled" ? input.ai.verifyDataPackage : undefined;
+  const observation = (reader: Pick<CoreHostSqlTransaction, "$queryRaw">) => phasedData
+    ? { read: () => phasedData(reader) }
+    : createMysqlCoreDeploymentObservation({
+      database: reader, platform: platformPlan,
+      cores: [{ ...rentalPackage.dataPlan, coreId: rentalPackage.manifest.id },
+        ...additional.map(item => ({ ...item.dataPlan, coreId: item.coreId }))],
+      ...(input.aiMode === "enabled" ? { dataCapabilities: [{ ...input.ai.dataPlan, capabilityId: "ai-native" }] } : {})
+    });
   let catalogue: CoreDeployedCatalogue;
   // 所有回调只在同步组合完成后才会消费；缺观察时原 catalogue 明确拒绝，不提供准备态放行。
   const catalogueForTransaction = createCoreTransactionCatalogues((transaction: Pick<CoreHostSqlTransaction, "$queryRaw">) => createCoreDeployedCatalogue({
@@ -168,12 +175,14 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
     audit: createPlatformCorePackageAudit<RentalDatabaseTransaction>(),
     storageDirectory: configuration.get<string>("CORE_PACKAGE_STORAGE_ROOT"),
     legacyApiRoutes: { rental: rentalHostLegacyApiRoutes() },
-    ...createRentalCorePackageSources({ configuration, lock,
+    // Candidate preparation currently speaks v1. A phased installation must
+    // not report a v1 update baseline that silently omits its extension.
+    ...(!phasedData ? createRentalCorePackageSources({ configuration, lock,
       rentalPackage: () => requireRentalDeploymentPackage(pin, lock.platform.versions),
       additionalCorePackages: additional,
       observe: () => observation(database).read(),
       observeInTransaction: transaction => observation(transaction).read(),
-      ...(input.aiMode === "enabled" ? { dataCapabilities: input.ai.readDataPackages } : {}) }) });
+      ...(input.aiMode === "enabled" ? { dataCapabilities: input.ai.readDataPackages } : {}) }) : {}) });
   const coreHttp = createPlatformCorePackageAssemblyHttpAccess(packages, createPlatformCoreHttpAccess(core));
   const authorization = createRentalAuthorization(shared);
   const guard = new authorization.Guard(rental.auth, rental.foundation.capabilities, rental.client.auth,
@@ -211,7 +220,7 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   const callbackAccess = createRentalPaymentCallbackAccess({ database, deploymentForTransaction });
   const customers = createRentalCustomerManagementApplication(rental);
   const ai = input.aiMode === "enabled" ? input.ai.bind({ rental, guard, customers }) : undefined;
-  const workspaces = createRentalWorkspaceManagementApplication(rental, { deploymentForTransaction });
+  const workspaces = createRentalWorkspaceManagementApplication(rental, { deploymentForTransaction, freshAi: Boolean(phasedData) });
   return Object.freeze({ rental, catalogue, core, packages, authorization, guard, access, publicAccess, callbackAccess, aiAccess, ai,
     coreReadSources: Object.freeze({ term: dependencies.term, catalogueForTransaction }),
     // 隔离映射副本；调用者不能通过修改目录映射替换已注册服务或另一 Core 的绑定。
@@ -227,5 +236,5 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
     permissionStartup,
     lifecycle: new RentalApplicationLifecycle(rental, () => database.$disconnect(),
       configuration.get<string>("DATABASE_CONNECT_ON_START") === "true" ? () => database.$connect() : undefined,
-      permissionStartup) });
+      permissionStartup, phasedData ? async () => { verifyDataPackage?.(); await phasedData(database); } : undefined) });
 }

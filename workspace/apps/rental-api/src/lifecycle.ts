@@ -16,7 +16,8 @@ export class RentalApplicationLifecycle implements OnModuleInit, OnApplicationBo
 
   constructor(private readonly application: RentalApplication, private readonly disconnect: () => Promise<void>,
     private readonly connect?: () => Promise<void>,
-    private readonly permissions?: { initialize(): Promise<void>; stop(): void }) {}
+    private readonly permissions?: { initialize(): Promise<void>; stop(): void },
+    private readonly requireSelectedData?: () => Promise<void>) {}
 
   /** HTTP 关闭不代表原处理器完成；唯一宿主等待完整请求作用域后才允许断库。 */
   runRequest<T>(consume: () => Promise<T>): Promise<T> {
@@ -33,6 +34,8 @@ export class RentalApplicationLifecycle implements OnModuleInit, OnApplicationBo
   private async initialize(): Promise<void> {
     try {
       await this.connect?.();
+      if (this.stopping) return;
+      if (this.requireSelectedData) await this.requireSelectedData();
       if (this.stopping) return;
       await this.permissions?.initialize();
       if (this.stopping) return;
