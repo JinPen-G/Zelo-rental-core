@@ -105,10 +105,13 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   if (input.aiMode === "disabled" && (input.ai || (lock.dataCapabilities?.length ?? 0) > 0)) {
     throw new Error("当前无 AI 组合不能消费已选择的可选数据能力");
   }
-  if (input.aiMode !== "disabled" && (input.aiMode !== "enabled" || !input.ai
-    || lock.dataCapabilities?.length !== 1 || lock.dataCapabilities[0].id !== "ai-native"
-    || !isDeepStrictEqual(lock.dataCapabilities[0].data, input.ai.dataPlan.data)))
-    throw new Error("启用 AI 须提供同一固定数据包的实际参加者和物理观察");
+  if (input.aiMode === "enabled") {
+    const releases = lock.dataCapabilities ?? [], ai = releases.find(item => item.id === "ai-native");
+    const withMcp = releases.length === 2 && releases.some(item => item.id === "mcp")
+      && input.ai.phasedData && input.ai.verifyDataPackage;
+    if (!ai || (releases.length !== 1 && !withMcp) || !isDeepStrictEqual(ai.data, input.ai.dataPlan.data))
+      throw new Error("启用 AI 须提供同一固定数据包的实际参加者和物理观察");
+  }
   const pin = lock.cores.find(core => core.manifest.id === "rental");
   if (!pin) throw new Error("本 Rental 宿主组合必须选择 Rental Core");
   const additional = prepareRentalAdditionalCores(lock, input.additionalCores ?? []);

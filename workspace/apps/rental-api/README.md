@@ -18,9 +18,15 @@ node scripts/package-rental-host.cjs --development --repo <Zelo目录> --reposit
 
 在包含 v2 构建工具的固定 Zelo 检出，执行上面的命令，在 `--development` 后追加 `--fresh-ai`。用同一组 Git SHA 和 `--fresh-ai --profile host` 准备后台源码。API 运行包保存两个来源、编译证明、公共 AI 数据包和四阶段原 SQL：公共 14、Rental 2、公共 AI 1、Rental 扩展 1。
 
-使用专用空库，按包内说明生成两份 Client、应用锁定的 18 条迁移并初始化 SaaS。设置 `RENTAL_AI_MODE=enabled`，`RENTAL_DEPLOYMENT_LOCK` 指向完整 v2 锁，`RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR` 指向同包的 `public-ai-data`。先执行 [品类初始化](src/ai-fresh-initialize.ts)，再运行 [新装入口](src/ai-fresh-main.ts)。后台使用同一部署锁、数据包及已核标准 Rental 包，执行 `build:fresh`。旧库继续使用原 SQL、原锁与原账，不能直接重跑新装材料；本模式暂不提供就地升级或 MCP。
+使用专用空库，按包内说明生成两份 Client、应用锁定的 18 条迁移并初始化 SaaS。设置 `RENTAL_AI_MODE=enabled`，`RENTAL_DEPLOYMENT_LOCK` 指向完整 v2 锁，`RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR` 指向同包的 `public-ai-data`。先执行 [品类初始化](src/ai-fresh-initialize.ts)，再运行 [新装入口](src/ai-fresh-main.ts)。后台使用同一部署锁、数据包及已核标准 Rental 包，执行 `build:fresh`。旧库继续使用原 SQL、原锁与原账，不能直接重跑新装材料。
 
 当前新装扩展为 [20261127000000](prisma/ai-extension/20261127000000-initial.sql)。它只修正 MySQL 对中间 `CHECK` 布尔类型的要求，末态约束与原方案相同；前版 [原 SQL](prisma/ai-extension/20261126000000-initial.sql) 及其 [来源](prisma/ai-extension/provenance.json)保留，不作为可执行的新装文件。
+
+## 显式选装 MCP（仅新装开发）
+
+在同一打包命令上使用 `--development --fresh-ai --mcp`。配套源码也要使用同一组 SHA 和 `--fresh-ai --mcp --profile host`。只对 `utf8mb4_unicode_ci` 的专用空库应用 **14 公共 → 2 Rental → 1 公共 AI → 5 MCP → 1 Rental 扩展**。沿包内步骤设置 `RENTAL_MCP_DATA_PACKAGE_DIR`，指向实际随包的 `packages/mcp-server` 绝对目录；再用 `dist-mcp/mcp-fresh-initialize.js` 初始化，启动 `dist-mcp/mcp-fresh-main.js`。原 18 条 AI-only、普通库和旧混合库不能换锁直接采用这条链。
+
+该开发启动叶只核验 MCP 原账与物理结构，默认不挂 MCP HTTP。需对外接入时，第一方源码显式调用 [bootstrapFreshRentalMcp(sources)](src/mcp-bootstrap.ts)。`SelectedRentalMcpSources` 由原权威供给：AS 当前元数据，目录真实发布、输出字段投影和分类计量，及需启用的原验证来源。可选报价只在取得原对象 Guard、同事务历史读者、原键目标和外发策略后登记。Web 登录、通用目录与数据库表存在本身都不会开放这些能力。[同实例装配](src/mcp-host.ts)
 
 - [启动](src/main.ts) → [宿主装配](src/app.module.ts) → [同实例应用](src/assembly.ts)与[所选数据访问](src/database.ts)
 - [实际 HTTP 策略](src/http-policy.ts)、[兼容路径和 OpenAPI](src/openapi.ts)

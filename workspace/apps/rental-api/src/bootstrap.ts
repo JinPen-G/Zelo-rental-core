@@ -71,15 +71,15 @@ export async function bootstrapRentalComposition(aiMode: "enabled" | "disabled",
   return startRentalComposition(settings, lock, register, extension);
 }
 
-/** Only the explicit fresh entry supplies a selector for the complete phased lock.
- * Original v1, MCP and teaching hosts keep their original parser. */
+/** The explicit fresh entry owns the complete phased lock and optional original ingress.
+ * Original v1 and teaching hosts keep their own parser. */
 export async function bootstrapFreshRentalComposition(select: (value: unknown) => Promise<{
   base: CoreDeploymentLock; register(): DynamicModule | Promise<DynamicModule>
-}>) {
+}>, extension?: RentalBootstrapExtension) {
   const settings = readRentalStartupConfiguration(process.env, "enabled");
   const bytes = await readCorePackageOrdinaryFile(settings.lockPath, 8 * 1024 * 1024);
   const selected = await select(JSON.parse(bytes.toString("utf8")));
-  return startRentalComposition(settings, selected.base, selected.register);
+  return startRentalComposition(settings, selected.base, selected.register, extension);
 }
 
 async function startRentalComposition(settings: ReturnType<typeof readRentalStartupConfiguration<"enabled" | "disabled">>,

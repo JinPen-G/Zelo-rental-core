@@ -11,13 +11,26 @@ permissions:
   contents: read
 
 env:
-  ZELO_COMMIT: af0381d4ed992d6ddf1e702f5dfd46a0af51536b
+  ZELO_COMMIT: b8e0111a5ba0f5e5c4003529b7e9604adb16aa5b
 
 jobs:
   development-build:
     if: github.repository == 'JinPen-G/Zelo-rental-core'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+        env:
+          MYSQL_ROOT_PASSWORD: rental_ci_root_only
+          MYSQL_DATABASE: rental_v2_ci
+          MYSQL_USER: rental_ci
+          MYSQL_PASSWORD: rental_ci_database_only
+        ports:
+          - 127.0.0.1:3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s --health-timeout=3s --health-retries=30
     steps:
       - name: 检出待核对的 Rental 提交
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -115,3 +128,66 @@ jobs:
           assert.ok(!fs.existsSync(path.join(root, 'packages/rental-mcp-host')));
           console.log('固定双仓 v2 开发包：18 份原迁移、完整 v2 锁及实际启动入口回读通过；不可发布。');
           NODE
+      - name: 在独立 MySQL 新装 v2 并验证登录重启
+        working-directory: output/.tmp/rental-ci/fresh/host
+        shell: bash
+        env:
+          DATABASE_URL: mysql://rental_ci:rental_ci_database_only@127.0.0.1:3306/rental_v2_ci?connection_limit=2
+          API_PORT: '3093'
+          RENTAL_AI_MODE: enabled
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/output/.tmp/rental-ci/fresh"
+          export AUTH_TOKEN_SECRET="$(openssl rand -hex 32)" SEED_PLATFORM_PASSWORD="RentalCi9-$(openssl rand -hex 12)"
+          export RENTAL_DEPLOYMENT_LOCK="$PWD/apps/rental-api/prisma-deployment/core.deployment.lock.json"
+          export RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR="$PWD/public-ai-data"
+          npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+          node node_modules/@prisma/engines/scripts/postinstall.js
+          prisma=node_modules/prisma/build/index.js
+          node "$prisma" generate --schema apps/platform-api/prisma/schema.prisma
+          node "$prisma" generate --schema apps/rental-api/prisma-deployment/schema.prisma
+          node verify-runtime.cjs
+          node "$prisma" migrate deploy --schema apps/rental-api/prisma-deployment/schema.prisma
+          node apps/platform-api/dist/initialize.js
+          node apps/rental-api/dist-ai/ai-fresh-initialize.js
+          entry=apps/rental-api/dist-ai/ai-fresh-main.js
+          api_pid=''
+          cleanup() {
+            if [[ -n "$api_pid" ]]; then kill "$api_pid" 2>/dev/null || true; wait "$api_pid" || true; fi
+          }
+          trap cleanup EXIT
+          start() {
+            node "$entry" > "$task/api.log" 2>&1 &
+            api_pid=$!
+            if ! curl -fsS --retry 24 --retry-connrefused --max-time 3 http://127.0.0.1:3093/api/health > /dev/null; then
+              tail -n 30 "$task/api.log"
+              exit 1
+            fi
+          }
+          start
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const base = 'http://127.0.0.1:3093/api';
+          const response = await fetch(base + '/auth/login', { method: 'POST', signal: AbortSignal.timeout(10000),
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+              tenantCode: 'platform', account: 'admin', password: process.env.SEED_PLATFORM_PASSWORD
+            }) });
+          assert.equal(response.status, 201);
+          const result = await response.json();
+          const session = result.data ?? result;
+          assert.ok(session.accessToken);
+          const me = await fetch(base + '/auth/session-context', { signal: AbortSignal.timeout(8000),
+            headers: { Authorization: `Bearer ${session.accessToken}` } });
+          assert.equal(me.status, 200);
+          const body = await me.json();
+          assert.equal((body.data ?? body).tenant.tenantCode, 'platform');
+          console.log('v2 原权限和真实会话：通过');
+          NODE
+          kill "$api_pid"
+          wait "$api_pid" || code=$?
+          api_pid=''
+          test "${code:-0}" -eq 0 || test "$code" -eq 143
+          start
+          node "$prisma" migrate status --schema apps/rental-api/prisma-deployment/schema.prisma
+          curl -fsS --max-time 5 http://127.0.0.1:3093/api/health > /dev/null
+          echo 'v2 固定宿主使用原 18 条迁移账重启成功。'

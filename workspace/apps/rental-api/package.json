@@ -40,6 +40,10 @@
     "./ai-data-extension": {
       "types": "./dist-ai/ai-data-extension.d.ts",
       "default": "./dist-ai/ai-data-extension.js"
+    },
+    "./mcp-bootstrap": {
+      "types": "./dist-mcp/mcp-bootstrap.d.ts",
+      "default": "./dist-mcp/mcp-bootstrap.js"
     }
   },
   "typesVersions": {
@@ -70,6 +74,9 @@
       ],
       "ai-data-extension": [
         "dist-ai/ai-data-extension.d.ts"
+      ],
+      "mcp-bootstrap": [
+        "dist-mcp/mcp-bootstrap.d.ts"
       ]
     }
   },
@@ -85,7 +92,13 @@
     "prelint:ai": "npm run prebuild:ai",
     "lint:ai": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.ai.json --mode rental-ai --noEmit",
     "start:ai:fresh": "node dist-ai/ai-fresh-main.js",
-    "initialize:ai:fresh": "node dist-ai/ai-fresh-initialize.js"
+    "initialize:ai:fresh": "node dist-ai/ai-fresh-initialize.js",
+    "prebuild:mcp": "npm run prebuild:ai && npm run build -w @rental-os/rental-mcp-host",
+    "build:mcp": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.mcp.json --mode rental-ai",
+    "prelint:mcp": "npm run prebuild:mcp",
+    "lint:mcp": "node ../../scripts/build-selected-prisma.cjs --project tsconfig.mcp.json --mode rental-ai --noEmit",
+    "start:mcp:fresh": "node dist-mcp/mcp-fresh-main.js",
+    "initialize:mcp:fresh": "node dist-mcp/mcp-fresh-initialize.js"
   },
   "dependencies": {
     "@rental-os/platform-api": "0.1.0",
@@ -112,10 +125,18 @@
     "typescript": "5.9.3"
   },
   "peerDependencies": {
-    "@rental-os/ai-native-server": "0.1.0"
+    "@rental-os/ai-native-server": "0.1.0",
+    "@rental-os/mcp-server": "0.1.0",
+    "@rental-os/rental-mcp-host": "0.1.0"
   },
   "peerDependenciesMeta": {
     "@rental-os/ai-native-server": {
+      "optional": true
+    },
+    "@rental-os/mcp-server": {
+      "optional": true
+    },
+    "@rental-os/rental-mcp-host": {
       "optional": true
     }
   }

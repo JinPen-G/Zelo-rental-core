@@ -25,7 +25,8 @@ export function bootstrapFreshRentalAi() {
 }
 
 /** Consume the fixed build's source receipt, original extension and selected Client. */
-export async function readFreshRentalAiSelection(lock: unknown, publicAiDirectory: string) {
+export async function readFreshRentalAiSelection(lock: unknown, publicAiDirectory: string,
+  mcp?: NonNullable<ConstructorParameters<typeof FreshRentalAiSelection>[0]["mcp"]>) {
   const read = (file: string) => readCorePackageOrdinaryFile(resolve(hostRoot, file), 32 * 1024 * 1024);
   const [sourceBytes, publicBytes, clientBytes] = await Promise.all([
     read("prisma/ai-extension/runtime-source.json"), read("../platform-api/prisma/schema.prisma"),
@@ -37,11 +38,15 @@ export async function readFreshRentalAiSelection(lock: unknown, publicAiDirector
     throw new Error("新装缺少固定双仓运行来源回执");
   const extension = { source: CoreSourceSchema.parse(source.extension),
     files: new Map(await Promise.all(RENTAL_AI_EXTENSION_FILES.map(async ({ file }) => [file, await read(file)] as const))) };
-  const fresh = new FreshRentalAiSelection({ lock, publicAiDirectory, publicSchema: publicBytes.toString("utf8"), extension });
+  const fresh = new FreshRentalAiSelection({ lock, publicAiDirectory, publicSchema: publicBytes.toString("utf8"), extension, mcp });
   const base = fresh.base;
   if (!isDeepStrictEqual(CoreSourceSchema.parse(source.rental), base.cores[0].manifest.source)
     || !isDeepStrictEqual(CoreSourceSchema.parse(source.platform), base.platform.source))
     throw new Error("新装完整锁与固定双仓运行来源不一致");
+  const mcpRelease = base.dataCapabilities?.find(item => item.id === "mcp");
+  if (!isDeepStrictEqual("mcp" in source ? source.mcp : undefined,
+    mcpRelease && { source: mcpRelease.source, sha256: mcpRelease.sha256 }))
+    throw new Error("新装 MCP 锁与固定数据包运行来源不一致");
   // Prisma formats the generated copy; compare its original semantic tokens.
   if (!samePrismaSchema(clientBytes.toString("utf8"), fresh.schema)
     || !isDeepStrictEqual(Object.keys(Prisma.ModelName).sort(), modelNames(fresh.schema)))

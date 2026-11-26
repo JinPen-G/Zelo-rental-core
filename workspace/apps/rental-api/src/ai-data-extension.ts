@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { sqltag as sql } from "@prisma/client/runtime/library";
 import { CoreDataObservationSchema, CorePhysicalDataObservationSchema, CoreSourceSchema, checkCoreCombination, checkPlatformDataCapabilities,
   coreDeploymentHostVersions, isCoreVersionSupported, type CoreDataObservation, type CoreManifest } from "@rental-os/core-contracts";
-import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName,
+import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName, platformCapabilityPrismaMigrationName,
   corePrismaMigrationName } from "@rental-os/core-contracts/deployment";
 import { CoreAccessError } from "@rental-os/core-host";
 import type { CoreMysqlDataPlan } from "@rental-os/core-host/mysql-deployment";
@@ -194,7 +194,8 @@ export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension
   };
 }
 
-type OriginalMigrationReceipt = { migrationName: string; checksum: string; finishedAt: Date | null; rolledBackAt: Date | null };
+type OriginalMigrationReceipt = { migrationName: string; checksum: string; finishedAt: Date | null; rolledBackAt: Date | null;
+  startedAt?: Date; appliedSteps?: number | bigint };
 const validDate = (value: unknown): value is Date => value instanceof Date && Number.isFinite(value.getTime());
 type ObservationPlan = { version: string; read: CoreMysqlDataPlan["readPhysical"] };
 
@@ -206,14 +207,20 @@ export function createFreshRentalAiDataObservation(input: {
   rental: CoreMysqlDataPlan;
   publicAiFiles: ReadonlyMap<string, Uint8Array>;
   extension: { source: CoreManifest["source"]; files: ReadonlyMap<string, Uint8Array> };
+  mcp?: CoreMysqlDataPlan;
 }): (database: Pick<CoreHostSqlTransaction, "$queryRaw">) => Promise<CoreDataObservation> {
   const { base, postCapability } = CorePhasedMigrationLockSchema.parse(input.lock);
-  const [pin] = base.cores, [release] = base.dataCapabilities ?? [], [post] = postCapability;
-  if (base.cores.length !== 1 || pin.manifest.id !== "rental" || base.dataCapabilities?.length !== 1
-    || release.id !== "ai-native" || postCapability.length !== 1 || post.coreId !== "rental"
+  const [pin] = base.cores, releases = base.dataCapabilities ?? [], [post] = postCapability;
+  const release = releases.find(item => item.id === "ai-native"), mcp = releases.find(item => item.id === "mcp");
+  if (base.cores.length !== 1 || pin.manifest.id !== "rental" || releases.length !== (input.mcp ? 2 : 1)
+    || !release || Boolean(mcp) !== Boolean(input.mcp) || postCapability.length !== 1 || post.coreId !== "rental"
     || checkPlatformDataCapabilities(base).length
     || checkCoreCombination([pin.manifest], coreDeploymentHostVersions(base)).issues.length)
-    throw new Error("Rental AI 新装锁必须选择单一 Rental、公共 AI 及其后置扩展");
+    throw new Error("Rental 新装锁与所选 Rental、公共 AI、MCP 或后置扩展不一致");
+  if (input.mcp && (!mcp || !isDeepStrictEqual(mcp.source, base.platform.source)
+    || !isDeepStrictEqual(input.mcp.data, mcp.data) || !isDeepStrictEqual(input.mcp.migrationNames,
+      mcp.data.migrations.map(item => platformCapabilityPrismaMigrationName(mcp.id, item.id)))))
+    throw new Error("新装 MCP 数据计划与锁内原材料不一致");
 
   const { contribution } = readPublicAiDataPackage(input.publicAiFiles, release);
   const [publicMigration] = contribution.data.migrations;
@@ -234,7 +241,9 @@ export function createFreshRentalAiDataObservation(input: {
     throw new Error("Rental AI 新装原账计划与固定底座或 Rental 不一致");
 
   const ai = createRentalAiMysqlPlans(contribution, readRentalAiDataExtension(input.extension.files));
-  const basePlans = [input.platform, input.rental, ai.publicAi];
+  const capabilityPlans = [{ capabilityId: release.id, plan: ai.publicAi },
+    ...(mcp && input.mcp ? [{ capabilityId: mcp.id, plan: input.mcp }] : [])];
+  const basePlans = [input.platform, input.rental, ...capabilityPlans.map(item => item.plan)];
   const migrationName = corePostCapabilityPrismaMigrationName(post.coreId, post.migration.id);
   const expected = [...basePlans.flatMap(plan => plan.data.migrations.map((item, index) => ({
     name: plan.migrationNames[index], checksum: item.sha256
@@ -249,7 +258,10 @@ export function createFreshRentalAiDataObservation(input: {
     try {
       // Preserve the database order across phases. A v1, extra or mixed receipt
       // cannot be projected away to make this fresh installation look complete.
-      const receipts = await database.$queryRaw<OriginalMigrationReceipt[]>(sql`
+      const receipts = mcp ? await database.$queryRaw<OriginalMigrationReceipt[]>(sql`
+        SELECT migration_name AS migrationName, checksum, started_at AS startedAt, finished_at AS finishedAt,
+          rolled_back_at AS rolledBackAt, applied_steps_count AS appliedSteps
+        FROM _prisma_migrations ORDER BY started_at, id`) : await database.$queryRaw<OriginalMigrationReceipt[]>(sql`
         SELECT migration_name AS migrationName, checksum, finished_at AS finishedAt, rolled_back_at AS rolledBackAt
         FROM _prisma_migrations ORDER BY started_at, id`);
       if (!Array.isArray(receipts)) throw unavailable();
@@ -259,11 +271,13 @@ export function createFreshRentalAiDataObservation(input: {
         const checksum = checksums.get(receipt?.migrationName);
         if (checksum === undefined || checksum !== receipt.checksum) throw unavailable();
         if (receipt.rolledBackAt !== null) {
-          if (!validDate(receipt.rolledBackAt)) throw unavailable();
+          if (mcp || !validDate(receipt.rolledBackAt)) throw unavailable();
           continue;
         }
         if (receipt.migrationName !== expected[applied]?.name || !validDate(receipt.finishedAt))
           throw unavailable();
+        if (mcp && (!receipt.startedAt || !validDate(receipt.startedAt) || receipt.finishedAt < receipt.startedAt
+          || (receipt.appliedSteps !== 1 && receipt.appliedSteps !== 1n))) throw unavailable();
         appliedReceipts.push(receipt);
         applied++;
       }
@@ -275,10 +289,15 @@ export function createFreshRentalAiDataObservation(input: {
       const state = (plan: CoreMysqlDataPlan, start: number) => ({ version: plan.data.version, execution: { state: "ready" as const },
         appliedMigrations: appliedReceipts.slice(start, start + plan.migrationNames.length)
           .map((receipt, index) => ({ id: plan.data.migrations[index].id, sha256: receipt.checksum })) });
+      let offset = input.platform.migrationNames.length + input.rental.migrationNames.length;
+      const dataCapabilities = capabilityPlans.map(({ capabilityId, plan }) => {
+        const observed = { capabilityId, ...state(plan, offset) };
+        offset += plan.migrationNames.length;
+        return observed;
+      });
       return CoreDataObservationSchema.parse({ platform: state(input.platform, 0),
         cores: [{ coreId: "rental", ...state(input.rental, input.platform.migrationNames.length) }],
-        dataCapabilities: [{ capabilityId: release.id,
-          ...state(ai.publicAi, input.platform.migrationNames.length + input.rental.migrationNames.length) }] });
+        dataCapabilities });
     } catch (error) {
       if (error instanceof CoreAccessError) throw error;
       throw unavailable();

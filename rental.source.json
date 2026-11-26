@@ -63,6 +63,14 @@
         "src/ai-main.ts",
         "src/ai-openapi.ts",
         "tsconfig.ai.json"
+      ],
+      "mcpFiles": [
+        "src/mcp-bootstrap.ts",
+        "src/mcp-composition.ts",
+        "src/mcp-fresh-initialize.ts",
+        "src/mcp-fresh-main.ts",
+        "src/mcp-host.ts",
+        "tsconfig.mcp.json"
       ]
     },
     {
