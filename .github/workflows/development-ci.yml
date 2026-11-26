@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  ZELO_COMMIT: 8b32ff653c390390f70ea7fb12b84f6aed04dd74
+  ZELO_COMMIT: 6842ac7c312d4ff11c8dd4e4207450bf422bfceb
 
 jobs:
   development-build:
