@@ -147,9 +147,22 @@ jobs:
           export TEMP="$task/fresh" TMP="$task/fresh" TMPDIR="$task/fresh" XDG_CACHE_HOME="$task/fresh"
           node --no-compilation-cache --max-old-space-size=6144 \
             --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
+            tools/prepare-workspace.cjs --framework-repo "$task/zelo" --framework-commit "$ZELO_COMMIT" \
+            --repository https://github.com/JinPen-G/Nativark --core-commit "$GITHUB_SHA" \
+            --mode development --profile host --fresh-ai --out "$task/fresh/dependencies.tgz"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          mkdir "$task/fresh/dependencies"
+          tar -xzf "$task/fresh/dependencies.tgz" -C "$task/fresh/dependencies"
+          (
+            cd "$task/fresh/dependencies"
+            npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+          )
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
             "$task/zelo/scripts/package-rental-host.cjs" --development --fresh-ai \
             --repo "$task/zelo" --repository https://github.com/JinPen-G/Nativark --commit "$ZELO_COMMIT" \
-            --core-repo "$GITHUB_WORKSPACE" --core-commit "$GITHUB_SHA" --output "$task/fresh/host.tgz"
+            --core-repo "$GITHUB_WORKSPACE" --core-commit "$GITHUB_SHA" \
+            --deps "$task/fresh/dependencies/node_modules" --output "$task/fresh/host.tgz"
           test ! -e "$AI_OFFLINE_AUDIT"
           mkdir "$task/fresh/host"
           tar -xzf "$task/fresh/host.tgz" -C "$task/fresh/host"
