@@ -118,6 +118,12 @@ jobs:
           export npm_config_cache="$task/npm-cache"
           npm ci --include=dev --ignore-scripts --no-audit --no-fund
           node node_modules/@prisma/engines/scripts/postinstall.js
+          prisma_target="$(node -e "require('@prisma/get-platform').getBinaryTargetForCurrentPlatform().then(value => console.log(value))")"
+          prisma_library="$(node -e "console.log(require('@prisma/get-platform').getNodeAPIName(process.argv[1], 'fs'))" "$prisma_target")"
+          export PRISMA_SCHEMA_ENGINE_BINARY="$PWD/node_modules/@prisma/engines/schema-engine-$prisma_target"
+          export PRISMA_QUERY_ENGINE_LIBRARY="$PWD/node_modules/@prisma/engines/$prisma_library"
+          test -x "$PRISMA_SCHEMA_ENGINE_BINARY"
+          test -s "$PRISMA_QUERY_ENGINE_LIBRARY"
           export PRISMA_GENERATE_SKIP_AUTOINSTALL=1 CHECKPOINT_DISABLE=1
           export NODE_DISABLE_COMPILE_CACHE=1
           export NODE_OPTIONS="--max-old-space-size=6144 --require $guard"
