@@ -35,7 +35,8 @@ async function compiled() {
   fs.mkdirSync(stagedRental, { recursive: true }); fs.copyFileSync(path.join(rentalRoot, 'package.json'), path.join(stagedRental, 'package.json'));
   check(ts.createProgram([path.join(rentalRoot, 'src/capability-mapping.ts'), path.join(rentalRoot, 'src/catalog-goal-policy.ts')], {
     ...options, rootDir: path.join(rentalRoot, 'src'), outDir: path.join(stagedRental, 'dist'),
-    paths: { ...options.paths, '@rental-os/mcp-server': [path.join(staged, 'dist/index.d.ts')] },
+    paths: { ...options.paths, '@rental-os/mcp-server': [path.join(staged, 'dist/index.d.ts')],
+      '@rental-os/mcp-server/prisma-mcp-catalog-goals': [path.join(staged, 'dist/prisma-mcp-catalog-goals.d.ts')] },
   }));
   // Check the same read-context contract against the selected schema and formal
   // package owners, including original Native/cancellation negative assertions.

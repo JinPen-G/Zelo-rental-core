@@ -148,7 +148,7 @@ function check(program) {
   const diagnostics = ts.getPreEmitDiagnostics(program);
   assert.equal(diagnostics.length, 0, diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, "\n")).join("\n"));
   const emitted = program.emit();
-  assert.equal(emitted.emitSkipped, false); assert.equal(emitted.diagnostics.length, 0);
+  assert.equal(emitted.emitSkipped, false); assert.equal(emitted.diagnostics.length, 0, emitted.diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, "\n")).join("\n"));
 }
 const principalSource = sourceResolver.resolveSource(__filename, "@rental-os/rental-core/trusted-workspace-principal", true);
 check(ts.createProgram([principalSource], {
@@ -277,7 +277,16 @@ function fixture() {
     organizationUnit: { async findMany(query) { f.calls.push(["tx-organizations", query]); return [{ id: "org-a", parentId: null, status: "enabled" }, { id: "org-child", parentId: "org-a", status: "enabled" }]; } },
     rentalFulfillmentLocation: { async findMany(query) { f.calls.push(["tx-locations", query]); return [{ id: "loc-a" }, { id: "loc-b" }]; } },
   };
+  // The original signed-Web regression uses an ordinary repository session read.
+  // Trusted browser/Native cases still supply their own transaction session rows.
+  f.webSession = { id: "original-web-session", userId: f.user.id, audience: "operator", currentWorkspaceId: f.workspace.id,
+    expiresAt: new Date(Date.now() + 1800000), revokedAt: null };
   const outside = { user: tx.user, workspaceMember: tx.workspaceMember,
+    authSession: { async findFirst(query) {
+      f.calls.push(["web-session", query]);
+      return query.where.id === f.webSession.id && query.where.revokedAt === null && f.webSession.revokedAt === null
+        && f.webSession.expiresAt > query.where.expiresAt.gt ? structuredClone(f.webSession) : null;
+    } },
     organizationUnit: { findMany() { throw new Error("Identity read escaped original transaction"); } },
     rentalFulfillmentLocation: { findMany() { throw new Error("Location read escaped original transaction"); } } };
   f.repository = new RentalMysqlAuthenticationRepository(outside);
