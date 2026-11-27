@@ -1,17 +1,7 @@
 const assert = require("node:assert/strict");
 
-require("ts-node").register({
-  project: require("node:path").resolve(__dirname, "../apps/api/tsconfig.json"),
-  transpileOnly: false,
-  compilerOptions: {
-    module: "commonjs",
-    moduleResolution: "node",
-    experimentalDecorators: true,
-    emitDecoratorMetadata: true
-  }
-});
-
-const { AuthService } = require("../apps/api/src/modules/auth/auth.service");
+// 选装 Rental 的完整原登录/演示重置用例，依赖正式组合构建产物。
+const { RentalAuthService: AuthService } = require("@rental-os/rental-core/auth-service");
 
 const policy = { enabled: true, maxFailures: 3, windowMinutes: 10, lockMinutes: 15 };
 
