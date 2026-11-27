@@ -164,6 +164,10 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 在准备命令中选择 `--profile full --with-tests`，并使用支持该选项的固定 Zelo 提交。此选项只接受开发模式，加入 [test](test) 中七份原材料、固定底座的离线守卫和工单示例；企业门户仍从本仓读取。默认开发组合与正式发行不携带测试。
 
+[源码清单](rental.source.json) 的 `verification` 还登记了 [workspace/tests](workspace/tests) 和 [workspace/scripts](workspace/scripts)。显式开发组合将它们按固定独立提交的原字节投影到根 `tests/`、`scripts/`，每个文件的来源与摘要写入 `development.workspace.json`。材料不能覆盖底座构建脚本或离线守卫，也不会自动加入测试命令。
+
+这些迁入材料包含业务回归、辅助 fixture 和历史运维脚本。运行单项前需核对它实际需要的 helper、宿主与数据库；迁入本身不表示所有入口已经适配完成。仍针对完整旧组合的入口以固定 Zelo `46db0945dee92ac916f7265e95948943fc8b641d` 保留，报价、资金、企业与批准等当前业务回归继续接独立宿主，不以历史版本代替当前验证。
+
 解包后按[宿主构建说明](workspace/apps/rental-api/README.md)准备同版所选 Prisma Client，执行 `npm run build`，然后运行 `npm run test:rental`。该入口先执行四份编译产物用例，再串行运行两份 legacy 用例；也可分别运行 `test:rental:dist`、`test:rental:legacy`。原断言覆盖响应缓冲、页面出口、支付回调、撤权后的原结果及存量授权接管，使用明确的离线行存储，不连接数据库或供应商。
 
 两份 legacy 用例共用 `output/.tmp/rental-lead-participants`，各自核对归属并在退出时清理，已有目录会拒绝覆盖。不要并行启动它们。准备命令只带入材料，不自动运行测试，也不安装依赖或迁移数据库；来源与用例清单记录在 `development.workspace.json.verification`。

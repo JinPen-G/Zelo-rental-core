@@ -1,6 +1,13 @@
 {
   "format": "rental-source-layout-1",
   "lockfile": "workspace.build-lock.json",
+  "verification": {
+    "format": "rental-development-verification-1",
+    "paths": [
+      { "source": "workspace/tests", "target": "tests" },
+      { "source": "workspace/scripts", "target": "scripts" }
+    ]
+  },
   "paths": [
     {
       "source": ".",
