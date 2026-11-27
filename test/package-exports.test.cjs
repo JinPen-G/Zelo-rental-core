@@ -6,14 +6,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createRentalPackage } = require("../dist/package.js");
 const packageRoot = path.resolve(__dirname, "..");
+const packageVersion = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8")).version;
 
 // These bytes only reach export validation; they are never a successful package
 // or a stand-in for the actual server, data, UI or generated declarations.
 function invalidPackage(exports) {
   return {
     sourceDirectory: "packages/rental-core",
+    source: { repository: "https://github.com/example/offline-fixture", commit: "a".repeat(40) },
     files: new Map([
-      ["package.json", Buffer.from(JSON.stringify({ name: "@rental-os/rental-core", version: "0.1.0", license: "MIT", exports }))],
+      ["package.json", Buffer.from(JSON.stringify({ name: "@rental-os/rental-core", version: packageVersion, license: "MIT", exports }))],
       ["clients/enterprise-portal/OrdersPage.tsx", Buffer.from("export {};")]
     ])
   };

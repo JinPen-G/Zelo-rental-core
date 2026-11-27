@@ -10,7 +10,7 @@ function main(args) {
   const values = {}, forward = [];
   for (let index = 0; index < args.length; index++) {
     const key = args[index];
-    if (key === '--ai' || key === '--fresh-ai' || key === '--mcp') { forward.push(key); continue; }
+    if (key === '--ai' || key === '--fresh-ai' || key === '--mcp' || key === '--with-tests') { forward.push(key); continue; }
     const value = args[++index];
     if (!['--framework-repo', '--framework-commit', '--repository', '--core-commit', '--out', '--profile', '--mode'].includes(key)
       || values[key] || !value || value.startsWith('--')) throw Error('未知、重复或缺值的开发准备参数');

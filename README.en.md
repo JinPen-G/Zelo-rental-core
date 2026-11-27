@@ -146,6 +146,14 @@ In the `full` profile, build the four clients with `npm run build:tenant-website
 
 To run the ordinary API locally, use the pinned Zelo `--development` tool to prepare the [runtime bundle](workspace/apps/rental-api/README.md#固定双仓普通开发运行包). Initialize and start it against a dedicated new MySQL database. It cannot upgrade an existing installation or pass the production release gate. Prepare the admin UI and clients from the same pair of source commits.
 
+#### Running the original Core regression tests
+
+Select `--profile full --with-tests` when preparing the workspace, using a pinned Zelo commit that supports the option. It is available only in development mode and adds the seven original [test files](test), the pinned framework's offline guard, and the Tickets example. Portal sources still come from this repository. Default development workspaces and releases exclude these tests.
+
+After extraction, prepare the matching selected Prisma Client following the [host build guide](workspace/apps/rental-api/README.md), run `npm run build`, then `npm run test:rental`. This runs the four compiled-output suites followed by the two legacy suites in sequence. The stages are also available as `test:rental:dist` and `test:rental:legacy`. Original assertions cover buffered responses, page exports, payment callbacks, original-result access after revocation, and legacy grant adoption, using offline row fixtures without database or provider connections.
+
+Both legacy suites own `output/.tmp/rental-lead-participants`, validate its identity, and remove it on exit; they refuse an existing directory. Do not run them concurrently. Workspace preparation only includes the materials and does not run tests, install dependencies, or migrate a database. The source and suite list are recorded in `development.workspace.json.verification`.
+
 #### Rental and Tickets example
 
 Use `--profile multi-core` with a pinned Zelo commit that supports it. The workspace takes the [dual-Core API](workspace/apps/example-multi-core-api/README.md) and [admin host](workspace/apps/example-multi-core-admin/README.md) from this repository and the Tickets example package from Zelo. Use one deployment lock and the corresponding standard packages for both hosts. This profile covers ordinary development; the legacy dual-Core AI host and its original tests remain at the pinned historical revision below.

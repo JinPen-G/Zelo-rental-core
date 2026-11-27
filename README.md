@@ -160,6 +160,14 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 要在本地运行普通 API，使用含 `--development` 入口的固定 Zelo 工具生成[开发运行包](workspace/apps/rental-api/README.md#固定双仓普通开发运行包)。该包可在专用新 MySQL 上初始化并启动；它不适用于已有库升级，也不能进入正式部署。后台和四端由同一对固定提交准备。
 
+#### 运行原 Core 回归
+
+在准备命令中选择 `--profile full --with-tests`，并使用支持该选项的固定 Zelo 提交。此选项只接受开发模式，加入 [test](test) 中七份原材料、固定底座的离线守卫和工单示例；企业门户仍从本仓读取。默认开发组合与正式发行不携带测试。
+
+解包后按[宿主构建说明](workspace/apps/rental-api/README.md)准备同版所选 Prisma Client，执行 `npm run build`，然后运行 `npm run test:rental`。该入口先执行四份编译产物用例，再串行运行两份 legacy 用例；也可分别运行 `test:rental:dist`、`test:rental:legacy`。原断言覆盖响应缓冲、页面出口、支付回调、撤权后的原结果及存量授权接管，使用明确的离线行存储，不连接数据库或供应商。
+
+两份 legacy 用例共用 `output/.tmp/rental-lead-participants`，各自核对归属并在退出时清理，已有目录会拒绝覆盖。不要并行启动它们。准备命令只带入材料，不自动运行测试，也不安装依赖或迁移数据库；来源与用例清单记录在 `development.workspace.json.verification`。
+
 #### Rental 与工单双 Core 示例
 
 沿上述命令改用 `--profile multi-core`，并选择已支持此范围的固定 Zelo 提交。该工作区从本仓读取[双 Core API](workspace/apps/example-multi-core-api/README.md)和[双 Core 后台](workspace/apps/example-multi-core-admin/README.md)，从 Zelo 读取工单示例包。两端使用同一份含 Rental／工单的固定部署锁及对应标准包。这个范围只用于普通开发，旧双 Core AI 与原宿主测试使用下列固定历史版本。
@@ -168,7 +176,7 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 继续验证旧单仓断言时，单独检出[完整历史提交 `46db0945…`](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d)，用该检出的锁准备依赖，别把旧四端目录复制回 Zelo 主线。在旧检出根运行 `npm run test:tenant-website-resolve`、`npm run test:miniprogram` 或 `npm run test:staff-miniprogram`；两个小程序命令会先编各自的包。
 
-其余[原端侧测试](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d/tests)也在同一检出执行：`enterprise-consumers` 及 AI 离线用例沿该版守卫与专用输出目录，读 `dist` 的用例先用该版 `build:legacy` 或所需小程序构建准备产物。原 `scripts/ai-native-b14-offline.cjs`、`scripts/generate-inspection-wire-schemas.cjs --check` 和 Rental 的原 `test/package-exports.test.cjs` 路径断言亦用该版复核。旧测试结果只证明旧组合；当前四端从 `full` 组合构建和验证。
+其余[原端侧测试](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d/tests)也在同一检出执行：`enterprise-consumers` 及 AI 离线用例沿该版守卫与专用输出目录，读 `dist` 的用例先用该版 `build:legacy` 或所需小程序构建准备产物。原 `scripts/ai-native-b14-offline.cjs` 和 `scripts/generate-inspection-wire-schemas.cjs --check` 亦用该版复核。旧测试结果只证明旧组合；当前 Rental 的六份 Core 用例使用上面的显式开发验证组合，四端从 `full` 组合构建。
 
 原宿主的 [16 份测试与案例](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d/apps/rental-api/test)在同一历史检出运行。包、双 Core 和恢复案例用 `node --no-compilation-cache tests/rental-host-package.test.cjs`；AI HTTP、知识、模型设置和任务案例由 `node --no-compilation-cache apps/rental-api/test/ai-composition.test.cjs` 统一调用。生命周期、文件清理与客户端请求等独立 `.test.cjs` 入口沿各文件说明；`openapi.test.cjs` 先准备该版 Rental API 编译产物。保留原断言和原测试用锁，不将历史结果用作当前双仓运行证据。
 

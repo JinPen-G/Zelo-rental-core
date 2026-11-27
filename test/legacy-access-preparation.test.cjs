@@ -165,7 +165,8 @@ test('存量准备仅生成 Rental 缺失映射，保留真实组织/空间范�
   const workspace = prepared.members[0].workspaces[0];
   assert.deepEqual(workspace.businessLocationScope, { mode: 'selected', locationIds: ['loc-allowed'] });
   assert.deepEqual(workspace.original.locationScope.locationIds, ['loc-allowed', 'loc-foreign-org']);
-  assert.deepEqual(workspace.operatorDirectoryCodes, ['rental:order:view', 'rental:page.workbench:view', 'rental:setup:view']);
+  assert.deepEqual(workspace.operatorDirectoryCodes, ['rental:order:view', 'rental:page.ai-operator:view',
+    'rental:page.ai-tasks:view', 'rental:page.workbench:view', 'rental:setup:view']);
   assert.equal(prepared.originalEvidence.workspaces[0].categoryVersionId, 'category-old');
   assert.equal(prepared.originalEvidence.workspaces[0].categoryAdoptionRevision, 7);
   assert.equal(prepared.bindings.find(row => !row.scope.container).proposal, null);
