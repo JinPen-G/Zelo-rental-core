@@ -1,0 +1,113 @@
+name: 双仓发行归档
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-assets.yml]
+  workflow_dispatch:
+    inputs:
+      platform_commit:
+        description: Zelo 发行提交的完整 SHA
+        required: true
+        type: string
+      rental_commit:
+        description: Rental 发行提交的完整 SHA
+        required: true
+        type: string
+      platform_tag:
+        description: 已推送的 Zelo 发行标签
+        required: true
+        type: string
+      rental_tag:
+        description: 已推送的 Rental 发行标签
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  archive:
+    if: github.repository == 'JinPen-G/Zelo-rental-core' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ZELO_COMMIT: ${{ inputs.platform_commit || '46db0945dee92ac916f7265e95948943fc8b641d' }}
+      RENTAL_COMMIT: ${{ inputs.rental_commit || '7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497' }}
+      ZELO_TAG: ${{ inputs.platform_tag || 'v0.1.18' }}
+      RENTAL_TAG: ${{ inputs.rental_tag || 'v0.1.15' }}
+      TASK_DIR: output/.tmp/rental-release-assets
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: 核对提交和标签格式
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ZELO_COMMIT" =~ ^[a-f0-9]{40}$ && "$RENTAL_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$ZELO_TAG" =~ ^v0\.1\.[0-9]+$ && "$RENTAL_TAG" =~ ^v0\.1\.[0-9]+$ ]]
+      - name: 检出固定 Zelo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: JinPen-G/Zelo
+          ref: ${{ env.ZELO_COMMIT }}
+          path: ${{ env.TASK_DIR }}/zelo
+          persist-credentials: false
+      - name: 检出固定 Rental
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.RENTAL_COMMIT }}
+          path: ${{ env.TASK_DIR }}/rental
+          persist-credentials: false
+      - name: 固定 Node 工具链
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.13.0
+      - name: 校验来源并安装编译依赖
+        working-directory: ${{ env.TASK_DIR }}/zelo
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/$TASK_DIR"
+          test "$(git rev-parse HEAD)" = "$ZELO_COMMIT"
+          test "$(git -C "$task/rental" rev-parse HEAD)" = "$RENTAL_COMMIT"
+          test "v$(node -p 'require("./package.json").version')" = "$ZELO_TAG"
+          test "v$(node -p 'require(process.argv[1]).version' "$task/rental/package.json")" = "$RENTAL_TAG"
+          git -C "$task/rental" fetch --no-tags --depth=1 origin "refs/tags/$RENTAL_TAG:refs/tags/$RENTAL_TAG"
+          test "$(git -C "$task/rental" rev-parse "refs/tags/$RENTAL_TAG^{commit}")" = "$RENTAL_COMMIT"
+          npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+      - name: 生成并回读两个发行归档
+        working-directory: ${{ env.TASK_DIR }}/zelo
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/$TASK_DIR"
+          mkdir "$task/assets" "$task/offline"
+          export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
+          export AI_OFFLINE_WRITE_ROOT="$task" AI_OFFLINE_AUDIT="$task/offline/audit.log"
+          export TEMP="$task/offline" TMP="$task/offline" TMPDIR="$task/offline" XDG_CACHE_HOME="$task/offline"
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require ./tests/fixtures/ai-native/prisma-offline-preload.cjs \
+            scripts/ops/release-rental-assets.cjs "$PWD" "$ZELO_COMMIT" "$task/rental" "$RENTAL_COMMIT" "$task/assets" \
+            | tee "$task/release-assets.json"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          platform="$task/assets/platform-source-${ZELO_TAG#v}.tgz"
+          rental="$task/assets/rental-${RENTAL_TAG#v}.tgz"
+          tar -tzf "$platform" > "$task/platform.list"
+          tar -tzf "$rental" > "$task/rental.list"
+          if grep -Eq '^(\./)?(docs|assets|\.impeccable)(/|$)|(^|/)(node_modules|output|deepseek-harness-clone|deepseek-harness-original)(/|$)' "$task/platform.list" "$task/rental.list"; then
+            echo '发行归档包含维护者资料或参考镜像' >&2
+            exit 1
+          fi
+          if grep -vEx '(\./)?apps/admin/AGENTS\.md' "$task/platform.list" |
+            grep -E '^(\./)?(apps/(api|admin|rental-[^/]+)|packages/(rental-[^/]+|shared))(/|$)' > "$task/unexpected.list"; then
+            echo '纯底座归档包含 Rental 实现' >&2
+            exit 1
+          fi
+          cp "$task/release-assets.json" "$task/assets/release-assets.json"
+      - name: 保留待核收资产
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rental-release-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TASK_DIR }}/assets/
+          if-no-files-found: error
+          retention-days: 7
