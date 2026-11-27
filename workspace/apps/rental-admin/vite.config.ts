@@ -21,12 +21,15 @@ import { platformAdminVite } from "@rental-os/platform-admin/vite";
 import { apiProxyTarget, loadViteEnvironment, publicEnvironmentDefinitions } from "../../config/environment.cjs";
 
 export default defineConfig(({ mode }) => {
+  const offline = mode === "ai-offline" || mode === "rental-fresh-ai-offline";
   const env = loadViteEnvironment(mode, fileURLToPath(new URL(".", import.meta.url)), loadEnv,
-    { offline: mode === "ai-offline" });
+    { offline });
   if (!process.env.CORE_DEPLOYMENT_LOCK) throw new Error("Rental 后台构建须提供与 API 相同的 CORE_DEPLOYMENT_LOCK");
   const path = process.env.CORE_DEPLOYMENT_LOCK;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-  const freshAi = mode === "rental-fresh-ai";
+  // The existing offline batch selects the exact lock format; v2 never falls back to v1.
+  const freshAi = mode === "rental-fresh-ai" || mode === "rental-fresh-ai-offline"
+    || offline && typeof value === "object" && value !== null && "lockVersion" in value && value.lockVersion === 2;
   const phased = freshAi ? CorePhasedMigrationLockSchema.parse(value) : undefined;
   const lock = phased?.base ?? CoreDeploymentLockSchema.parse(value);
   if (lock.cores.length !== 1 || lock.cores[0].manifest.id !== "rental")
