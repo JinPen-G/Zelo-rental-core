@@ -5,8 +5,8 @@
 *The first official production business Core for [Zelo](https://github.com/JinPen-G/Zelo) — a full-featured, multi-category rental SaaS package and vertical Core reference implementation.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Core Version](https://img.shields.io/badge/Core-0.1.15-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15)
-[![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.1.12%20%3C0.2.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
+[![Core Version](https://img.shields.io/badge/Core-0.2.1-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.2.1)
+[![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.2.0%20%3C0.3.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
 [![Contract](https://img.shields.io/badge/Contract-%3E%3D0.1.1%20%3C0.2.0-7C3AED.svg)](core.manifest.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.12-339933.svg)](package.json)
 [![Topic: zelo-core](https://img.shields.io/badge/GitHub%20Topic-zelo--core-111827.svg)](https://github.com/topics/zelo-core)
@@ -56,8 +56,8 @@ flowchart TD
 
 | 项目 | 当前值 / 要求 | 说明 |
 | --- | --- | --- |
-| **Core ID / 版本** | `rental` · `0.1.15` | 标准包见 [v0.1.15 Release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15) |
-| **兼容 Zelo 底座** | `>=0.1.12 <0.2.0` | 最新正式普通组合与 [Zelo `0.1.18`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.18) 配对构建 |
+| **Core ID / 版本** | `rental` · `0.2.1` | 标准包见 [v0.2.1 Release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.2.1) |
+| **兼容 Zelo 底座** | `>=0.2.0 <0.3.0` | 已与 [Zelo `0.2.2`](https://github.com/JinPen-G/Zelo/releases/tag/v0.2.2) 完成正式 API/Web 配对 |
 | **接入契约版本** | `>=0.1.1 <0.2.0` | 沿 `@rental-os/core-contracts` 标准清单校验 |
 | **运行环境** | Node.js `>=22.12.0 <25.0.0` · MySQL 8.4 | 与 Zelo 公共底座保持一致 |
 | **数据版本与迁移** | `dataVersion: 0.1.1`（2 份原始 SQL 迁移） | 含初始租赁表与 `0.1.13` 换货工作流 6 表；详参 [数据升级说明](prisma/README.md#迁移与历史) |
@@ -72,7 +72,7 @@ flowchart TD
 
 ## 当前开发源码与已发行版本
 
-正式 `v0.1.15` 包来自固定独立源码 `7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497`，根发现清单与包内清单字节相同。旧 `v0.1.14` 发行继续保留。独立 CI 验证了普通四端构建及 18 条 v2 新装迁移、登录和重启；[正式 API/Web 配对](https://github.com/JinPen-G/Zelo/actions/runs/45916049094)选择普通宿主。现有混合库升级和可选 MCP 的生产接入不能使用该回执代替验证。
+正式 `v0.2.1` 包来自固定独立源码 `bff93e81afbc9eb4d7e3b578cb26bb571393584f`，根发现清单与包内清单字节相同。旧 `v0.1.14`、`v0.1.15` 及后续已公开资产继续保留。原包按 Zelo `0.2.1` 构建，现已通过 [Zelo `0.2.2` 正式 API/Web 配对](https://github.com/JinPen-G/Zelo/actions/runs/46033089029)：选择 `public-retention`，MCP 关闭，核对同锁产物并完成镜像内冒烟。独立 CI 的普通/双 Core 构建、新装登录和重启证据见[固定运行](https://github.com/JinPen-G/Zelo-rental-core/actions/runs/46024876440)。现有混合库迁移、授权桥接与线上切换仍需单独批准，本回执不代表已更新服务器。
 
 源码变化包括新报价配置组合的同事务核验、客户建单来源参加者、库存与资产写入前重读、冷实例配置与历史订单/工单读取、日历原键比较、渠道权限投影及官网目录结构门禁。原页面布局、样式、Token及业务迁移不随本次补齐改动。
 

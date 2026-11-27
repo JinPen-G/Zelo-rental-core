@@ -5,8 +5,8 @@
 *开源多租户 SaaS 底座 [Zelo](https://github.com/JinPen-G/Zelo) 的首个官方生产级业务 Core —— 覆盖多品类租赁全链路的独立业务包与架构参考实现。*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Core Version](https://img.shields.io/badge/Core-0.1.15-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15)
-[![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.1.12%20%3C0.2.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
+[![Core Version](https://img.shields.io/badge/Core-0.2.1-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.2.1)
+[![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.2.0%20%3C0.3.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
 [![Contract](https://img.shields.io/badge/Contract-%3E%3D0.1.1%20%3C0.2.0-7C3AED.svg)](core.manifest.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.12-339933.svg)](package.json)
 [![Topic: zelo-core](https://img.shields.io/badge/GitHub%20Topic-zelo--core-111827.svg)](https://github.com/topics/zelo-core)
@@ -56,8 +56,8 @@ flowchart TD
 
 | Item | Current Value / Requirement | Notes |
 | --- | --- | --- |
-| **Core ID / Version** | `rental` · `0.1.15` | Standard package in the [v0.1.15 release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15) |
-| **Compatible Zelo Base** | `>=0.1.12 <0.2.0` | The ordinary release pair was built with [Zelo `0.1.18`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.18) |
+| **Core ID / Version** | `rental` · `0.2.1` | Standard package in the [v0.2.1 release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.2.1) |
+| **Compatible Zelo Base** | `>=0.2.0 <0.3.0` | Release API/Web images have been paired with [Zelo `0.2.2`](https://github.com/JinPen-G/Zelo/releases/tag/v0.2.2) |
 | **Core Contract Range** | `>=0.1.1 <0.2.0` | Validated via `@rental-os/core-contracts` |
 | **Runtime Requirements** | Node.js `>=22.12.0 <25.0.0` · MySQL 8.4 | Matches the Zelo platform base |
 | **Data Version & Migrations** | `dataVersion: 0.1.1` (2 raw SQL migrations) | Initial rental schema + `0.1.13` 6-table exchange workflow; see [Data Upgrade Notes](prisma/README.md#迁移与历史) |
@@ -72,7 +72,7 @@ flowchart TD
 
 ## Development source and published releases
 
-The `v0.1.15` package is built from the independent commit `7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497`. The default branch publishes the manifest from that exact package; the `v0.1.14` release remains available. Independent CI verifies the ordinary client builds and the 18-migration v2 fresh installation, sign-in, and restart. The [release image pair](https://github.com/JinPen-G/Zelo/actions/runs/45916049094) uses the ordinary host, with separate verification required for legacy database upgrades and production MCP.
+The `v0.2.1` package is built from independent commit `bff93e81afbc9eb4d7e3b578cb26bb571393584f`; the root discovery manifest matches the published package byte for byte. Historical releases, including `v0.1.14` and `v0.1.15`, remain unchanged. The package retains its original Zelo `0.2.1` build basis and has passed the [Zelo `0.2.2` API/Web release pair](https://github.com/JinPen-G/Zelo/actions/runs/46033089029) with `public-retention` and MCP disabled, matching deployment locks and in-image smoke checks. [Independent CI](https://github.com/JinPen-G/Zelo-rental-core/actions/runs/46024876440) covers ordinary and dual-Core builds, fresh initialization, sign-in and restart. Existing database migrations, authorization adoption and production cutover still require separate approval; these results do not mean the server has been upgraded.
 
 The changes cover transaction-bound quote configuration checks, client order-creation participants, fresh inventory and asset references, cold-instance reads, and website catalog validation. See the [current Chinese integration notes](README.md#本批接入变化) and [fixed detailed developer guide](https://github.com/JinPen-G/Zelo-rental-core/blob/8902e4d8db920cf33fd54992ec2cb939150985f0/README.md#阅读路线).
 
