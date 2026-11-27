@@ -132,6 +132,33 @@ test("Rental bundle loads through real profile and Loader without granting busin
     read: async () => { throw new Error("Schema inspection must not invoke an original reader"); } });
   assert.equal(read.inputSchema.properties.inputRef.format, "uuid");
   assert.throws(() => mcp("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
+  // These six original Rental input-schema assertions belong to the real Host,
+  // while their authority, field release and receipt cases remain in MCP foundation.
+  const formal = specifier => loader.load(loader.resolveSource(__filename, specifier, true));
+  const runtime = formal("@rental-os/mcp-server/original-read-tool");
+  const originals = formal("@rental-os/ai-native-server/runtime/contracts/ai-native-schemas").AI_NATIVE_COMPONENT_SCHEMAS;
+  const originalSchemas = { AiOrderExplainRequestDraft: originals.AiOrderExplainRequestDraft, AiOrderExplainInput: originals.AiOrderExplainInput };
+  for (const [entry, factory] of [
+    ["rental-conversation-result-read", "createRentalConversationResultRead"],
+    ["selected-proposal-read", "createSelectedProposalRead"],
+    ["quote-selection-read", "createQuoteSelectionRead"],
+    ["selected-order-result-read", "createSelectedOrderResultRead"],
+    ["rental-conversation-operation-read", "createRentalConversationOperationRead"],
+    ["rental-conversation-list-read", "createRentalConversationListRead"]
+  ]) {
+    const read = formal("@rental-os/rental-mcp-host/" + entry)[factory]({
+      name: "synthetic_" + entry.replaceAll("-", "_"), description: "Original schema compatibility only.",
+      ...(entry === "rental-conversation-result-read" ? { originalSchemas } : {}),
+      outputSchema: { type: "object", properties: { observation: {} }, required: ["observation"], additionalProperties: false },
+      read: async () => { throw new Error("Schema inspection must not invoke an original reader"); }
+    }, runtime);
+    if (entry === "rental-conversation-result-read") {
+      assert.throws(() => mcp("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA",
+        "the original Host rejects the actual shared constraints instead of dropping them");
+    } else {
+      assert.throws(() => mcp("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
+    }
+  }
   const output = fs.mkdtempSync(path.join(prepareOutput(), "loader-"));
   const profile = path.join(output, "profile");
   const staged = path.join(profile, "node_modules/@rental-os/harness-plugin");

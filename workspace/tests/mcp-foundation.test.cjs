@@ -98,7 +98,7 @@ function source(relative) {
   const file = path.resolve(root, relative);
   if (sourceCache.has(file)) return sourceCache.get(file);
   const javascript = ts.transpileModule(fs.readFileSync(file, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, strict: true },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, strict: true, experimentalDecorators: true },
     fileName: file,
   }).outputText;
   const module = { exports: {} };
@@ -311,9 +311,6 @@ async function verifyConversationRead(t, createRead) {
   assert.equal(readCalls, beforeInputAccessor, "a direct getter input never enters the original adapter");
   assert.equal(read.inputSchema.properties.admissionKey.maxLength, 128);
   assert.equal(read.inputSchema.properties.resultId.pattern, "^[A-Za-z0-9][A-Za-z0-9._:-]*$");
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA",
-    "the original Host rejects the actual shared constraints instead of dropping them");
   assert.throws(() => createRead({ name: "override_schema", description: "No override.", outputSchema, originalSchemas: {
     ...originalSchemas, AiConversationModelResultReadDraft: { type: "object", additionalProperties: true },
   }, read: async () => current }), /must not override/);
@@ -467,8 +464,6 @@ async function verifySelectedProposalRead(t, createRead) {
   const read = createRead(binding);
   binding.read = async () => { throw new Error("Replacement review must not run"); };
   assert.equal(calls, 0);
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
   const endpoint = fixture(t, undefined, { readTools: { tools: [read], publication: { allows: async () => published },
     authority: { withRead: async (_auth, _name, _input, consume) => consume() }, accounting: { withCall: async (_auth, _name, _input, consume) => consume() },
     // Test-only projection deliberately omits scope and immutable snapshot locators.
@@ -546,8 +541,6 @@ async function verifyQuoteSelectionRead(t, createRead) {
   binding.read = async () => { throw new Error("Replacement reader must not execute"); };
   assert.equal(calls, 0);
   assert.equal(read.inputSchema.properties.selectionId.format, "uuid");
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
   const mutable = { ...command }, pending = read.read(mutable, signal());
   mutable.selectionId = "00000000-0000-4000-8000-000000000005";
   assert.deepEqual(await pending, current);
@@ -633,8 +626,6 @@ async function verifySelectedOrderResultRead(t, createRead) {
   binding.read = async () => { throw new Error("Replaced reader must not execute"); };
   assert.equal(calls, 0);
   assert.equal(read.inputSchema.properties.selection.properties.originalInputRef.format, "uuid");
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
   const mutable = structuredClone(command), pendingSnapshot = read.read(mutable, signal());
   mutable.selection.inputHash = "f".repeat(64);
   assert.deepEqual(await pendingSnapshot, current);
@@ -712,8 +703,6 @@ async function verifyOperationRead(t, createRead) {
   const read = createRead(binding);
   binding.read = async () => { throw new Error("Original reader replacement must not run"); };
   assert.equal(read.inputSchema.properties.operationKey.maxLength, 128);
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
   const input = { ...command }, pendingInput = read.read(input, signal());
   queueMicrotask(() => { input.operationKey = "changed-after-validation"; });
   assert.deepEqual(await pendingInput, current);
@@ -794,8 +783,6 @@ async function verifyConversationList(t, createRead) {
   binding.read = async () => { throw new Error("Original reader replacement must not run"); };
   const command = { draftVersion: "ain-conversation-draft-2", status: "active", limit: 1 };
   assert.equal(read.inputSchema.properties.limit.maximum, 20);
-  installed.resolve("@deepseek-ai/dsh-tools");
-  assert.throws(() => installed("@deepseek-ai/dsh-tools").assertSupportedJsonSchema(read.inputSchema), error => error.code === "UNSUPPORTED_SCHEMA");
   const endpoint = fixture(t, async () => verified(), { readTools: { tools: [read], publication: { allows: async () => published },
     authority: { withRead: async (_auth, _name, _input, consume) => consume() }, accounting: { withCall: async (_auth, _name, _input, consume) => consume() },
     release: { project: async (_auth, _name, value) => { releases++; return { page: value }; } } } });
