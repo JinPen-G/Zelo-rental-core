@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "outDir": "dist-public", "newLine": "lf", "noEmitOnError": true },
+  "include": [],
+  "files": [
+    "src/task-errors.ts",
+    "src/request-binding.ts",
+    "src/task-transactions.ts",
+    "src/task-persistence.ts",
+    "src/task-resource-ledger.ts",
+    "src/task-runner-resources.ts",
+    "src/task-steps.ts",
+    "src/task-measured-effects.ts",
+    "src/gateway-admission.ts",
+    "src/public-tenant-gateway.ts",
+    "src/public-tenant-task-authority.ts",
+    "src/platform-transactions.ts",
+    "src/tenant-configuration-transactions.ts",
+    "src/execution-context-validation.ts",
+    "src/model-configuration.ts",
+    "src/model-adapters.ts",
+    "src/public-platform-model-settings.ts",
+    "src/public-tenant-model-settings.ts",
+    "src/public-ai-work-center.ts",
+    "src/public-platform-finance.ts",
+    "src/runtime/budget/public-budget-ledger.ts",
+    "src/runtime/original-result-reads.ts",
+    "src/runtime/original-task-recovery-read.ts"
+  ]
+}

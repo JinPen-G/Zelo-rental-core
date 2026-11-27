@@ -150,6 +150,10 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 归档内的 `development.workspace.json` 记录两仓提交、文件来源和摘要。组合从固定底座锁及[独立构建依赖锁](workspace.build-lock.json)核外部依赖；官网和企业门户仍使用各自锁定的 TypeScript，重叠固定依赖冲突直接拒绝。此文件供组合工具消费，解包后以生成的 `package-lock.json` 执行 `npm ci` 和 `npm run check:types`。构建不需要旧业务测试、私有资料、环境文件或作者生成物。
 
+旧 Shared 与 AI 兼容源码由本仓的 `workspace/packages/{shared,ai-native-server,ai-native-admin,ai-native-data}` 承接。[来源清单](rental.source.json)的 `compatibility` 项记录原 Zelo 完整提交、目录和文件集摘要；准备工具逐项核对，缺件或字节变化即停止。Shared、原后台和所需数据读口随普通组合选择，旧服务端只随显式 AI 选择。这些固定快照保持旧出口与业务行为，不自动跟随底座的公共 SDK 更新。
+
+显式公共保留组合仍从同次固定 Zelo 源编译公共服务端 `0.2.1`，仅供 `rental-ai-adapters` 解析；旧宿主继续解析本仓的 `0.1.0`。新装公共 AI 数据也从固定 Zelo 源生成，旧数据兼容包 `0.1.1` 保留原读口与历史迁移。更新兼容快照须同时核原调用者、来源摘要与依赖锁，不能改历史 SQL 或拿新 initial 替代旧账。新清单须搭配已支持 `compatibility` 角色的 Zelo 工具提交；旧工具会拒绝该角色。
+
 在 `full` 组合中，四端分别使用 `npm run build:tenant-website`、`npm run build:enterprise-portal`、`npm run build:miniprogram` 和 `npm run build:staff-miniprogram`。官网和企业门户的开发入口为 `npm run dev:tenant-website`、`npm run dev:enterprise-portal`。各端仍须满足原构建前置和部署锁校验。
 
 [独立开发 CI](.github/workflows/development-ci.yml) 使用工作流中固定的 Zelo 提交，编译本次 Rental 提交的普通 API、后台和四端。报告记录两仓来源、依赖锁和编译产物摘要，只用于开发验证；正式发行仍须按下节准备固定版本、部署锁和运行产物。

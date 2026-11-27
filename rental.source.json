@@ -97,7 +97,9 @@
     {
       "source": "workspace/apps/example-multi-core-api",
       "target": "apps/example-multi-core-api",
-      "roles": ["multi-core"],
+      "roles": [
+        "multi-core"
+      ],
       "required": [
         "package.json",
         "README.md",
@@ -112,7 +114,9 @@
     {
       "source": "workspace/apps/example-multi-core-admin",
       "target": "apps/example-multi-core-admin",
-      "roles": ["multi-core"],
+      "roles": [
+        "multi-core"
+      ],
       "required": [
         "package.json",
         "README.md",
@@ -209,7 +213,9 @@
     {
       "source": "workspace/packages/rental-ai-adapters",
       "target": "packages/rental-ai-adapters",
-      "roles": ["ai"],
+      "roles": [
+        "ai"
+      ],
       "runtime": "public-ai-sdk",
       "required": [
         "LICENSE",
@@ -242,6 +248,87 @@
         "src/index.ts",
         "src/original-mcp-host.ts"
       ]
+    },
+    {
+      "source": "workspace/packages/shared",
+      "target": "packages/shared",
+      "roles": [
+        "compatibility"
+      ],
+      "required": [
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.agent-desktop.json",
+        "src/index.ts"
+      ],
+      "compatibility": {
+        "format": "rental-legacy-source-1",
+        "repository": "https://github.com/JinPen-G/Zelo",
+        "commit": "ce0abd68583889c07a5aa52bee287396b81a349a",
+        "path": "packages/shared",
+        "files": 137,
+        "sha256": "de490c0d62bc8f965b04fc3b619d25d4875ab8439c0dc90bf73190f651f14d36"
+      }
+    },
+    {
+      "source": "workspace/packages/ai-native-server",
+      "target": "packages/ai-native-server",
+      "roles": [
+        "compatibility"
+      ],
+      "required": [
+        "package.json",
+        "LICENSE",
+        "tsconfig.json"
+      ],
+      "compatibility": {
+        "format": "rental-legacy-source-1",
+        "repository": "https://github.com/JinPen-G/Zelo",
+        "commit": "ce0abd68583889c07a5aa52bee287396b81a349a",
+        "path": "packages/ai-native-server",
+        "files": 821,
+        "sha256": "5ba3c556bc56da12580d9a8d4ade2d589424b0ec50d2d442041b16ab8c187d33"
+      }
+    },
+    {
+      "source": "workspace/packages/ai-native-admin",
+      "target": "packages/ai-native-admin",
+      "roles": [
+        "compatibility"
+      ],
+      "required": [
+        "package.json",
+        "LICENSE",
+        "tsconfig.json"
+      ],
+      "compatibility": {
+        "format": "rental-legacy-source-1",
+        "repository": "https://github.com/JinPen-G/Zelo",
+        "commit": "ce0abd68583889c07a5aa52bee287396b81a349a",
+        "path": "packages/ai-native-admin",
+        "files": 82,
+        "sha256": "a269c1e06b27dfabde620dca6bcc92c7b169a080da7f1545d2da42b2e4599f0e"
+      }
+    },
+    {
+      "source": "workspace/packages/ai-native-data",
+      "target": "packages/ai-native-data",
+      "roles": [
+        "compatibility"
+      ],
+      "required": [
+        "package.json",
+        "LICENSE",
+        "tsconfig.json"
+      ],
+      "compatibility": {
+        "format": "rental-legacy-source-1",
+        "repository": "https://github.com/JinPen-G/Zelo",
+        "commit": "ce0abd68583889c07a5aa52bee287396b81a349a",
+        "path": "packages/ai-native-data",
+        "files": 82,
+        "sha256": "afc2d7cba0832ab6cf8d7752d973c8768bcc25daaf624eac0b4c313cca044a41"
+      }
     }
   ]
 }
