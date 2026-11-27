@@ -1,0 +1,352 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+require("ts-node").register({
+  transpileOnly: false,
+  compilerOptions: {
+    target: "es2022",
+    lib: ["es2022", "dom"],
+    module: "commonjs",
+    moduleResolution: "node",
+    experimentalDecorators: true,
+    emitDecoratorMetadata: true
+  }
+});
+
+const { ApiAuthGuard } = require("../apps/api/src/common/api-auth.guard");
+const { getRequestTenantId, runWithRequestIdentity } = require("../apps/api/src/common/request-identity");
+const { hashPassword, verifyPassword } = require("../apps/api/src/common/password");
+const { AuthService } = require("../apps/api/src/modules/auth/auth.service");
+const { PlatformService } = require("../apps/api/src/modules/platform/platform.service");
+const { RentalCoreService } = require("../apps/api/src/modules/rental-core/rental-core.service");
+const { RoleScope, TenantStatus } = require("@rental-os/shared");
+const { createAbsorbingConfigStore, createAbsorbingFactStore } = require("./helpers/absorbing-config-store.cjs");
+
+const config = {
+  get(key) {
+    if (key === "PLATFORM_DATA_SOURCE") return "memory";
+    if (key === "AUTH_TOKEN_SECRET") return "saas-foundation-test-secret";
+    return undefined;
+  }
+};
+
+function requestContext(method, url, accessToken) {
+  const request = {
+    method,
+    url,
+    headers: { authorization: `Bearer ${accessToken}` }
+  };
+  return {
+    request,
+    context: {
+      switchToHttp() {
+        return { getRequest: () => request };
+      }
+    }
+  };
+}
+
+(async () => {
+  const rentalCore = new RentalCoreService(createAbsorbingConfigStore(), createAbsorbingFactStore());
+  const platform = new PlatformService(config, undefined, rentalCore);
+  const auth = new AuthService(platform, config);
+  const guard = new ApiAuthGuard(auth);
+
+  const saas = await auth.login({
+    tenantCode: "platform",
+    account: "admin",
+    password: "RentalOS!2026"
+  });
+  const demo = await auth.login({
+    tenantCode: "demo",
+    account: "admin",
+    password: "RentalDemo!2026"
+  });
+  const demo2 = await auth.login({
+    tenantCode: "demo2",
+    account: "admin",
+    password: "RentalDemo!2026"
+  });
+
+  assert.equal(saas.user.isSaasAdmin, true);
+  assert.equal(saas.user.isPlatformAdmin, false, "SaaS admin must not be a tenant admin");
+  assert.equal(demo.user.isSaasAdmin, false);
+  assert.equal(demo.user.isPlatformAdmin, true);
+  assert.equal(demo.needsTenantOnboarding, false, "既有租户管理员不应触发新租户开业引导");
+  assert.equal(demo.tenant.categoryCode, "camera");
+  assert.equal(demo.tenant.categoryName, "摄影设备");
+  assert.equal(demo2.tenant.categoryCode, "camping");
+  assert.equal(demo2.tenant.categoryName, "露营设备");
+  // CORE-EXT-02C：会话里的能力集是「该空间**已启用**的能力实例」，不再是品类
+  // `defaultCapabilities` 声明。本用例的 AuthService 只注入两个依赖、没有能力服务，
+  // 因此必须 fail-closed 得到空集；若哪天有人把它改回读品类声明，这里会立刻变红
+  // （camera 声明了 serialized_inventory/delivery 等，断言会拿到非空数组）。
+  //
+  // 原断言是 `capabilities.includes("serialized_inventory")` / `includes("delivery")`，
+  // 那恰好在验证被本任务判定为 fail-open 的旧口径——`delivery` 至今没有可执行模块，
+  // 却因为品类声明了它而被当成"可用能力"送给前端渲染菜单。
+  assert.deepEqual(
+    demo.tenant.capabilities,
+    [],
+    "未注入能力服务时会话能力集必须为空（fail-closed），不得回退到品类声明"
+  );
+  assert.deepEqual(demo2.tenant.capabilities, [], "同上，露营租户亦然");
+  const refreshedDemo2Context = await auth.getSessionContext(`Bearer ${demo2.accessToken}`);
+  assert.equal(refreshedDemo2Context.tenant.categoryCode, "camping");
+  const refreshedContext = await auth.getSessionContext(`Bearer ${demo.accessToken}`);
+  assert.equal(refreshedContext.tenant.categoryCode, "camera");
+  assert.deepEqual(
+    refreshedContext.tenant.capabilities,
+    [],
+    "session-context 必须与 login 同口径：都取已启用实例，不取品类声明"
+  );
+  // 「可访问」与「生产就绪」必须分开表示（验收要求）：能进入空间不等于品类能力齐备。
+  assert.equal(
+    refreshedContext.capabilityProductionReady,
+    false,
+    "没有任何已启用能力时不得报告生产就绪"
+  );
+  const demoTenants = platform.listTenants(saas.user);
+  assert.equal(demoTenants.length, 2);
+  assert.deepEqual(
+    demoTenants.map((tenant) => [tenant.tenantCode, tenant.categoryCode, tenant.categoryName]),
+    [
+      ["demo", "camera", "摄影设备"],
+      ["demo2", "camping", "露营设备"]
+    ],
+    "memory demo tenants must expose the same category profiles as Rental Core and MySQL seed"
+  );
+  assert.ok(demoTenants.every((tenant) => Number.isInteger(tenant.userCount)));
+  assert.ok(demoTenants.every((tenant) => Number.isInteger(tenant.organizationCount)));
+  assert.throws(() => platform.listTenants(demo.user), /SaaS/);
+
+  const crossTenantUsers = platform.listUsers("tenant_002", demo.user);
+  assert.ok(crossTenantUsers.length > 0);
+  assert.ok(crossTenantUsers.every((user) => user.tenantId === "tenant_001"));
+  assert.ok(
+    platform.listOrganizations("tenant_002", demo.user).every((row) => row.tenantId === "tenant_001")
+  );
+  const scopedAudit = await platform.listAuditLogs({ tenantId: "tenant_002" }, demo.user);
+  assert.ok(scopedAudit.rows.every((row) => row.tenantId === "tenant_001"));
+
+  const otherTenantPreset = await platform.saveFilterPreset(
+    {
+      tenantId: "tenant_002",
+      scopeKey: "rental-os.orders",
+      name: "深圳租户预设",
+      filters: { status: "active" }
+    },
+    saas.user
+  );
+  await assert.rejects(
+    platform.deleteFilterPreset(otherTenantPreset.id, undefined, demo.user),
+    /筛选预设不存在/
+  );
+
+  await assert.rejects(
+    platform.saveOrganization(
+      {
+        id: "org_operator_sz",
+        tenantId: "tenant_001",
+        type: RoleScope.Operator,
+        code: "ILLEGAL-MOVE",
+        name: "越权迁移",
+        status: "enabled"
+      },
+      demo.user
+    ),
+    /组织不存在/
+  );
+  assert.throws(
+    () =>
+      platform.saveRole(
+        {
+          id: "role_tenant_admin_002",
+          tenantId: "tenant_001",
+          code: "TENANT_ADMIN",
+          name: "越权修改",
+          scope: RoleScope.Operator,
+          enabledBusinessScopes: [],
+          permissions: [],
+          isActive: true
+        },
+        demo.user
+      ),
+    /角色不存在/
+  );
+
+  const bootstrapped = await platform.bootstrapTenant(
+    {
+      tenantCode: "camera_test",
+      tenantName: "摄影租赁测试租户",
+      categoryCode: "camera",
+      operator: saas.user.displayName,
+      adminAccount: "owner",
+      adminDisplayName: "租户负责人"
+    },
+    saas.user
+  );
+  assert.equal(bootstrapped.tenant.categoryCode, "camera");
+  assert.equal((await rentalCore.getProfile(bootstrapped.tenant.tenantId)).categoryCode, "camera", "bootstrapped tenant must initialize Rental Core with its selected category");
+  assert.equal(rentalCore.listItemGroups(bootstrapped.tenant.tenantId).length, 0, "new tenant must not inherit demo camera products");
+  assert.equal(bootstrapped.adminUser.isSaasAdmin, false);
+  assert.equal(bootstrapped.adminUser.isPlatformAdmin, true);
+  assert.equal(bootstrapped.adminUser.mustChangePassword, true);
+  assert.ok(bootstrapped.temporaryPassword);
+  const resetTenantAdmin = await platform.resetTenantAdminPassword(bootstrapped.tenant.tenantId, saas.user);
+  assert.equal(resetTenantAdmin.account, "owner");
+  assert.ok(resetTenantAdmin.temporaryPassword);
+  await assert.rejects(
+    platform.resetTenantAdminPassword(bootstrapped.tenant.tenantId, demo.user),
+    /SaaS/
+  );
+  await assert.rejects(
+    platform.bootstrapTenant(
+      {
+        tenantCode: "invalid_category",
+        tenantName: "无效品类租户",
+        categoryCode: "invalid",
+        operator: saas.user.displayName,
+        adminAccount: "owner",
+        adminDisplayName: "负责人"
+      },
+      saas.user
+    ),
+    /动态品类需要持久化品类目录与发布版本/
+  );
+
+  const tenantAdminResetRoute = requestContext(
+    "POST",
+    `/api/platform/tenants/${bootstrapped.tenant.tenantId}/admin/reset-password`,
+    saas.accessToken
+  );
+  assert.equal(await guard.canActivate(tenantAdminResetRoute.context), true);
+  const temporaryLogin = await auth.login({
+    tenantCode: "camera_test",
+    account: "owner",
+    password: resetTenantAdmin.temporaryPassword
+  });
+  assert.equal(temporaryLogin.user.mustChangePassword, true);
+  assert.equal(temporaryLogin.needsTenantOnboarding, true, "新租户管理员首次登录应要求进入开业配置");
+  const blocked = requestContext("GET", "/api/rental/v1/profile", temporaryLogin.accessToken);
+  await assert.rejects(guard.canActivate(blocked.context), /必须先修改密码/);
+
+  const changed = await auth.changePassword(
+    `Bearer ${temporaryLogin.accessToken}`,
+    { currentPassword: resetTenantAdmin.temporaryPassword, newPassword: "CameraOwner!2026" }
+  );
+  assert.equal(changed.user.mustChangePassword, false);
+  assert.equal(changed.needsTenantOnboarding, false, "完成首次改密后的新会话不应再次标记首次开业引导");
+  assert.equal(await auth.resolveAccessToken(`Bearer ${temporaryLogin.accessToken}`), undefined);
+  assert.ok(await auth.resolveAccessToken(`Bearer ${changed.accessToken}`));
+
+  const rotated = await auth.refresh({ refreshToken: demo.refreshToken });
+  await assert.rejects(auth.refresh({ refreshToken: demo.refreshToken }), /会话已失效/);
+  assert.ok(await auth.resolveAccessToken(`Bearer ${rotated.accessToken}`));
+
+  const saasReport = requestContext("GET", "/api/reports/dashboard", saas.accessToken);
+  await assert.rejects(guard.canActivate(saasReport.context), /只能访问租户管理能力/);
+  const saasCategories = requestContext("GET", "/api/rental/v1/categories", saas.accessToken);
+  assert.equal(await guard.canActivate(saasCategories.context), true);
+  const saasTenantList = requestContext("GET", "/api/platform/tenants", saas.accessToken);
+  assert.equal(await guard.canActivate(saasTenantList.context), true);
+  const demoCore = requestContext("GET", "/api/rental/v1/profile", rotated.accessToken);
+  assert.equal(await guard.canActivate(demoCore.context), true);
+  // 在与请求中间件等价的上下文存储内验证：守卫注入的是登录租户，而不是默认回退值
+  const guardTenantId = await runWithRequestIdentity({}, async () => {
+    assert.equal(await guard.canActivate(demoCore.context), true);
+    return getRequestTenantId();
+  });
+  assert.equal(guardTenantId, "tenant_001");
+  // 请求链之外的读取必须得到 undefined（fail-closed 前提），不得再出现默认租户
+  assert.equal(getRequestTenantId(), undefined);
+
+  const priceOnlyGuard = new ApiAuthGuard({
+    async resolveAccessToken() { return { ...demo.user, isPlatformAdmin: false, permissions: ["rental-os:price:manage"] }; },
+    // SPACE-02：守卫改为经 resolveAccessContext 取「账号 + 当前经营空间」。
+    //
+    // 本用例验证的是**权限判定**（有定价权不等于有下单权），因此必须给一个
+    // 正常的会话空间，让请求走到权限那一步。早前这里给 workspaceId: undefined
+    // 并注释说"空间 fail-closed 不参与本用例"——那在守卫 fail-open 时成立，
+    // 但空间检查改为 fail-closed 后，请求会先因缺空间被 403 拒掉，
+    // 于是后面那条"有定价权也不能下单"的断言其实什么都没验证到
+    // （它照样 rejects，只是原因换成了缺空间）。
+    async resolveAccessContext() {
+      return {
+        user: { ...demo.user, isPlatformAdmin: false, permissions: ["rental-os:price:manage"] },
+        workspaceId: "ws_saas_foundation_price_only",
+        hasWorkspaces: true
+      };
+    },
+    async getTenantContext() { return { capabilities: demo.tenant.capabilities }; },
+    // 守卫按会话空间取品类与能力，stub 必须一并提供，否则拿不到 capabilities。
+    async getCategoryContext() {
+      return { categoryCode: demo.tenant.categoryCode, capabilities: demo.tenant.capabilities };
+    }
+  });
+  const pricingWrite = requestContext("POST", "/api/rental/v1/pricing-plans", "price-only");
+  assert.equal(await priceOnlyGuard.canActivate(pricingWrite.context), true, "price managers must be allowed to maintain generic pricing");
+  const priceCannotCreateOrder = requestContext("POST", "/api/rental/v1/orders", "price-only");
+  await assert.rejects(priceOnlyGuard.canActivate(priceCannotCreateOrder.context), /无权访问/, "pricing permission must not imply order operation");
+
+  await platform.updateTenantStatus(
+    bootstrapped.tenant.tenantId,
+    { status: TenantStatus.Frozen, reason: "自动化测试冻结" },
+    saas.user
+  );
+  assert.equal(await auth.resolveAccessToken(`Bearer ${changed.accessToken}`), undefined);
+
+  const passwordHash = hashPassword("SafePassword!2026");
+  assert.notEqual(passwordHash, "SafePassword!2026");
+  assert.equal(verifyPassword(passwordHash, "SafePassword!2026"), true);
+  assert.equal(verifyPassword(passwordHash, "wrong"), false);
+  const productionAuthWithoutSecret = new AuthService(platform, {
+    get(key) {
+      return key === "NODE_ENV" ? "production" : undefined;
+    }
+  });
+  assert.throws(
+    () => productionAuthWithoutSecret.tokenSecret(),
+    /生产环境必须配置 AUTH_TOKEN_SECRET/
+  );
+
+  const repositorySource = fs.readFileSync(
+    path.join(__dirname, "../apps/api/src/modules/platform/platform.repository.ts"),
+    "utf8"
+  );
+  assert.match(repositorySource, /prisma\.\$transaction/);
+  assert.doesNotMatch(repositorySource, /tenantRentalProfile\.(create|upsert|update)\(/);
+  const rentalConfigSource = fs.readFileSync(path.join(__dirname, "../apps/api/src/modules/rental-core/rental-core-config.repository.ts"), "utf8");
+  assert.match(rentalConfigSource, /tenantRentalProfile\.upsert/);
+  assert.match(repositorySource, /await onBeforeCommit\(tx, tenant\.id\)/);
+  assert.match(repositorySource, /authSession\.updateMany/);
+  assert.doesNotMatch(repositorySource, /mock-token/);
+
+  const integrationsServiceSource = [
+    "../apps/api/src/modules/integrations/integrations.service.ts",
+    "../packages/rental-core/src/integration-runtime.ts"
+  ].map((file) => fs.readFileSync(path.join(__dirname, file), "utf8")).join("\n");
+  const integrationsRepositorySource = [
+    "../apps/api/src/modules/integrations/integrations.repository.ts",
+    "../packages/rental-core/src/mysql-integrations.ts"
+  ].map((file) => fs.readFileSync(path.join(__dirname, file), "utf8")).join("\n");
+  const requestIdentitySource = fs.readFileSync(
+    path.join(__dirname, "../apps/api/src/common/request-identity.ts"),
+    "utf8"
+  );
+  assert.match(integrationsServiceSource, /return requireRequestTenantId\(\)/);
+  assert.match(integrationsRepositorySource, /tenantId = requireRequestTenantId\(\)/);
+  assert.doesNotMatch(integrationsServiceSource, /private readonly defaultTenantId = "tenant_001"/);
+  assert.doesNotMatch(integrationsRepositorySource, /DEFAULT_TENANT_ID/);
+  // 租户解析必须 fail-closed：请求身份模块不得再提供默认租户回退
+  assert.doesNotMatch(requestIdentitySource, /fallback\s*=\s*"tenant_001"/);
+  assert.match(requestIdentitySource, /export function requireRequestTenantId/);
+
+  console.log(
+    "SaaS foundation test passed: admin boundary, tenant isolation (including integrations), bootstrap, password gate, session rotation, lifecycle revocation and password hashing verified."
+  );
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
