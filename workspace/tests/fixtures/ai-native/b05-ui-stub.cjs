@@ -1,0 +1,19 @@
+'use strict';
+const React = require('react');
+// This renderer supplies the original Chinese locale; browser locale switching is separate.
+exports.useLocale = () => ({ locale: 'zh-CN', t: value => value });
+const clean = ({ children, label, loading, pending, pendingLabel, successLabel, onAction, ...props }) => props;
+exports.Button = props => React.createElement('button', { ...clean(props), type: props.htmlType ?? 'button' }, props.children ?? props.label);
+exports.ActionButton = props => React.createElement('button', { ...clean(props), type: 'button', disabled: props.disabled || props.pending }, props.pending ? props.pendingLabel ?? '处理中' : props.label);
+exports.Checkbox = props => React.createElement('input', { ...clean(props), type: 'checkbox' });
+// The offline task fixture keeps semantic empty copy/actions; artwork is browser-verified.
+exports.EmptyScene = props => React.createElement('section', { 'data-empty-scene': props.scene },
+  React.createElement('h3', null, props.title), props.description && React.createElement('p', null, props.description), props.action);
+exports.Alert = props => React.createElement('section', { role: props.type === 'error' ? 'alert' : 'status' },
+  React.createElement('strong', null, props.title ?? props.message), props.description && React.createElement('p', null, props.description), props.action);
+exports.Input = props => React.createElement('input', clean(props));
+exports.Select = props => React.createElement('select', clean(props), (props.options ?? []).map(option => React.createElement('option', { key: option.value, value: option.value }, option.label)));
+// Render the same supplied records/columns; no invented proposal rows or actions.
+exports.Table = props => React.createElement('table', null,
+  React.createElement('thead', null, React.createElement('tr', null, props.columns.map((column, index) => React.createElement('th', { key: index }, column.title)))),
+  React.createElement('tbody', null, props.dataSource.map((record, index) => React.createElement('tr', { key: index }, props.columns.map((column, cell) => React.createElement('td', { key: cell }, record[column.dataIndex]))))));

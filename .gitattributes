@@ -3,3 +3,6 @@
 /workspace/packages/ai-native-server/** -text whitespace=cr-at-eol
 /workspace/packages/ai-native-admin/** -text whitespace=cr-at-eol
 /workspace/packages/ai-native-data/** -text whitespace=cr-at-eol
+# Migrated regression sources preserve their original Git bytes as well.
+/workspace/tests/** -text whitespace=cr-at-eol
+/workspace/scripts/** -text whitespace=cr-at-eol
