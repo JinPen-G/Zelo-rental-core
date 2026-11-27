@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  ZELO_COMMIT: 0fea1a190d72360e59ea901b44c1e2b0037720bf
+  ZELO_COMMIT: ef423c9eb0ac4e0c7ff783cc732a399b55a6cf44
 
 jobs:
   development-build:
@@ -99,6 +99,36 @@ jobs:
           path: output/.tmp/rental-ci/development-build.json
           if-no-files-found: error
           retention-days: 7
+      - name: 构建同版 full 测试组合并执行原 Rental 回归
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/output/.tmp/rental-ci"
+          export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
+          export AI_OFFLINE_WRITE_ROOT="$task" AI_OFFLINE_AUDIT="$task/temporary/regression-audit.log"
+          export TEMP="$task/temporary" TMP="$task/temporary" TMPDIR="$task/temporary" XDG_CACHE_HOME="$task/temporary"
+          guard="$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs"
+          node --no-compilation-cache --max-old-space-size=6144 --require "$guard" \
+            tools/prepare-workspace.cjs --framework-repo "$task/zelo" --framework-commit "$ZELO_COMMIT" \
+            --repository https://github.com/JinPen-G/Zelo --core-commit "$GITHUB_SHA" \
+            --mode development --profile full --with-tests --out "$task/temporary/full-tests.tgz"
+          mkdir "$task/full-tests"
+          tar -xzf "$task/temporary/full-tests.tgz" -C "$task/full-tests"
+          cd "$task/full-tests"
+          export npm_config_cache="$task/npm-cache"
+          npm ci --include=dev --ignore-scripts --no-audit --no-fund
+          node node_modules/@prisma/engines/scripts/postinstall.js
+          export PRISMA_GENERATE_SKIP_AUTOINSTALL=1 CHECKPOINT_DISABLE=1
+          export NODE_OPTIONS="--no-compilation-cache --max-old-space-size=6144 --require $guard"
+          node scripts/prepare-selected-prisma-schema.cjs --mode rental --output "$PWD/apps/rental-api/prisma-selected"
+          node node_modules/prisma/build/index.js generate --schema apps/platform-api/prisma/schema.prisma
+          node node_modules/prisma/build/index.js generate --schema apps/rental-api/prisma-selected/schema.prisma
+          export RENTAL_PRISMA_CLIENT="$PWD/apps/rental-api/generated/client/index.d.ts"
+          npm run build
+          test ! -e output/.tmp/rental-lead-participants
+          npm run test:rental
+          test ! -e output/.tmp/rental-lead-participants
+          test ! -e "$AI_OFFLINE_AUDIT"
       - name: 从同一双仓提交生成 v2 新装包
         shell: bash
         run: |
