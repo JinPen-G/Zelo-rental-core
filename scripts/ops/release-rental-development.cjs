@@ -20,9 +20,10 @@ function git(repo, ...args) {
 
 async function checkDevelopment([zeloDir, zeloCommit, rentalDir, rentalCommit, ...extra]) {
   const fixedCommit = /^[a-f0-9]{40}$/u;
-  const full = extra[0] === "--full" && extra.length === 2 && Boolean(extra[1]);
-  assert(zeloDir && rentalDir && fixedCommit.test(zeloCommit) && fixedCommit.test(rentalCommit) && (!extra.length || full),
-    "用法：release-rental-development.cjs <Zelo目录> <完整SHA> <Rental目录> <完整SHA> [--full <已安装投影目录>]");
+  const projected = extra.length === 2 && ["--full", "--multi-core"].includes(extra[0]) && Boolean(extra[1]);
+  const full = projected && extra[0] === "--full";
+  assert(zeloDir && rentalDir && fixedCommit.test(zeloCommit) && fixedCommit.test(rentalCommit) && (!extra.length || projected),
+    "用法：release-rental-development.cjs <Zelo目录> <完整SHA> <Rental目录> <完整SHA> [--full|--multi-core <已安装投影目录>]");
   const profile = full ? "full" : "multi-core";
   const repo = fs.realpathSync(zeloDir);
   const coreRepo = fs.realpathSync(rentalDir);
@@ -77,7 +78,7 @@ async function checkDevelopment([zeloDir, zeloCommit, rentalDir, rentalCommit, .
     new Map([...files].map(([file, bytes]) => [absolute(file), bytes])));
   const { createBuild, verifyContracts } = tool("check-rental-package-build");
   const distribution = tool("verify-rental-distribution");
-  const deps = full ? fullDependencies(extra[1], files, repo, coreRepo) : zeloDependencies;
+  const deps = projected ? projectionDependencies(extra[1], files, repo, coreRepo) : zeloDependencies;
   const build = createBuild(deps, { snapshot, quiet: true });
   assert.equal(build.ts.version, JSON.parse(lock).packages["node_modules/typescript"]?.version);
   verifyContracts(build);
@@ -127,20 +128,21 @@ async function checkDevelopment([zeloDir, zeloCommit, rentalDir, rentalCommit, .
   return {
     format: "rental-multi-core-development-build-1", ...developmentReport, host: source.host,
     coreIds: source.coreIds, entries, workspace: workspaceReport,
+    dependencyInput: projected ? "multi-core-projection" : "platform-lock",
     apiEntrySha256: sha256(apiEntry), webBundle: "not-run",
   };
 }
 
-function fullDependencies(directory, files, repo, coreRepo) {
+function projectionDependencies(directory, files, repo, coreRepo) {
   const projected = fs.realpathSync(directory);
-  assert(projected !== repo && projected !== coreRepo, "full 编译依赖须位于独立投影目录");
+  assert(projected !== repo && projected !== coreRepo, "编译依赖须位于独立投影目录");
   for (const file of ["development.workspace.json", "package.json", "package-lock.json"]) {
     const actual = path.join(projected, file);
     assert(fs.lstatSync(actual).isFile() && fs.readFileSync(actual).equals(files.get(file)),
-      `full 依赖投影与固定双仓原字节不一致：${file}`);
+      `依赖投影与固定双仓原字节不一致：${file}`);
   }
   const deps = path.join(projected, "node_modules");
-  assert(fs.lstatSync(deps).isDirectory(), "须先从 full 投影锁安装编译依赖");
+  assert(fs.lstatSync(deps).isDirectory(), "须先从所选投影锁安装编译依赖");
   return deps;
 }
 

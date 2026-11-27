@@ -119,7 +119,8 @@ jobs:
           npm ci --include=dev --ignore-scripts --no-audit --no-fund
           node node_modules/@prisma/engines/scripts/postinstall.js
           export PRISMA_GENERATE_SKIP_AUTOINSTALL=1 CHECKPOINT_DISABLE=1
-          export NODE_OPTIONS="--no-compilation-cache --max-old-space-size=6144 --require $guard"
+          export NODE_DISABLE_COMPILE_CACHE=1
+          export NODE_OPTIONS="--max-old-space-size=6144 --require $guard"
           node scripts/prepare-selected-prisma-schema.cjs --mode rental --output "$PWD/apps/rental-api/prisma-selected"
           node node_modules/prisma/build/index.js generate --schema apps/platform-api/prisma/schema.prisma
           node node_modules/prisma/build/index.js generate --schema apps/rental-api/prisma-selected/schema.prisma
@@ -276,8 +277,20 @@ jobs:
           export TEMP="$temporary" TMP="$temporary" TMPDIR="$temporary" XDG_CACHE_HOME="$temporary"
           node --no-compilation-cache --max-old-space-size=6144 \
             --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
+            tools/prepare-workspace.cjs --framework-repo "$task/zelo" --framework-commit "$ZELO_COMMIT" \
+            --repository https://github.com/JinPen-G/Zelo --core-commit "$GITHUB_SHA" \
+            --mode development --profile multi-core --out "$temporary/multi-core.tgz"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          mkdir "$task/multi-core"
+          tar -xzf "$temporary/multi-core.tgz" -C "$task/multi-core"
+          (
+            cd "$task/multi-core"
+            npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+          )
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
             scripts/ops/release-rental-development.cjs \
-            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" | tee "$temporary/build.log"
+            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" --multi-core "$task/multi-core" | tee "$temporary/build.log"
           test ! -e "$AI_OFFLINE_AUDIT"
           tail -n 1 "$temporary/build.log" > "$task/multi-core-development-build.json"
           node - "$task/multi-core-development-build.json" <<'NODE'
@@ -286,6 +299,7 @@ jobs:
           assert.equal(report.format, 'rental-multi-core-development-build-1');
           assert.equal(report.mode, 'development');
           assert.equal(report.profile, 'multi-core');
+          assert.equal(report.dependencyInput, 'multi-core-projection');
           assert.equal(report.host, 'example-multi-core');
           assert.deepEqual(report.coreIds, ['rental', 'example-tickets']);
           assert.equal(report.platform.commit, process.env.ZELO_COMMIT);
