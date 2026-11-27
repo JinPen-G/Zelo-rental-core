@@ -173,6 +173,29 @@
       ]
     },
     {
+      "source": "workspace/packages/rental-ai-adapters",
+      "target": "packages/rental-ai-adapters",
+      "roles": ["ai"],
+      "runtime": "public-ai-sdk",
+      "required": [
+        "LICENSE",
+        "README.md",
+        "package.json",
+        "src/approval-binding.ts",
+        "src/approval-consumption.ts",
+        "src/approval-repository.ts",
+        "src/approval-tool-codes.ts",
+        "src/index.ts",
+        "src/platform-management-transaction.ts",
+        "src/platform-retention.ts",
+        "src/proposal-repository.ts",
+        "src/task-deployment-admission.ts",
+        "src/task-events.ts",
+        "src/task-transactions.ts",
+        "tsconfig.json"
+      ]
+    },
+    {
       "source": "workspace/packages/rental-mcp-host",
       "target": "packages/rental-mcp-host",
       "roles": [
