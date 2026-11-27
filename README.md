@@ -146,9 +146,9 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 开发快照可使用未打 Tag 的已提交源码。正式标准包继续通过底座的 `scripts/verify-rental-distribution.cjs --portable` 核对版本 Tag、发行来源、实际构建字节与归档摘要。旧 Tag 的根目录布局仍可读取，运行部署继续使用正式部署锁。
 
-独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)和[后台宿主](workspace/apps/rental-admin)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在准备后的组合工作区构建，原页面和设计规范保持。各应用说明中的相对路径以组合目录为准。业务 AI/MCP 的独立装配仍待交付，当前清单不提供 `--ai` 或 `--mcp`。声明缺件会中止准备，根私有 `docs/`、环境文件、缓存、生成物和依赖目录不随包交付。
+独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)、[后台](workspace/apps/rental-admin)和 [Web 会话](workspace/packages/web-client/src/index.ts)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在组合工作区构建，原页面与设计规范保持。新装开发在带宿主的范围显式加 `--fresh-ai`，需要 23 条 MCP 数据计划时再加 `--mcp`；使用各自空库与原迁移账，旧库不能换锁直接采用。缺少真实 MCP 授权来源时不发布业务入口。声明缺件会中止，不从 Zelo 的旧业务目录补件。
 
-归档内的 `development.workspace.json` 记录两仓完整提交、源码来源、生成文件标识和所有条目的 SHA-256，以及组合工作区列表。可以从两仓各自的新固定提交重新准备。解包后执行 `npm ci` 和 `npm run check:types`，修改 Core 后可执行 `npm run check:core`。若独立仓声明自己的 npm v3 锁，重叠依赖冲突需要先在源码锁中解决。
+归档内的 `development.workspace.json` 记录两仓提交、文件来源和摘要。组合从固定底座锁及[独立构建依赖锁](workspace.build-lock.json)核外部依赖；官网和企业门户仍使用各自锁定的 TypeScript，重叠固定依赖冲突直接拒绝。此文件供组合工具消费，解包后以生成的 `package-lock.json` 执行 `npm ci` 和 `npm run check:types`。构建不需要旧业务测试、私有资料、环境文件或作者生成物。
 
 在 `full` 组合中，四端分别使用 `npm run build:tenant-website`、`npm run build:enterprise-portal`、`npm run build:miniprogram` 和 `npm run build:staff-miniprogram`。官网和企业门户的开发入口为 `npm run dev:tenant-website`、`npm run dev:enterprise-portal`。各端仍须满足原构建前置和部署锁校验。
 

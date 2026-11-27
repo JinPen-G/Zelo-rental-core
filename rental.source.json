@@ -1,5 +1,6 @@
 {
   "format": "rental-source-layout-1",
+  "lockfile": "workspace.build-lock.json",
   "paths": [
     {
       "source": ".",
