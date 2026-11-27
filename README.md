@@ -156,6 +156,12 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 要在本地运行普通 API，使用含 `--development` 入口的固定 Zelo 工具生成[开发运行包](workspace/apps/rental-api/README.md#固定双仓普通开发运行包)。该包可在专用新 MySQL 上初始化并启动；它不适用于已有库升级，也不能进入正式部署。后台和四端由同一对固定提交准备。
 
+#### 原四端测试与工具
+
+继续验证旧单仓断言时，单独检出[完整历史提交 `46db0945…`](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d)，用该检出的锁准备依赖，别把旧四端目录复制回 Zelo 主线。在旧检出根运行 `npm run test:tenant-website-resolve`、`npm run test:miniprogram` 或 `npm run test:staff-miniprogram`；两个小程序命令会先编各自的包。
+
+其余[原端侧测试](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d/tests)也在同一检出执行：`enterprise-consumers` 及 AI 离线用例沿该版守卫与专用输出目录，读 `dist` 的用例先用该版 `build:legacy` 或所需小程序构建准备产物。原 `scripts/ai-native-b14-offline.cjs`、`scripts/generate-inspection-wire-schemas.cjs --check` 和 Rental 的原 `test/package-exports.test.cjs` 路径断言亦用该版复核。旧测试结果只证明旧组合；当前四端从 `full` 组合构建和验证。
+
 ### 标准包发行
 
 打包独立可分发的标准 Core `.tgz` 资产（含 `core.manifest.json`、编译入口、可移植 OpenAPI、`CORE_GUIDE.md`、`README.md`、`LICENSE` 与原始 SQL 迁移）及生成 `SHA256SUMS`：

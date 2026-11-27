@@ -142,6 +142,12 @@ In the `full` profile, build the four clients with `npm run build:tenant-website
 
 To run the ordinary API locally, use the pinned Zelo `--development` tool to prepare the [runtime bundle](workspace/apps/rental-api/README.md#固定双仓普通开发运行包). Initialize and start it against a dedicated new MySQL database. It cannot upgrade an existing installation or pass the production release gate. Prepare the admin UI and clients from the same pair of source commits.
 
+#### Historical client checks
+
+To run the original single-repository assertions, use a separate checkout of [Zelo `46db0945…`](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d) with its own locked dependencies. From that root, run `npm run test:tenant-website-resolve`, `npm run test:miniprogram`, or `npm run test:staff-miniprogram`. The two Mini Program commands build their package first.
+
+Run the remaining [original client tests](https://github.com/JinPen-G/Zelo/tree/46db0945dee92ac916f7265e95948943fc8b641d/tests) and the original B14 and staff inspection registry tools in the same checkout. Use that version's offline guard for enterprise and AI suites and build any required legacy or Mini Program outputs there. Those results establish legacy behavior; build and verify the current clients in the dual-repository `full` profile.
+
 ### Packaging a Standard Core Release
 
 Build a portable `.tgz` Core artifact (`core.manifest.json`, compiled entrypoints, portable OpenAPI, `CORE_GUIDE.md`, `README.md`, `LICENSE`, and raw SQL migrations) and optional Linux Docker host bundle:
