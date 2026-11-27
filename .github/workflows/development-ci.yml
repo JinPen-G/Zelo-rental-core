@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  ZELO_COMMIT: d06e4b5aa1cbb918c55e387a03c6c70809a59d99
+  ZELO_COMMIT: 9288c0c925b3394459ef227fc180af7d9ca852e7
 
 jobs:
   development-build:
@@ -136,6 +136,27 @@ jobs:
           npm run test:rental
           test ! -e output/.tmp/rental-lead-participants
           test ! -e "$AI_OFFLINE_AUDIT"
+          # Build the two client applications from this exact development projection.
+          export NODE_ENV=production RENTAL_ENV_FILE="$task/temporary/web.env" VITE_API_BASE=''
+          : > "$RENTAL_ENV_FILE"
+          node --input-type=module <<'NODE'
+          import { registerHooks } from 'node:module';
+          import { resolve } from 'node:path';
+          import { pathToFileURL } from 'node:url';
+          const config = pathToFileURL(resolve('packages/platform-admin/config') + '/').href;
+          const hook = registerHooks({ resolve(specifier, context, next) {
+            return next(context.parentURL?.startsWith(config) && /^\.\/[A-Za-z][A-Za-z0-9-]*$/.test(specifier)
+              ? `${specifier}.ts` : specifier, context);
+          } });
+          try {
+            const { build } = await import('vite');
+            for (const app of ['tenant-website', 'enterprise-portal']) {
+              await build({ root: resolve('apps', app), mode: 'development', build: { manifest: true } });
+              console.log(`${app}: Vite 开发投影构建完成`);
+            }
+          } finally { hook.deregister(); }
+          NODE
+          test ! -e "$AI_OFFLINE_AUDIT"
       - name: 从同一双仓提交生成 v2 新装包
         shell: bash
         run: |
@@ -194,6 +215,88 @@ jobs:
           assert.ok(!fs.existsSync(path.join(root, 'packages/rental-mcp-host')));
           console.log('固定双仓 v2 开发包：18 份原迁移、完整 v2 锁及实际启动入口回读通过；不可发布。');
           NODE
+          # Assemble Web as in release-prepare-pair, keeping the tested source projection intact.
+          mkdir "$task/fresh/web"
+          tar -xzf "$task/fresh/dependencies.tgz" --exclude='packages/rental-core' -C "$task/fresh/web"
+          node - "$task/fresh/host" "$task/fresh/web" <<'NODE'
+          const fs = require('node:fs'), path = require('node:path');
+          const [host, web] = process.argv.slice(2);
+          fs.cpSync(path.join(host, 'packages/rental-core'), path.join(web, 'packages/rental-core'),
+            { recursive: true, errorOnExist: true, force: false });
+          for (const group of ['apps', 'packages']) {
+            for (const entry of fs.readdirSync(path.join(host, group))) {
+              if (entry === 'rental-core') continue;
+              const directory = path.join(group, entry);
+              for (const output of fs.readdirSync(path.join(host, directory), { withFileTypes: true })) {
+                if (output.isDirectory() && /^dist(?:-[a-z0-9-]+)?$/.test(output.name)) {
+                  fs.cpSync(path.join(host, directory, output.name), path.join(web, directory, output.name),
+                    { recursive: true, errorOnExist: true, force: false });
+                }
+              }
+            }
+          }
+          NODE
+          (
+            cd "$task/fresh/web"
+            npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+            export CORE_DEPLOYMENT_LOCK="$task/fresh/host/apps/rental-api/prisma-deployment/core.deployment.lock.json"
+            export RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR="$task/fresh/host/public-ai-data"
+            export RENTAL_ENV_FILE="$task/temporary/web.env" VITE_API_BASE_URL=/api NODE_ENV=production
+            node --no-compilation-cache --max-old-space-size=6144 \
+              --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" --input-type=module <<'NODE'
+          import { registerHooks } from 'node:module';
+          import { resolve } from 'node:path';
+          import { pathToFileURL } from 'node:url';
+          const config = pathToFileURL(resolve('packages/platform-admin/config') + '/').href;
+          const hook = registerHooks({ resolve(specifier, context, next) {
+            return next(context.parentURL?.startsWith(config) && /^\.\/[A-Za-z][A-Za-z0-9-]*$/.test(specifier)
+              ? `${specifier}.ts` : specifier, context);
+          } });
+          try {
+            const { build } = await import('vite');
+            await build({ root: resolve('apps/rental-admin'), mode: 'rental-fresh-ai', build: { manifest: true } });
+          } finally { hook.deregister(); }
+          NODE
+          )
+          test ! -e "$AI_OFFLINE_AUDIT"
+          node - "$task" <<'NODE'
+          const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
+          const { createHash } = require('node:crypto');
+          const task = process.argv[2], read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
+          const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+          const bundles = [];
+          for (const [app, directory, mode] of [
+            ['tenant-website', 'full-tests', 'development'], ['enterprise-portal', 'full-tests', 'development'],
+            ['rental-admin', 'fresh/web', 'rental-fresh-ai'],
+          ]) {
+            const root = path.join(task, directory), out = path.join(root, 'apps', app, 'dist');
+            const source = read(path.join(root, 'development.workspace.json'));
+            assert.equal(source.platform.source.commit, process.env.ZELO_COMMIT);
+            assert.equal(source.core.source.commit, process.env.GITHUB_SHA);
+            const npmLockSha256 = hash(path.join(root, 'package-lock.json'));
+            assert.equal(npmLockSha256, source.npmLocks.projected.sha256);
+            const manifest = read(path.join(out, '.vite/manifest.json'));
+            assert(Object.values(manifest).some(entry => entry.isEntry));
+            const files = new Set(['index.html', '.vite/manifest.json']);
+            for (const entry of Object.values(manifest)) {
+              for (const key of [...(entry.imports ?? []), ...(entry.dynamicImports ?? [])]) assert(manifest[key]);
+              for (const file of [entry.file, ...(entry.css ?? []), ...(entry.assets ?? [])]) files.add(file);
+            }
+            const outputs = [...files].sort().map(file => {
+              assert(file && !file.startsWith('/') && !file.split('/').includes('..'));
+              assert(fs.statSync(path.join(out, file)).size > 0);
+              return [file, hash(path.join(out, file))];
+            });
+            bundles.push({ app, mode, npmLockSha256, outputs });
+          }
+          const host = path.join(task, 'fresh/host');
+          const deploymentLockSha256 = hash(path.join(host, 'apps/rental-api/prisma-deployment/core.deployment.lock.json'));
+          assert.equal(deploymentLockSha256, read(path.join(host, 'rental-host.build-provenance.json')).deploymentLockSha256);
+          fs.writeFileSync(path.join(task, 'web-build.json'), JSON.stringify({ platform: process.env.ZELO_COMMIT,
+            rental: process.env.GITHUB_SHA, deploymentLockSha256, bundles,
+            adminCoreInput: 'fresh-host-standard-package', clientInput: 'full-development-source',
+            releaseApproved: false, serverUpdateEligible: false }, null, 2));
+          NODE
       - name: 在独立 MySQL 新装 v2 并验证登录重启
         working-directory: output/.tmp/rental-ci/fresh/host
         shell: bash
@@ -218,7 +321,9 @@ jobs:
           node apps/rental-api/dist-ai/ai-fresh-initialize.js
           entry=apps/rental-api/dist-ai/ai-fresh-main.js
           api_pid=''
+          web_pid=''
           cleanup() {
+            if [[ -n "$web_pid" ]]; then kill "$web_pid" 2>/dev/null || true; wait "$web_pid" || true; fi
             if [[ -n "$api_pid" ]]; then kill "$api_pid" 2>/dev/null || true; wait "$api_pid" || true; fi
           }
           trap cleanup EXIT
@@ -231,23 +336,66 @@ jobs:
             fi
           }
           start
+          export CORE_DEPLOYMENT_LOCK="$RENTAL_DEPLOYMENT_LOCK"
+          export RENTAL_ENV_FILE="$task/../temporary/web.env" API_PROXY_TARGET=http://127.0.0.1:3093 VITE_API_BASE_URL=/api
+          (
+            cd "$task/web"
+            exec node --input-type=module <<'NODE'
+          import { registerHooks } from 'node:module';
+          import { resolve } from 'node:path';
+          import { pathToFileURL } from 'node:url';
+          const config = pathToFileURL(resolve('packages/platform-admin/config') + '/').href;
+          registerHooks({ resolve(specifier, context, next) {
+            return next(context.parentURL?.startsWith(config) && /^\.\/[A-Za-z][A-Za-z0-9-]*$/.test(specifier)
+              ? `${specifier}.ts` : specifier, context);
+          } });
+          const { preview } = await import('vite');
+          await preview({ root: resolve('apps/rental-admin'), mode: 'rental-fresh-ai',
+            preview: { host: '127.0.0.1', port: 5193, strictPort: true } });
+          NODE
+          ) > "$task/web.log" 2>&1 &
+          web_pid=$!
+          if ! curl -fsS --retry 15 --retry-delay 1 --retry-connrefused --max-time 3 http://127.0.0.1:5193/api/health > /dev/null; then
+            tail -n 30 "$task/web.log"
+            exit 1
+          fi
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
-          const base = 'http://127.0.0.1:3093/api';
-          const response = await fetch(base + '/auth/login', { method: 'POST', signal: AbortSignal.timeout(10000),
-            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-              tenantCode: 'platform', account: 'admin', password: process.env.SEED_PLATFORM_PASSWORD
-            }) });
-          assert.equal(response.status, 201);
-          const result = await response.json();
-          const session = result.data ?? result;
-          assert.ok(session.accessToken);
-          const me = await fetch(base + '/auth/session-context', { signal: AbortSignal.timeout(8000),
-            headers: { Authorization: `Bearer ${session.accessToken}` } });
-          assert.equal(me.status, 200);
-          const body = await me.json();
-          assert.equal((body.data ?? body).tenant.tenantCode, 'platform');
+          import fs from 'node:fs';
+          import { resolve } from 'node:path';
+          const web = 'http://127.0.0.1:5193', out = resolve('../web/apps/rental-admin/dist');
+          const login = await fetch(web + '/login', { signal: AbortSignal.timeout(8000) });
+          assert.equal(login.status, 200);
+          const html = await login.text();
+          assert.equal(html, fs.readFileSync(resolve(out, 'index.html'), 'utf8'));
+          const entry = /<script\b[^>]*\bsrc="(\/assets\/[^"/]+\.js)"/.exec(html)?.[1];
+          const styles = [...html.matchAll(/<link\b[^>]*\bhref="(\/assets\/[^"/]+\.css)"/g)].map(match => match[1]);
+          assert(entry && styles.length > 0, '后台缺少编译后的 JS/CSS 入口');
+          for (const file of [entry, ...styles]) {
+            const asset = await fetch(web + file, { signal: AbortSignal.timeout(8000) });
+            assert.equal(asset.status, 200);
+            assert.match(asset.headers.get('content-type') ?? '', file.endsWith('.js') ? /javascript/ : /css/);
+            assert.deepEqual(Buffer.from(await asset.arrayBuffer()), fs.readFileSync(resolve(out, '.' + file)));
+          }
+          for (const base of ['http://127.0.0.1:3093/api', web + '/api']) {
+            const response = await fetch(base + '/auth/login', { method: 'POST', signal: AbortSignal.timeout(10000),
+              headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                tenantCode: 'platform', account: 'admin', password: process.env.SEED_PLATFORM_PASSWORD
+              }) });
+            assert.equal(response.status, 201);
+            const result = await response.json();
+            const session = result.data ?? result;
+            assert.ok(session.accessToken);
+            const me = await fetch(base + '/auth/session-context', { signal: AbortSignal.timeout(8000),
+              headers: { Authorization: `Bearer ${session.accessToken}` } });
+            assert.equal(me.status, 200);
+            const body = await me.json();
+            assert.equal((body.data ?? body).tenant.tenantCode, 'platform');
+          }
           console.log('v2 原权限和真实会话：通过');
+          fs.writeFileSync(resolve('../../web-http.json'), JSON.stringify({ platform: process.env.ZELO_COMMIT,
+            rental: process.env.GITHUB_SHA, loginHtml: true, entryAssets: [entry, ...styles],
+            directAndProxiedLogin: true, directAndProxiedSession: true, browserExecuted: false }, null, 2));
           NODE
           kill "$api_pid"
           wait "$api_pid" || code=$?
@@ -256,7 +404,17 @@ jobs:
           start
           node "$prisma" migrate status --schema apps/rental-api/prisma-deployment/schema.prisma
           curl -fsS --max-time 5 http://127.0.0.1:3093/api/health > /dev/null
+          curl -fsS --max-time 5 http://127.0.0.1:5193/api/health > /dev/null
           echo 'v2 固定宿主使用原 18 条迁移账重启成功。'
+      - name: 保留 Web 构建与 HTTP 验证证明
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rental-web-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/.tmp/rental-ci/web-build.json
+            output/.tmp/rental-ci/web-http.json
+          if-no-files-found: error
+          retention-days: 7
 
   multi-core-development-build:
     if: github.repository == 'JinPen-G/Zelo-rental-core'
