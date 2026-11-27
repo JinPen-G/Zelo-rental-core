@@ -47,7 +47,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24.13.0
-      - name: 安装固定编译依赖
+      - name: 安装固定底座编译工具
         working-directory: output/.tmp/rental-ci/zelo
         shell: bash
         run: npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$GITHUB_WORKSPACE/output/.tmp/rental-ci/npm-cache"
@@ -62,18 +62,34 @@ jobs:
           export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
           export AI_OFFLINE_WRITE_ROOT="$task/temporary" AI_OFFLINE_AUDIT="$task/temporary/audit.log"
           export TEMP="$task/temporary" TMP="$task/temporary" TMPDIR="$task/temporary" XDG_CACHE_HOME="$task/temporary"
+          guard="$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs"
+          node --no-compilation-cache --max-old-space-size=6144 --require "$guard" \
+            tools/prepare-workspace.cjs --framework-repo "$task/zelo" --framework-commit "$ZELO_COMMIT" \
+            --repository https://github.com/JinPen-G/Zelo --core-commit "$GITHUB_SHA" \
+            --mode development --profile full --out "$task/temporary/full.tgz"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          mkdir "$task/full"
+          tar -xzf "$task/temporary/full.tgz" -C "$task/full"
+          (
+            cd "$task/full"
+            npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
+          )
           node --no-compilation-cache --max-old-space-size=6144 \
-            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
-            "$task/zelo/scripts/ops/release-rental-development.cjs" \
-            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" full | tee "$task/build.log"
+            --require "$guard" scripts/ops/release-rental-development.cjs \
+            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" --full "$task/full" | tee "$task/build.log"
           test ! -e "$AI_OFFLINE_AUDIT"
           tail -n 1 "$task/build.log" > "$task/development-build.json"
           node -e '
             const report = require(process.argv[1]);
             if (report.format !== "rental-development-build-1" || report.mode !== "development" || report.profile !== "full" ||
+                report.dependencyInput !== "full-projection" ||
                 report.platform.commit !== process.env.ZELO_COMMIT || report.rental.commit !== process.env.GITHUB_SHA ||
                 report.deployment !== "not-prepared" || report.releaseApproved !== false || report.serverUpdateEligible !== false) {
               throw new Error("双仓开发报告身份不一致");
+            }
+            for (const app of ["tenant-website", "enterprise-portal", "miniprogram", "staff-miniprogram"]) {
+              if (!report.projects.some(stage => stage.config === `apps/${app}/tsconfig.json` &&
+                stage.roots > 0 && stage.diagnostics === 0)) throw new Error(`缺少四端编译证明：${app}`);
             }
           ' "$task/development-build.json"
       - name: 保留开发构建证明
@@ -191,3 +207,72 @@ jobs:
           node "$prisma" migrate status --schema apps/rental-api/prisma-deployment/schema.prisma
           curl -fsS --max-time 5 http://127.0.0.1:3093/api/health > /dev/null
           echo 'v2 固定宿主使用原 18 条迁移账重启成功。'
+
+  multi-core-development-build:
+    if: github.repository == 'JinPen-G/Zelo-rental-core'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 检出待核对的 Rental 提交
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 检出固定 Zelo 工具和依赖锁
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: JinPen-G/Zelo
+          ref: ${{ env.ZELO_COMMIT }}
+          path: output/.tmp/rental-multi-core-ci/zelo
+          persist-credentials: false
+      - name: 固定 Node 工具链
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.13.0
+      - name: 安装固定编译依赖
+        working-directory: output/.tmp/rental-multi-core-ci/zelo
+        shell: bash
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$GITHUB_WORKSPACE/output/.tmp/rental-multi-core-ci/npm-cache"
+      - name: 从同一双仓提交编译普通双 Core 宿主
+        shell: bash
+        run: |
+          set -euo pipefail
+          task="$GITHUB_WORKSPACE/output/.tmp/rental-multi-core-ci"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C "$task/zelo" rev-parse HEAD)" = "$ZELO_COMMIT"
+          temporary="$task/temporary"
+          mkdir "$temporary"
+          export DATABASE_URL=mysql://offline:offline@127.0.0.1:1/rental_os_offline
+          export AI_OFFLINE_WRITE_ROOT="$temporary" AI_OFFLINE_AUDIT="$temporary/audit.log"
+          export TEMP="$temporary" TMP="$temporary" TMPDIR="$temporary" XDG_CACHE_HOME="$temporary"
+          node --no-compilation-cache --max-old-space-size=6144 \
+            --require "$task/zelo/tests/fixtures/ai-native/prisma-offline-preload.cjs" \
+            scripts/ops/release-rental-development.cjs \
+            "$task/zelo" "$ZELO_COMMIT" "$GITHUB_WORKSPACE" "$GITHUB_SHA" | tee "$temporary/build.log"
+          test ! -e "$AI_OFFLINE_AUDIT"
+          tail -n 1 "$temporary/build.log" > "$task/multi-core-development-build.json"
+          node - "$task/multi-core-development-build.json" <<'NODE'
+          const assert = require('node:assert/strict');
+          const report = require(process.argv[2]);
+          assert.equal(report.format, 'rental-multi-core-development-build-1');
+          assert.equal(report.mode, 'development');
+          assert.equal(report.profile, 'multi-core');
+          assert.equal(report.host, 'example-multi-core');
+          assert.deepEqual(report.coreIds, ['rental', 'example-tickets']);
+          assert.equal(report.platform.commit, process.env.ZELO_COMMIT);
+          assert.equal(report.rental.commit, process.env.GITHUB_SHA);
+          assert.ok(report.projects.some(stage => stage.config === 'apps/example-multi-core-api/tsconfig.json' &&
+            stage.diagnostics === 0 && stage.outputs > 0));
+          assert.ok(report.projects.some(stage => stage.config === 'apps/example-multi-core-admin/tsconfig.json' &&
+            stage.diagnostics === 0 && stage.roots > 0));
+          assert.equal(report.deployment, 'not-prepared');
+          assert.equal(report.releaseApproved, false);
+          assert.equal(report.serverUpdateEligible, false);
+          assert.equal(report.databaseChecked, false);
+          NODE
+      - name: 保留普通双 Core 开发构建证明
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rental-multi-core-development-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/.tmp/rental-multi-core-ci/multi-core-development-build.json
+          if-no-files-found: error
+          retention-days: 7
