@@ -5,11 +5,12 @@ import { createOriginalConversationResultRead } from '@rental-os/ai-native-serve
 import { bindRentalOriginalSaleReads, bindRentalOriginalTaskRecoveryReadIn, rentalOriginalResultComponents } from '@rental-os/ai-native-server/runtime/rental-adapters/original-result-reads';
 import { validateAiSceneModelObservation } from '@rental-os/ai-native-server/runtime/scenes/scene-observation-contracts';
 import { originalRequestReferenceSchema } from '@rental-os/ai-native-server/runtime/task-request/original-request.validation';
-import type { createConversationResultRead } from '@rental-os/mcp-server/conversation-result-read' with { 'resolution-mode': 'import' };
 import type { createOriginalTaskRecoveryRead } from '@rental-os/mcp-server/original-task-recovery-read' with { 'resolution-mode': 'import' };
-import type { createQuoteSelectionRead } from '@rental-os/mcp-server/quote-selection-read' with { 'resolution-mode': 'import' };
-import type { createSelectedProposalRead } from '@rental-os/mcp-server/selected-proposal-read' with { 'resolution-mode': 'import' };
-import type { createSelectedOrderResultRead } from '@rental-os/mcp-server/selected-order-result-read' with { 'resolution-mode': 'import' };
+import { createRentalConversationResultRead } from './rental-conversation-result-read';
+import { createQuoteSelectionRead } from './quote-selection-read';
+import { createSelectedProposalRead } from './selected-proposal-read';
+import { createSelectedOrderResultRead } from './selected-order-result-read';
+import type { OriginalReadRuntime } from './original-read-schema';
 import type { McpReadTool } from '@rental-os/mcp-server' with { 'resolution-mode': 'import' };
 import type { OriginalMcpReadCallRef } from '@rental-os/mcp-server/persistent-read-accounting' with { 'resolution-mode': 'import' };
 import { AI_ORIGINAL_RESULT_LOCATOR_SCHEMAS,
@@ -44,11 +45,13 @@ export const originalMcpResultKinds: readonly OriginalMcpResultKind[] = Object.f
   'conversation', 'taskRecovery', 'quoteReceipt', 'quoteSelection', 'selectedProposal', 'selectedOrderResult'
 ]);
 export interface OriginalMcpResultReaderExports {
-  createConversationResultRead: typeof createConversationResultRead;
   createOriginalTaskRecoveryRead: typeof createOriginalTaskRecoveryRead;
-  createQuoteSelectionRead: typeof createQuoteSelectionRead;
-  createSelectedProposalRead: typeof createSelectedProposalRead;
-  createSelectedOrderResultRead: typeof createSelectedOrderResultRead;
+  /** Required by configured legacy conversation and sales validators. Quote
+   * receipt and Task recovery already have their own fixed reader contracts. */
+  fromJsonSchema?: OriginalReadRuntime['fromJsonSchema'];
+  assembleOriginalReadSchema?: OriginalReadRuntime['assembleOriginalReadSchema'];
+  assembleNamedOriginalReadSchema?: OriginalReadRuntime['assembleNamedOriginalReadSchema'];
+  snapshotJson?: OriginalReadRuntime['snapshotJson'];
 }
 
 type Reader = McpReadTool['read'];
@@ -96,14 +99,18 @@ export function originalMcpResultTool<K extends OriginalMcpResultKind>(mcp: Orig
     }
   };
   const read = withReader(dispatch);
+  if (kind === 'taskRecovery') return mcp.createOriginalTaskRecoveryRead({ ...descriptor, read });
+  if (kind === 'quoteReceipt') return { ...descriptor, inputSchema: structuredClone(AI_ORIGINAL_RESULT_LOCATOR_SCHEMAS.AiSceneRequestReadDraft), read };
+  const { fromJsonSchema, assembleOriginalReadSchema, assembleNamedOriginalReadSchema, snapshotJson } = mcp;
+  if (typeof fromJsonSchema !== 'function' || typeof assembleOriginalReadSchema !== 'function'
+    || typeof assembleNamedOriginalReadSchema !== 'function' || typeof snapshotJson !== 'function') throw unavailable();
+  const runtime = { fromJsonSchema, assembleOriginalReadSchema, assembleNamedOriginalReadSchema, snapshotJson };
   switch (kind) {
-    case 'conversation': return mcp.createConversationResultRead({ ...descriptor,
-      originalSchemas: rentalOriginalResultComponents() as Parameters<typeof createConversationResultRead>[0]['originalSchemas'], read });
-    case 'taskRecovery': return mcp.createOriginalTaskRecoveryRead({ ...descriptor, read });
-    case 'quoteReceipt': return { ...descriptor, inputSchema: structuredClone(AI_ORIGINAL_RESULT_LOCATOR_SCHEMAS.AiSceneRequestReadDraft), read };
-    case 'quoteSelection': return mcp.createQuoteSelectionRead({ ...descriptor, read });
-    case 'selectedProposal': return mcp.createSelectedProposalRead({ ...descriptor, read });
-    case 'selectedOrderResult': return mcp.createSelectedOrderResultRead({ ...descriptor, read });
+    case 'conversation': return createRentalConversationResultRead({ ...descriptor,
+      originalSchemas: rentalOriginalResultComponents() as Parameters<typeof createRentalConversationResultRead>[0]['originalSchemas'], read }, runtime);
+    case 'quoteSelection': return createQuoteSelectionRead({ ...descriptor, read }, runtime);
+    case 'selectedProposal': return createSelectedProposalRead({ ...descriptor, read }, runtime);
+    case 'selectedOrderResult': return createSelectedOrderResultRead({ ...descriptor, read }, runtime);
     default: throw unavailable();
   }
 }

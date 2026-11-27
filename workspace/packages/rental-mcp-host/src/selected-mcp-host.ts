@@ -33,6 +33,10 @@ export interface SelectedRentalMcpSources extends Pick<Original, 'metadata' | 'v
   /** Optional exact original quote receipt. The original owner supplies the
    * receipt guard, reader, goal locator/audit, publication and field policy. */
   quoteReceipt?: { owner: OriginalMcpResultReadOwner<'quoteReceipt'>; traffic: OriginalMcpResultReadPolicy['traffic'] };
+  /** Only registered original sales sources. Each retains its own current
+   * custody and already-persisted goal; a quote receipt grants none of them. */
+  sales?: { operations: Pick<OriginalMcpResultReadPolicy['operations'], 'quoteSelection' | 'selectedProposal' | 'selectedOrderResult'>;
+    traffic: OriginalMcpResultReadPolicy['traffic'] };
 }
 
 export async function createSelectedRentalMcpHost(mcp: SelectedRentalMcpExports,
@@ -42,9 +46,12 @@ export async function createSelectedRentalMcpHost(mcp: SelectedRentalMcpExports,
     || typeof sources.catalog?.traffic?.current !== 'function' || typeof app?.catalogueForTransaction !== 'function'
     || typeof app.catalogue?.requireDataCapabilityAvailable !== 'function')
     throw new Error('Selected Rental MCP requires original AS, publication, field policy and the locked data catalogue');
-  const { config, catalog, quoteReceipt } = sources;
+  const { config, catalog, quoteReceipt, sales } = sources;
   if (quoteReceipt !== undefined && (!quoteReceipt?.owner || typeof quoteReceipt.traffic?.current !== 'function'))
     throw new Error('Selected Rental MCP requires the original quote receipt owner and traffic policy');
+  if (sales !== undefined && (typeof sales?.traffic?.current !== 'function' || !sales.operations
+    || Reflect.ownKeys(sales.operations).some(key => key !== 'quoteSelection' && key !== 'selectedProposal' && key !== 'selectedOrderResult')))
+    throw new Error('Selected Rental MCP requires registered original sales owners and traffic policy');
   // No OAuth/HTTP ingress is constructed while the selected capability is
   // unavailable. The same checks run again under each original read Native.
   const catalogueForTransaction = app.catalogueForTransaction.bind(app);
@@ -65,17 +72,20 @@ export async function createSelectedRentalMcpHost(mcp: SelectedRentalMcpExports,
   });
   const service = config.core.service;
   const pins = { enabled: service.enabled, resourceUrl: service.resource.resourceUrl, allowedScopes: service.tokens.allowedScopes };
-  const results = quoteReceipt === undefined ? undefined : await import('./original-mcp-result-read-tools.js');
+  const results = quoteReceipt === undefined && sales === undefined ? undefined : await import('./original-mcp-result-read-tools.js');
+  const runtime = sales === undefined ? mcp : { ...mcp, ...await import('@rental-os/mcp-server/original-read-tool') };
   return createOriginalMcpHost(mcp, config, app.auth, app.platform, app.logs, {
     database: app.database, coreAccess, metadata: sources.metadata,
     verification: sources.verification, reviewVerification: sources.reviewVerification,
     protocolTraffic: sources.protocolTraffic, receiptTraffic: sources.receiptTraffic,
     ...(sources.catalogGoalVerification ? { catalogGoal: { guard: app.guard, verification: sources.catalogGoalVerification } } : {}),
     createReadTools(current) {
-      const directory = createOriginalMcpCatalogReadTools(mcp, pins, current, app.auth, app.guard, app.rentalCore, app.logs, catalog);
-      if (!quoteReceipt || !results) return directory;
-      return results.combineOriginalMcpReadTools(directory, results.createOriginalMcpResultReadTools(mcp, pins, current, app.auth,
-        { operations: { quoteReceipt: quoteReceipt.owner }, traffic: quoteReceipt.traffic }));
+      let directory = createOriginalMcpCatalogReadTools(mcp, pins, current, app.auth, app.guard, app.rentalCore, app.logs, catalog);
+      if (results && quoteReceipt) directory = results.combineOriginalMcpReadTools(directory,
+        results.createOriginalMcpResultReadTools(runtime, pins, current, app.auth, { operations: { quoteReceipt: quoteReceipt.owner }, traffic: quoteReceipt.traffic }));
+      if (results && sales) directory = results.combineOriginalMcpReadTools(directory,
+        results.createOriginalMcpResultReadTools(runtime, pins, current, app.auth, sales));
+      return directory;
     }
   });
 }
