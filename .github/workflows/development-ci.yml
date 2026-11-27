@@ -2,13 +2,17 @@ name: Rental 独立开发构建
 
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: rental-development-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   ZELO_COMMIT: 9288c0c925b3394459ef227fc180af7d9ca852e7
@@ -137,6 +141,10 @@ jobs:
           test ! -e output/.tmp/rental-lead-participants
           test ! -e "$AI_OFFLINE_AUDIT"
           # Build the two client applications from this exact development projection.
+          # Keep Vite from inheriting the independent repository's parent tsconfig.
+          if [ ! -f tsconfig.json ]; then
+            printf '{"extends":"./tsconfig.base.json"}\n' > tsconfig.json
+          fi
           export NODE_ENV=production RENTAL_ENV_FILE="$task/temporary/web.env" VITE_API_BASE=''
           : > "$RENTAL_ENV_FILE"
           node --input-type=module <<'NODE'
@@ -238,6 +246,9 @@ jobs:
           NODE
           (
             cd "$task/fresh/web"
+            if [ ! -f tsconfig.json ]; then
+              printf '{"extends":"./tsconfig.base.json"}\n' > tsconfig.json
+            fi
             npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"
             export CORE_DEPLOYMENT_LOCK="$task/fresh/host/apps/rental-api/prisma-deployment/core.deployment.lock.json"
             export RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR="$task/fresh/host/public-ai-data"
