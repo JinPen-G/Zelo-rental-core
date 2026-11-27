@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const repo = path.resolve(__dirname, "..");
-const outbound = require(path.join(repo, "apps", "api", "dist", "common", "outbound-url.js"));
+// 在显式 full 开发组合中读取当前两包源码；旧宿主薄转接不作为验证来源。
+const outbound = require("@rental-os/platform-server/outbound-url");
 
 process.env.NODE_ENV = "production";
 assert.throws(() => outbound.parseOutboundUrl("http://example.com", "网关"), /HTTPS/);
@@ -15,28 +16,26 @@ assert.throws(() => outbound.parseOutboundUrl("https://custom.example/gateway", 
 assert.doesNotThrow(() => outbound.parseOutboundUrl("https://openapi.alipay.com/gateway.do", "支付宝网关", { productionHosts: ["openapi.alipay.com"] }));
 
 const paymentSource = [
-  fs.readFileSync(path.join(repo, "apps", "api", "src", "modules", "integrations", "payment.runtime.service.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "integrations", "payment-provider-transport.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "mysql-payment-runtime.ts"), "utf8")
 ].join("\n");
 const fileSource = [
-  fs.readFileSync(path.join(repo, "apps", "api", "src", "modules", "integrations", "file-storage.runtime.service.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "integrations", "object-storage.provider.service.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "file-application-runtime.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "files", "file-storage-primitives.ts"), "utf8"),
-  fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "files", "file-download.ts"), "utf8")
+  fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "files", "file-download.ts"), "utf8"),
+  fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "files", "file-upload-workflow.ts"), "utf8")
 ].join("\n");
 const smsSource = fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "integrations", "tenant-integration.runtime.service.ts"), "utf8");
 const notificationSource = fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "mysql-business-runtime.ts"), "utf8");
 const notificationFactSource = fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "mysql-business-facts.ts"), "utf8");
-const notificationSchema = fs.readFileSync(path.join(repo, "apps", "api", "prisma", "schema.prisma"), "utf8");
+const notificationSchema = fs.readFileSync(path.join(repo, "packages", "rental-core", "prisma", "schema.prisma"), "utf8");
 const authSource = fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "mysql-client-auth.ts"), "utf8");
-const guardSource = fs.readFileSync(path.join(repo, "apps", "api", "src", "common", "api-auth.guard.ts"), "utf8");
+const guardSource = fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "http-auth.ts"), "utf8");
 const filePermissionSource = guardSource.match(/if \(path\.startsWith\("\/files"\)\) \{[\s\S]*?\n  \}/u)?.[0] ?? "";
-const openapiSource = fs.readFileSync(path.join(repo, "apps", "api", "src", "contracts", "openapi-document.ts"), "utf8");
+const openapiSource = fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "http-openapi-operations.ts"), "utf8");
 const integrationSource = fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "integrations", "tenant-integration.service.ts"), "utf8");
 const integrationsServiceSource = [
-  fs.readFileSync(path.join(repo, "apps", "api", "src", "modules", "integrations", "integrations.service.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "rental-core", "src", "integration-runtime.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "files", "file-ledger.ts"), "utf8"),
   fs.readFileSync(path.join(repo, "packages", "platform-server", "src", "modules", "notifications", "notification-ledger.ts"), "utf8")
@@ -56,7 +55,7 @@ assert.match(paymentSource, /funding_pending/);
 assert.match(paymentSource, /SUCCESS_AMOUNT_MISMATCH/);
 assert.match(paymentSource, /handleWechatRefundCallback/);
 assert.match(paymentSource, /handleAlipayRefundCallback/);
-assert.match(paymentSource, /eventProvider = `\$\{input\.provider\}_refund`/);
+assert.match(paymentSource, /const provider = input\.provider \+ "_refund"/);
 assert.match(paymentSource, /refundNotifyUrl/);
 assert.match(paymentSource, /settings\.platformCertificateSerial/);
 assert.doesNotMatch(paymentSource, /credentials\.merchantSerialNo\) === serial/);
@@ -121,7 +120,23 @@ assert.match(integrationsServiceSource, /生产环境禁止通过模拟入口记
 assert.match(integrationsServiceSource, /生产环境禁止调用支付、短信或文件模拟适配器/u);
 
 (async () => {
-  const { TenantIntegrationService } = require(path.join(repo, "apps", "api", "dist", "modules", "integrations", "tenant-integration.service.js"));
+  // 原事件键从模板字符串改为拼接；直接核同一退款方法实际查询的命名空间。
+  const { PaymentRuntimeService } = require("@rental-os/rental-core/mysql-payment-runtime");
+  const refundEventKeys = [];
+  for (const provider of ["alipay", "wechat_pay", "stripe"]) {
+    const original = { id: "refund-original", tenantId: "tenant_1", workspaceId: "workspace_1", orderId: "order_1",
+      paymentIntentId: "intent-original", provider, method: provider };
+    const transaction = { paymentWebhookEvent: { findUnique: async ({ where }) => {
+      refundEventKeys.push(where.provider_eventId);
+      return { tenantId: original.tenantId, paymentIntentId: original.paymentIntentId, payloadHash: "original-hash", status: "processed" };
+    } } };
+    await PaymentRuntimeService.prototype.applyRefundWebhookOutcome.call({
+      prisma: { $transaction: work => work(transaction) }, lockOriginalRefund: async () => original
+    }, { ...original, refund: original, eventId: "original-event", payloadHash: "original-hash", outcome: {} });
+  }
+  assert.deepEqual(refundEventKeys, ["alipay_refund", "wechat_pay_refund", "stripe_refund"]
+    .map(provider => ({ provider, eventId: "original-event" })), "refund callbacks must preserve the original provider-specific event key");
+  const { TenantIntegrationService } = require("@rental-os/platform-server/tenant-integration");
   const row = {
     id: "cfg_sms_1",
     tenantId: "tenant_1",
@@ -193,7 +208,7 @@ assert.match(integrationsServiceSource, /生产环境禁止调用支付、短信
     /尚未通过真实连接测试/u,
     "进行中事实落库前必须在配置行锁内再次确认 live 门禁"
   );
-  const { IntegrationsService } = require(path.join(repo, "apps", "api", "dist", "modules", "integrations", "integrations.service.js"));
+  const { RentalIntegrationApplication: IntegrationsService } = require("@rental-os/rental-core/integration-runtime");
   const mockIntegrationService = new IntegrationsService({ get: () => "mysql" }, {});
   await assert.rejects(
     mockIntegrationService.createFile({

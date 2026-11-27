@@ -1,11 +1,9 @@
 const assert = require("node:assert/strict");
 
-require("ts-node").register({
-  transpileOnly: false,
-  compilerOptions: { module: "commonjs", moduleResolution: "node" }
-});
-
-const { TenantIntegrationService } = require("../apps/api/src/modules/integrations/tenant-integration.service");
+// 当前公共配置服务与 Rental 原业务参加者共用同一事务，保留原事实和默认平台断言。
+const { TenantIntegrationService } = require("@rental-os/platform-server/tenant-integration");
+const { PUBLIC_INTEGRATION_RUNTIME_PROVIDERS } = require("@rental-os/platform-server/integration-store");
+const { RentalIntegrationBusinessParticipant } = require("@rental-os/rental-core/integration-business-participant");
 
 const tenantId = "tenant_integration_default";
 const rows = new Map();
@@ -27,6 +25,15 @@ const matches = (row, where) => Object.entries(where).every(([key, value]) => {
 const clone = (row) => row ? { ...row, settings: { ...row.settings }, secretFields: [...row.secretFields] } : null;
 const fakeClient = {
   $queryRaw: async (query) => {
+    const sql = query.sql.replaceAll(String.fromCharCode(96), "");
+    if (sql.includes("FROM FileAsset") || sql.includes("FROM file_upload_sessions")) {
+      const [queryTenantId, provider] = query.values;
+      const data = sql.includes("FROM FileAsset") ? fileAssets : fileUploadSessions;
+      const states = [...sql.matchAll(/'([^']+)'/g)].map(match => match[1]);
+      return data.filter(row => row.tenantId === queryTenantId && (row.storageProvider ?? row.provider) === provider
+        && (sql.includes("status <>") ? row.status !== "deleted"
+          : states.includes(row.status) || sql.includes("cleanupError IS NOT NULL") && row.cleanupError != null)).slice(0, 1);
+    }
     const [queryTenantId, capability, provider] = query.values ?? [];
     const row = [...rows.values()].find((item) => item.tenantId === queryTenantId && item.capability === capability && item.provider === provider);
     return row ? [clone(row)] : [];
@@ -97,7 +104,9 @@ const secretBox = {
   decrypt: (value) => JSON.parse(value)
 };
 const operationLog = { record: async () => undefined };
-const service = new TenantIntegrationService(fakeClient, secretBox, operationLog);
+const service = new TenantIntegrationService(fakeClient, secretBox, operationLog,
+  new RentalIntegrationBusinessParticipant(fakeClient),
+  { ...PUBLIC_INTEGRATION_RUNTIME_PROVIDERS, alipay: "payment", wechat_pay: "payment", stripe: "payment" });
 const user = { tenantId, account: "admin", displayName: "管理员", isSaasAdmin: false };
 
 const alipay = {
