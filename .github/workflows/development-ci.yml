@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ZELO_COMMIT: 6294c76f0cb9d1d8afbc86fc55081212360c2ccb
+  ZELO_COMMIT: 78d56435953f34af2db31cb15d1d035b11dbba75
 
 jobs:
   development-build:

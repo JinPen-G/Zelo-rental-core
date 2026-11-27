@@ -13,6 +13,8 @@ import { createRentalAiOpenApi } from "./ai-openapi";
 import { withRentalAiClientRequest } from "./ai-client-request";
 import type { RentalHostCoreSetup } from "./additional-cores";
 import type { FreshRentalAiSelection } from "./ai-fresh-selection";
+import type { LegacyRentalDataSelection } from "./legacy-data-selection";
+export { LegacyRentalDataSelection } from "./legacy-data-selection";
 
 // AI 编译使用 dist-ai 中的一组令牌。扩展宿主从此出口同时取得启动与组装
 // 令牌，避免普通 dist 的 bootstrap 查找另一个 Symbol 或实例化第二套服务图。
@@ -23,6 +25,7 @@ export type { RentalAiHostAssembly } from "./ai-assembly";
 export interface RentalAiModuleOptions<Additional = unknown> {
   lock: CoreDeploymentLock;
   fresh?: FreshRentalAiSelection;
+  legacy?: LegacyRentalDataSelection;
   /** Static source selection for the original three PLATFORM retention routes. */
   platformRetention?: RentalAiPlatformRetentionFactory;
   additionalCores?: readonly RentalHostCoreSetup<Additional>[];
@@ -36,9 +39,9 @@ class RentalAiHttpModule {}
 /** 额外 Core 沿原固定包/同实例接点装配；仅 Rental 提供已审定 AI 工具。 */
 export function createRentalAiHostModule<Additional = unknown>(options: RentalAiModuleOptions<Additional>): DynamicModule {
     const platformRetention = options.platformRetention;
-    return createRentalHostModule<RentalAiHostAssembly<Additional>>({ lock: options.lock,
+    return createRentalHostModule<RentalAiHostAssembly<Additional>>({ lock: options.lock, legacyAccess: Boolean(options.legacy),
       assemble: (database, configuration) => composeRentalAiApplication({ database, configuration, lock: options.lock, fresh: options.fresh,
-        additionalCores: options.additionalCores }),
+        additionalCores: options.additionalCores, legacy: options.legacy }),
       createPolicy: createRentalAiHttpPolicy,
       openApi: (lock, policy) => createRentalAiOpenApi(lock, policy, options.additionalOpenApi),
       additionalHttp: options.additionalHttp,

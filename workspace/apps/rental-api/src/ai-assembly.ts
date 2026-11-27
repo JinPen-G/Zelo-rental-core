@@ -14,12 +14,14 @@ import { createRentalAiHttpPolicy, rentalAiDeploymentContinuationSelector, renta
   rentalAiPlatformManagementSelector } from "./ai-http-policy";
 import { createRentalAiRemovalDependencies } from "./core-removal-source";
 import { FreshRentalAiSelection } from "./ai-fresh-selection";
+import type { LegacyRentalDataSelection } from "./legacy-data-selection";
 
 export function composeRentalAiApplication<Additional = unknown>(input: {
   database: RentalDatabaseClient;
   configuration: ConfigService;
   lock: CoreDeploymentLock;
   fresh?: FreshRentalAiSelection;
+  legacy?: LegacyRentalDataSelection;
   /** 静态宿主提供；由原装配逐项核定固定包、数据计划与 HTTP，不授予 AI 权限。 */
   additionalCores?: readonly RentalHostCoreSetup<Additional>[];
 }): RentalHostAssembly<RentalAiBinding, Additional> {

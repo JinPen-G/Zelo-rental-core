@@ -38,6 +38,9 @@ import { rentalHostLegacyApiRoutes } from "./openapi";
 import { createRentalCorePackageSources } from "./core-package-sources";
 import { prepareRentalAdditionalCores, type RentalHostCoreSetup } from "./additional-cores";
 import { createRentalCoreRemovalSource } from "./core-removal-source";
+import { LegacyRentalDataSelection } from "./legacy-data-selection";
+import { createRentalLegacyAccessManagement } from "./legacy-access-management";
+import { createRentalLegacyHttpAccess } from "./legacy-access-http";
 
 /** 仅受控宿主装配可提供；请求、Core 包清单和环境变量不能注入运行参加者。 */
 export interface RentalHostAiSetup<Binding> {
@@ -92,6 +95,7 @@ export interface RentalHostAssembly<Binding = unknown, Additional = unknown> {
   readonly notifications: RentalApplication["integrations"]["ledger"];
   readonly lifecycle: RentalApplicationLifecycle;
   readonly permissionStartup: CoreHostPermissionStartup;
+  readonly legacyAccess?: ReturnType<typeof createRentalLegacyAccessManagement>;
 }
 
 export function composeRentalApplication<Binding = never, Additional = unknown>(input: {
@@ -100,8 +104,13 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   lock: CoreDeploymentLock;
   /** 静态宿主显式选择的租户 Core；缺实际固定包/数据观察/HTTP 合同即拒绝整组。 */
   additionalCores?: readonly RentalHostCoreSetup<Additional>[];
+  /** 仅固定宿主显式选择；不读取客户端/环境变量来豁免新装账。 */
+  legacy?: LegacyRentalDataSelection;
 } & ({ aiMode: "disabled"; ai?: never } | { aiMode: "enabled"; ai: RentalHostAiSetup<Binding> })): RentalHostAssembly<Binding, Additional> {
   const lock = CoreDeploymentLockSchema.parse(input.lock);
+  if (input.legacy !== undefined && !(input.legacy instanceof LegacyRentalDataSelection)) throw new Error("旧库选择缺少正式材料读取器");
+  const legacy = input.legacy;
+  if (legacy) legacy.select(lock);
   if (input.aiMode === "disabled" && (input.ai || (lock.dataCapabilities?.length ?? 0) > 0)) {
     throw new Error("当前无 AI 组合不能消费已选择的可选数据能力");
   }
@@ -120,7 +129,7 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   if (!isDeepStrictEqual(lock.platform.data, platformPlan.data)) throw new Error("部署锁公共基线与当前宿主不一致");
   const { database, configuration } = input;
   const dependencies = createPublicCoreDependencies<RentalDatabaseTransaction>(database);
-  const phasedData = input.aiMode === "enabled" ? input.ai.phasedData : undefined;
+  const phasedData = !legacy && input.aiMode === "enabled" ? input.ai.phasedData : undefined;
   const verifyDataPackage = input.aiMode === "enabled" ? input.ai.verifyDataPackage : undefined;
   const observation = (reader: Pick<CoreHostSqlTransaction, "$queryRaw">) => phasedData
     ? { read: () => phasedData(reader) }
@@ -130,11 +139,15 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
         ...additional.map(item => ({ ...item.dataPlan, coreId: item.coreId }))],
       ...(input.aiMode === "enabled" ? { dataCapabilities: [{ ...input.ai.dataPlan, capabilityId: "ai-native" }] } : {})
     });
+  const source = (reader: Pick<CoreHostSqlTransaction, "$queryRaw">) => legacy
+    ? { historical: legacy.observation(reader, { platform: platformPlan, rental: rentalPackage.dataPlan,
+      capabilities: input.aiMode === "enabled" ? [{ id: "ai-native", plan: input.ai.dataPlan }] : [] }) }
+    : { observations: observation(reader) };
   let catalogue: CoreDeployedCatalogue;
   // 所有回调只在同步组合完成后才会消费；缺观察时原 catalogue 明确拒绝，不提供准备态放行。
   const catalogueForTransaction = createCoreTransactionCatalogues((transaction: Pick<CoreHostSqlTransaction, "$queryRaw">) => createCoreDeployedCatalogue({
     lock, registrations: [...catalogue.registrations.values()], http: additional.map(item => item.http),
-    observations: observation(transaction)
+    ...source(transaction)
   }));
   const deploymentForTransaction = (transaction: Pick<CoreHostSqlTransaction, "$queryRaw">) => catalogueForTransaction(transaction).availability;
   const admissionForTransaction = createMysqlCoreDeploymentAdmission;
@@ -163,7 +176,7 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   catalogue = createCoreDeployedCatalogue({ lock,
     registrations: [{ manifest: rentalPackage.manifest, server: platformHost.server },
       ...bound.map(({ item, value }) => ({ manifest: item.manifest, server: value.server }))],
-    http: additional.map(item => item.http), observations: observation(database) });
+    http: additional.map(item => item.http), ...source(database) });
   const permissionStartup = new CoreHostPermissionStartup({ database,
     manifests: [...catalogue.registrations.values()].map(registration => registration.manifest),
     participants: [createRentalPermissionRegistrationParticipant()] });
@@ -180,13 +193,18 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
     legacyApiRoutes: { rental: rentalHostLegacyApiRoutes() },
     // Candidate preparation currently speaks v1. A phased installation must
     // not report a v1 update baseline that silently omits its extension.
-    ...(!phasedData ? createRentalCorePackageSources({ configuration, lock,
+    ...(!phasedData && !legacy ? createRentalCorePackageSources({ configuration, lock,
       rentalPackage: () => requireRentalDeploymentPackage(pin, lock.platform.versions),
       additionalCorePackages: additional,
       observe: () => observation(database).read(),
       observeInTransaction: transaction => observation(transaction).read(),
       ...(input.aiMode === "enabled" ? { dataCapabilities: input.ai.readDataPackages } : {}) }) : {}) });
-  const coreHttp = createPlatformCorePackageAssemblyHttpAccess(packages, createPlatformCoreHttpAccess(core));
+  const legacyAccess = legacy ? createRentalLegacyAccessManagement({ database, authentication: rental.authSource,
+    audit: dependencies.audit, term: dependencies.term, deployment: catalogue.availability,
+    requireData: (transaction, tenantId) => catalogueForTransaction(transaction).availability.requireAvailable("rental", tenantId),
+    registrations: catalogue.registrations, authorizeContainer: platformHost.authorizeContainer }) : undefined;
+  const coreHttp = createRentalLegacyHttpAccess(legacyAccess,
+    createPlatformCorePackageAssemblyHttpAccess(packages, createPlatformCoreHttpAccess(core)));
   const authorization = createRentalAuthorization(shared);
   const guard = new authorization.Guard(rental.auth, rental.foundation.capabilities, rental.client.auth,
     rental.client.rateLimit, database, rental.subscriptions);
@@ -223,7 +241,9 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
   const callbackAccess = createRentalPaymentCallbackAccess({ database, deploymentForTransaction });
   const customers = createRentalCustomerManagementApplication(rental);
   const ai = input.aiMode === "enabled" ? input.ai.bind({ rental, guard, customers }) : undefined;
-  const workspaces = createRentalWorkspaceManagementApplication(rental, { deploymentForTransaction, freshAi: Boolean(phasedData) });
+  // 新公共AI材料决定新租户默认值；历史观察替换迁移账，不恢复旧占位凭据。
+  const workspaces = createRentalWorkspaceManagementApplication(rental, { deploymentForTransaction,
+    freshAi: input.aiMode === "enabled" && Boolean(input.ai.phasedData) });
   return Object.freeze({ rental, catalogue, core, packages, authorization, guard, access, publicAccess, callbackAccess, aiAccess, ai,
     coreReadSources: Object.freeze({ term: dependencies.term, catalogueForTransaction }),
     // 隔离映射副本；调用者不能通过修改目录映射替换已注册服务或另一 Core 的绑定。
@@ -236,8 +256,10 @@ export function composeRentalApplication<Binding = never, Additional = unknown>(
       tenantBootstrapHttp: workspaces.tenantBootstrapHttpAccess }),
     payments: { runtime: rental.integrations.payments, statements: rental.integrations.statements, core: rental.primary.core },
     jobs: rental.integrations.ledger, notifications: rental.integrations.ledger,
-    permissionStartup,
+    permissionStartup, legacyAccess,
     lifecycle: new RentalApplicationLifecycle(rental, () => database.$disconnect(),
       configuration.get<string>("DATABASE_CONNECT_ON_START") === "true" ? () => database.$connect() : undefined,
-      permissionStartup, phasedData ? async () => { verifyDataPackage?.(); await phasedData(database); } : undefined) });
+      permissionStartup, legacy ? async () => { verifyDataPackage?.();
+        await database.$transaction(async transaction => { await source(transaction).historical!.read(); }, { isolationLevel: "RepeatableRead" });
+      } : phasedData ? async () => { verifyDataPackage?.(); await phasedData(database); } : undefined) });
 }

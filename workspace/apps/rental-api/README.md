@@ -33,3 +33,28 @@ node scripts/package-rental-host.cjs --development --repo <Zelo目录> --reposit
 - [部署材料准备](src/prepare-deployment.ts)只产出待部署材料，不连接、迁移或改写原账；[公开包工厂接点](src/package.ts)复用领域包的实际文档与构建材料。
 
 旧组合和已发布版本继续使用各自固定来源。本目录不是独立安装目录，构建和运行命令统一在准备后的组合中执行。
+
+## 旧 mixed 库的显式过渡
+
+旧库不使用新装18/23条的执行目录。受控宿主从正式 `@rental-os/rental-api/app-module` 或 `/ai-app-module` 导出的 [LegacyRentalDataSelection](src/legacy-data-selection.ts) 选择旧账模式，传入完整固定部署锁和底座源码归档原字节；归档SHA须等于该锁。所选Core仍由原安装包读取器核清单、来源和摘要。普通、新装与MCP默认入口不改变；旧库模式当前只支持单Rental及可选AI，MCP必须另有旧账/结构映射，不能借23条空库链启用。
+
+[七表预检](src/legacy-public-upgrade.ts)读取完整原Prisma账和物理目录。260成功＋1指定恢复回滚只返回 `requires_original_three`，须先另获批准执行原三份历史增量；到263成功＋1原回滚且七表不存在才返回 `ready_for_seven_tables`。`selection.publicUpgrade().files()`给出原公共Core访问、绑定、限流三份SQL及MySQL锁文件；它们只有七表CREATE，不包含完整public initial。追加后必须有三条原名/原摘要成功账并通过七表字段/索引/CHECK检查；部分DDL、缺账、未完成账或摘要变化均拒绝继续。该方法不执行SQL、不写或resolve原账。
+
+运行通过 `RentalAppModule.register({lock,aiMode:"disabled",legacy:selection})`；已选AI时沿原 `createRentalAiHostModule({lock,fresh:materials,legacy:selection,...})`，其中 `fresh`只提供已核新版本材料和物理计划，运行时明确使用legacy原账读取器，不能调用新装initialize。AI还须由同一正式数据/扩展材料的 `createRentalAiMysqlPlans`供给 `additionalPhysical:[{owner:"rental-ai-extension",read:plans.extension.readPhysical}]`。每次准入检查旧完整账、追加账及公共/Rental/所选AI/扩展实际物理合同，保留旧表与原账；不生成新装appliedMigrations。物理合同不等价时报告具体owner并停止，不能把七表完成视为整个组合已可运行。
+
+[可信管理应用](src/legacy-access-management.ts)由[同一宿主](src/assembly.ts)构造，[管理HTTP](src/legacy-access-http.ts)仅在显式旧库模块挂载。所有路由为POST，根前缀 `/api/platform/rental-legacy/`，文档来自同一登记表。当前operator签名、原会话及租户管理权限必须有效：
+
+| 操作 | 路径 | 原身份与输入 |
+| --- | --- | --- |
+| 准备租户授权 | tenant/prepare | SaaS与system:tenant:manage；tenantId |
+| 准备成员/绑定 | members/prepare | 当前租户管理员或all范围且system:user:manage；空对象 |
+| 补缺租户授权 | tenant/adopt | 同SaaS；confirmed、operationId、expectedRevision |
+| 补缺成员分配 | members/adopt | 同租户管理；加userId |
+| 建立原范围绑定 | bindings/adopt | 同租户管理；可选原workspaceId |
+| 读原授权收据 | tenant/operation | 同SaaS；tenantId、原operationId |
+| 读原成员收据 | members/operation | 同租户管理；userId、原operationId |
+| 读原绑定收据 | bindings/operation | 同租户管理；可选workspaceId、原operationId |
+
+`confirmed`由最近一次准备结果取 `tenantId/sourceFingerprint/coreFingerprint`。按租户授权→重新准备→逐成员分配→重新准备→逐范围绑定处理；每次调用均使用原expectedRevision和独立稳定operationId。原disabled/revoked记录保留，原角色、组织、地点和空间数据不重建，现有行业initializer不运行。失应答只查原operationId；不存在收据不证明可换键重做。
+
+上线审批须固定双SHA/包摘要/完整锁、当次一致备份及恢复证明，再依次批准原三DDL、七表追加、只读桥接观察、单项授权映射及同锁API/Web切换。本工具不授权这些线上动作。旧镜像回退必须先核它能读取升级后的库且停止所有新旧写方；不删除新表或新收据来伪装回退，数据库恢复另走经验证的备份恢复。未完成的原unknown继续按原键调查，不因切换重发。
