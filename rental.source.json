@@ -91,6 +91,36 @@
       ]
     },
     {
+      "source": "workspace/apps/example-multi-core-api",
+      "target": "apps/example-multi-core-api",
+      "roles": ["multi-core"],
+      "required": [
+        "package.json",
+        "README.md",
+        "tsconfig.json",
+        "src/main.ts",
+        "src/bootstrap.ts",
+        "src/app.module.ts",
+        "src/assembly.ts",
+        "src/tickets-core.ts"
+      ]
+    },
+    {
+      "source": "workspace/apps/example-multi-core-admin",
+      "target": "apps/example-multi-core-admin",
+      "roles": ["multi-core"],
+      "required": [
+        "package.json",
+        "README.md",
+        "index.html",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/MultiCoreShell.tsx",
+        "src/vite-env.d.ts"
+      ]
+    },
+    {
       "source": "workspace/apps/tenant-website",
       "target": "apps/tenant-website",
       "roles": [
