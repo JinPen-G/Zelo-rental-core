@@ -2,9 +2,9 @@
 
 # Rental Core · Core 接入指南
 
-Core `rental`，实现 `0.1.14`，生成器合同 `0.1.1`。
+Core `rental`，当前发行 [0.1.15](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15)，生成器合同 `0.1.1`。固定包的宿主步骤见[独立 API 导读](workspace/apps/rental-api/README.md)。
 
-本指南来自[固定底座接入手册](https://github.com/JinPen-G/Zelo/blob/3fee227517a2b20e18a426e853f18cdf37cb63ff/packages/core-contracts/README.md)和同版本正式契约。Core来源为[固定提交](https://github.com/JinPen-G/Zelo-rental-core/commit/2cada4c9bb7e7c4baa1affe66b72f5750e8431e6)。
+下文通用示例引用[编写时的固定底座接入手册](https://github.com/JinPen-G/Zelo/blob/3fee227517a2b20e18a426e853f18cdf37cb63ff/packages/core-contracts/README.md)。本次发行 Core 来自[固定提交](https://github.com/JinPen-G/Zelo-rental-core/commit/7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497)；随附的 `CORE_GUIDE.md` 以正式包为准。
 
 ## 当前可执行入口
 

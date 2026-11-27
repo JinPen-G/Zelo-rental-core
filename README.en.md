@@ -5,7 +5,7 @@
 *开源多租户 SaaS 底座 [Zelo](https://github.com/JinPen-G/Zelo) 的首个官方生产级业务 Core —— 覆盖多品类租赁全链路的独立业务包与架构参考实现。*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Core Version](https://img.shields.io/badge/Core-0.1.14-0F766E.svg)](core.manifest.json)
+[![Core Version](https://img.shields.io/badge/Core-0.1.15-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15)
 [![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.1.12%20%3C0.2.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
 [![Contract](https://img.shields.io/badge/Contract-%3E%3D0.1.1%20%3C0.2.0-7C3AED.svg)](core.manifest.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.12-339933.svg)](package.json)
@@ -56,8 +56,8 @@ flowchart TD
 
 | Item | Current Value / Requirement | Notes |
 | --- | --- | --- |
-| **Core ID / Version** | `rental` · `0.1.14` | Standard `.tgz` packages published on [GitHub Releases](https://github.com/JinPen-G/Zelo-rental-core/releases) |
-| **Compatible Zelo Base** | `>=0.1.12 <0.2.0` | Verified against [Zelo Base `0.1.17`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.17) |
+| **Core ID / Version** | `rental` · `0.1.15` | Standard package in the [v0.1.15 release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15) |
+| **Compatible Zelo Base** | `>=0.1.12 <0.2.0` | The ordinary release pair was built with [Zelo `0.1.18`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.18) |
 | **Core Contract Range** | `>=0.1.1 <0.2.0` | Validated via `@rental-os/core-contracts` |
 | **Runtime Requirements** | Node.js `>=22.12.0 <25.0.0` · MySQL 8.4 | Matches the Zelo platform base |
 | **Data Version & Migrations** | `dataVersion: 0.1.1` (2 raw SQL migrations) | Initial rental schema + `0.1.13` 6-table exchange workflow; see [Data Upgrade Notes](prisma/README.md#迁移与历史) |
@@ -66,13 +66,13 @@ flowchart TD
 
 > **Release & Renaming Notes**:
 > - `0.1.14` restores original quote-total theme tokens in the standalone admin UI with no new database migrations relative to `0.1.13`; `0.1.13` adds 6 exchange-workflow tables (existing deployments must apply the appended migration before booting `0.1.13+`; see [prisma/README.md](prisma/README.md#迁移与历史)).
-> - The public repository is now **`Zelo-rental-core`**. Clone and support URLs use the new name. The `0.1.14` discovery manifest and published archives retain the original `https://github.com/JinPen-G/nativark-rental-core` source identity and pinned commit. A repository redirect does not change an installed deployment lock; a future source change requires an explicit migration plan.
+> - The public repository is now **`Zelo-rental-core`**. Published packages and installed deployment locks retain the stable `https://github.com/JinPen-G/nativark-rental-core` source identity. If discovery cannot prepare the renamed repository, verify the published asset digest and prepare it through the local-package entry. Keep installed locks unchanged.
 
 ---
 
 ## Development source and published releases
 
-The current source includes the domain fixes from Zelo commit `6587e178ea36a50195e7f61e13bb5a7387bbd95b`, plus the independent repository’s logout cancellation and controlled receipt-read fixes. These changes have not been issued as a new release. Version `0.1.14`, its manifest, tags and archives continue to identify the published release. New artifacts require a new version and a pinned host combination.
+The `v0.1.15` package is built from the independent commit `7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497`. The default branch publishes the manifest from that exact package; the `v0.1.14` release remains available. Independent CI verifies the ordinary client builds and the 18-migration v2 fresh installation, sign-in, and restart. The [release image pair](https://github.com/JinPen-G/Zelo/actions/runs/45916049094) uses the ordinary host, with separate verification required for legacy database upgrades and production MCP.
 
 The changes cover transaction-bound quote configuration checks, client order-creation participants, fresh inventory and asset references, cold-instance reads, and website catalog validation. See the [current Chinese integration notes](README.md#本批接入变化) and [fixed detailed developer guide](https://github.com/JinPen-G/Zelo-rental-core/blob/8902e4d8db920cf33fd54992ec2cb939150985f0/README.md#阅读路线).
 
@@ -80,12 +80,12 @@ The changes cover transaction-bound quote configuration checks, client order-cre
 
 Package staging, deployment registration, tenant grants, and member assignments are managed cleanly in Zelo without editing base source code. See [CORE_GUIDE.md](CORE_GUIDE.md) and Zelo's [5-Step Core Integration Guide](https://github.com/JinPen-G/Zelo/blob/main/README.en.md#integrate-your-business-core-in-5-steps).
 
-### Option 1: Online Discovery via Zelo Admin Console (Recommended)
+### Option 1: Online Discovery via Zelo Admin Console
 
 1. Boot a compatible [Zelo Zero-Core Base](https://github.com/JinPen-G/Zelo/blob/main/README.en.md#3-option-a-run-the-pure-zero-core-base-recommended) and sign in as SaaS admin.
 2. Open **`/platform/core-packages` → Discover Cores**, search `rental`, or enter `JinPen-G/Zelo-rental-core`.
-3. Inspect the pinned manifest, compatibility range, and Release SHA-256 digest, then stage the candidate package.
-4. Apply migrations, update the deployment lock, and boot the host following the [Rental Standalone API Host Guide](https://github.com/JinPen-G/Zelo/blob/main/apps/rental-api/README.md).
+3. Inspect the pinned manifest, compatibility range, and release SHA-256 digest, then stage the candidate package. If discovery reports a repository identity mismatch, download the same version, verify its digest, and use the local-package entry.
+4. Follow the [Rental Standalone API Host Guide](workspace/apps/rental-api/README.md) to check the deployment lock, applicable migrations, and runtime requirements. Existing mixed databases require a separate migration bridge.
 5. Grant `rental` to target tenants in `/platform/core-access`, then assign members and domain roles in `/settings/member-cores`.
 
 ### Option 2: CLI Release Inspection

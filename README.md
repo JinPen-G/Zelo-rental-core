@@ -5,7 +5,7 @@
 *The first official production business Core for [Zelo](https://github.com/JinPen-G/Zelo) — a full-featured, multi-category rental SaaS package and vertical Core reference implementation.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Core Version](https://img.shields.io/badge/Core-0.1.14-0F766E.svg)](core.manifest.json)
+[![Core Version](https://img.shields.io/badge/Core-0.1.15-0F766E.svg)](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15)
 [![Zelo Base](https://img.shields.io/badge/Zelo%20Base-%3E%3D0.1.12%20%3C0.2.0-2563EB.svg)](https://github.com/JinPen-G/Zelo)
 [![Contract](https://img.shields.io/badge/Contract-%3E%3D0.1.1%20%3C0.2.0-7C3AED.svg)](core.manifest.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.12-339933.svg)](package.json)
@@ -56,8 +56,8 @@ flowchart TD
 
 | 项目 | 当前值 / 要求 | 说明 |
 | --- | --- | --- |
-| **Core ID / 版本** | `rental` · `0.1.14` | 标准发行包见 [GitHub Releases](https://github.com/JinPen-G/Zelo-rental-core/releases) |
-| **兼容 Zelo 底座** | `>=0.1.12 <0.2.0` | 当前配套验证底座为 [Zelo Base `0.1.17`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.17) |
+| **Core ID / 版本** | `rental` · `0.1.15` | 标准包见 [v0.1.15 Release](https://github.com/JinPen-G/Zelo-rental-core/releases/tag/v0.1.15) |
+| **兼容 Zelo 底座** | `>=0.1.12 <0.2.0` | 最新正式普通组合与 [Zelo `0.1.18`](https://github.com/JinPen-G/Zelo/releases/tag/v0.1.18) 配对构建 |
 | **接入契约版本** | `>=0.1.1 <0.2.0` | 沿 `@rental-os/core-contracts` 标准清单校验 |
 | **运行环境** | Node.js `>=22.12.0 <25.0.0` · MySQL 8.4 | 与 Zelo 公共底座保持一致 |
 | **数据版本与迁移** | `dataVersion: 0.1.1`（2 份原始 SQL 迁移） | 含初始租赁表与 `0.1.13` 换货工作流 6 表；详参 [数据升级说明](prisma/README.md#迁移与历史) |
@@ -66,13 +66,13 @@ flowchart TD
 
 > **版本与更名说明**：
 > - `0.1.14` 恢复独立后台订单报价总额原主题样式，相对 `0.1.13` 无新增数据库迁移；`0.1.13` 新增六张换货工作流表，已有部署升级前需先应用追加迁移（详见 [prisma/README.md](prisma/README.md#迁移与历史)）。
-> - 本仓库已更名为 **`Zelo-rental-core`**，公开访问、克隆和问题反馈使用新地址。`0.1.14` 的发现清单与历史发行包仍保持 `https://github.com/JinPen-G/nativark-rental-core` 来源身份及原固定提交；名称重定向不改变已安装的部署锁。新版本若变更发行来源，须先具备明确的来源迁移方案，不能通过修改旧清单绕过升级校验。
+> - 本仓库已更名为 **`Zelo-rental-core`**，公开访问、克隆和问题反馈使用新地址。正式包和已安装部署锁保留 `https://github.com/JinPen-G/nativark-rental-core` 这一稳定来源身份。不要手改原锁；发现页因更名无法准备时，可将核过摘要的正式资产作为本地包准备。
 
 ---
 
 ## 当前开发源码与已发行版本
 
-本分支补回框架固定提交 `6587e178ea36a50195e7f61e13bb5a7387bbd95b` 中的领域修复，同时保留退出撤销与停用 Core 原收据读取。这里的开发源码尚未作为新版本发行；上方 `0.1.14`、根发现清单、`CORE_GUIDE.md`、既有 Tag/资产及其来源仍表示原发行，不能把当前源码重新打包冒充原 `0.1.14`。新版本须重新核定版本、固定源码和宿主组合后另行发布。
+正式 `v0.1.15` 包来自固定独立源码 `7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497`，根发现清单与包内清单字节相同。旧 `v0.1.14` 发行继续保留。独立 CI 验证了普通四端构建及 18 条 v2 新装迁移、登录和重启；[正式 API/Web 配对](https://github.com/JinPen-G/Zelo/actions/runs/45916049094)选择普通宿主。现有混合库升级和可选 MCP 的生产接入不能使用该回执代替验证。
 
 源码变化包括新报价配置组合的同事务核验、客户建单来源参加者、库存与资产写入前重读、冷实例配置与历史订单/工单读取、日历原键比较、渠道权限投影及官网目录结构门禁。原页面布局、样式、Token及业务迁移不随本次补齐改动。
 
@@ -92,12 +92,12 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 安装、部署注册、租户授权与成员分配在 Zelo 中各自独立办理，无需改动底座源码。完整原理见 [CORE_GUIDE.md](CORE_GUIDE.md) 及 Zelo 主仓的 [五步快速接入手册](https://github.com/JinPen-G/Zelo/blob/main/packages/core-contracts/README.md#五步快速接入)。
 
-### 方式一：在 Zelo 管理后台在线发现安装（推荐）
+### 方式一：在 Zelo 管理后台在线发现安装
 
 1. 启动兼容版本的 [Zelo 零 Core 底座](https://github.com/JinPen-G/Zelo#3-方式-a启动纯净零-core-公共底座推荐)，使用 SaaS 管理员账号登录。
 2. 进入 **`/platform/core-packages`（Core 包管理）→「发现 Core」**，搜索 `rental` 或直接输入 `JinPen-G/Zelo-rental-core`。
-3. 查看固定提交清单、兼容范围与 Release 资产 SHA-256 摘要，确认「准备候选」。
-4. 按 [Rental 独立 API 宿主说明](https://github.com/JinPen-G/Zelo/blob/main/apps/rental-api/README.md) 应用迁移、更新部署锁并启动宿主。
+3. 查看固定提交清单、兼容范围与 Release 资产 SHA-256 摘要，确认「准备候选」。发现页若提示仓库来源不一致，请下载同版标准包、核对摘要并使用本地包入口。
+4. 按 [Rental 独立 API 宿主说明](workspace/apps/rental-api/README.md) 核对部署锁、适用迁移与启动条件。已有混合库须先完成原账桥接。
 5. 由 SaaS 管理员在 `/platform/core-access` 为目标租户开通 `rental` Core 授权，再由租户管理员在 `/settings/member-cores` 为成员分配角色即可使用。
 
 ### 方式二：通过 CLI 核验固定发行
@@ -123,7 +123,7 @@ node packages/core-contracts/dist/github-release.js inspect JinPen-G/Zelo-rental
 
 Rental Core 的源码开发与编译依托包含所选 Zelo 底座支持提交与本仓库的组合开发工作区。核心入口与工具链如下：
 
-- **服务端装配**：通过 `@rental-os/rental-core/http` 的 `RentalHttpModule` 与 [完整应用工厂](src/application.ts) 接入独立宿主（详参 [Rental API 宿主导读](https://github.com/JinPen-G/Zelo/blob/main/apps/rental-api/README.md)）。
+- **服务端装配**：通过 `@rental-os/rental-core/http` 的 `RentalHttpModule` 与 [完整应用工厂](src/application.ts) 接入独立宿主（详参 [Rental API 宿主导读](workspace/apps/rental-api/README.md)）。
 - **管理后台装配**：前端宿主调用 [统一页面贡献](admin/index.tsx) 的 `createRentalAdminContribution(version, contexts)` 即可挂载全套租赁业务页面，自动复用 Zelo 外壳与权限上下文。
 - **独立数据与迁移**：通过 [数据发行模块](src/data.ts) 与 [Prisma 数据接入](prisma/README.md) 组合独立模型与原始 SQL 迁移（支持无 AI `rental` 162 模型与含 AI `rental-ai` 248 模型两种组合）。
 
