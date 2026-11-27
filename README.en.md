@@ -227,7 +227,7 @@ Zelo-rental-core/
 
 ## HTTP API & OpenAPI
 
-`@rental-os/rental-core/http-openapi` exports `createRentalOpenApi()`, providing a `CoreOpenApiContribution` with **595 operations and 413 schemas** under the `rental.` namespace. Hosts merge it into `GET /api/openapi.json` via `composeCoreOpenApi`.
+`@rental-os/rental-core/http-openapi` exports `createRentalOpenApi()`, providing a `CoreOpenApiContribution` with business operations and schemas under the `rental.` namespace. Hosts merge it into `GET /api/openapi.json` via `composeCoreOpenApi`.
 
 - **Source Modules**: [OpenAPI Contribution](src/http-openapi.ts) · [Operations](src/http-openapi-operations.ts) · [Schemas](src/http-openapi-schemas.ts) · [Portable Routes](src/http-portable.ts)
 - **Export Standalone OpenAPI JSON Offline**:
@@ -241,6 +241,9 @@ Every endpoint inherits Zelo's trusted authentication, tenant/workspace guards, 
 ---
 
 ## Legacy Adoption & Recovery
+
+- **Original Tenant Rule Sections**: `GET /api/platform/system-rules` and `PUT /api/platform/system-rules/:sectionKey` use the [original workspace controller](src/http-workspaces.controller.ts) and [compatibility application](src/application-system-rules.ts). The seven sections remain `memberRegister`, `memberPoints`, `fleetMaintenance`, `fleetCleaning`, `calendarFixed`, `calendarSpecial`, and `push`; both member endpoints replace the complete member section. Current tenant permission `system:params:manage` or the original administrator grant, enabled Rental access, and member assignment are required. SaaS administrators remain denied. Writes merge and audit within one tenant transaction using the original effective version. Other sections and historical AI storage are preserved; responses redact retired AI fields and reject credential writes.
+
 
 Rental Core provides explicit server-side hooks for onboarding legacy tenants onto standard Core grants and safely inspecting records after Core disablement:
 

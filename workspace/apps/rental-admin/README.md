@@ -20,6 +20,8 @@ npm run dev -w @rental-os/rental-admin
 
 使用[新装 Rental 与公共 AI](../rental-api/README.md#新装-rental-与公共-ai)时，后台必须与 API 使用同一完整 v2 `CORE_DEPLOYMENT_LOCK`、`RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR` 及标准包。构建使用 `npm run build:fresh -w @rental-os/rental-admin`；该命令消费已准备好的本次 API 和公共编译产物，不会自行启动、安装或迁移。原页面、主题、导航和权限不变。
 
+v2 只接受 `ai-native` 或 `ai-native` 加 `mcp` 两种精确数据组合。选择 MCP 时，还须传入与 API 相同的 `RENTAL_MCP_DATA_PACKAGE_DIR` 绝对目录。构建核对两类数据包的完整字节、归档摘要和同一底座来源、锁旁原迁移 SQL，以及 Rental 后置扩展的来源、数据前置和 SQL；未知或重复能力、缺包、错来源或摘要均拒绝。数据包已选装不代表 MCP HTTP 已启用，端点、OAuth、工具发布和业务权限仍由 API 的显式装配决定。
+
 应用从已核定清单识别公开路由发行。清单的 OpenAPI 入口为 `dist/http-openapi-portable.json` 时，同一会话的 HTTP 拦截器将原业务请求 `/rental/v1/...` 映射为 `/cores/rental/v1/...`，与公开包服务端入口一致。`VITE_API_BASE_URL` 继续提供公共 API 基址，默认 `/api`。JSON、图片和 CSV 共用此映射，认证、公共设置及其他路径沿各自入口。原兼容发行继续使用原业务地址。[应用接线](src/main.tsx) · [公开路由实现](../../../src/http-portable.ts) · [发行选择](../rental-api/src/package.ts)
 
 ## 源码取出范围

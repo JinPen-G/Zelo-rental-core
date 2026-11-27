@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
@@ -12,9 +13,11 @@ import {
   checkCoreCombination,
   checkPlatformDataCapabilities,
   coreDeploymentHostVersions,
+  isCoreVersionSupported,
 } from "@rental-os/core-contracts";
 import { requireCorePackagePin } from "@rental-os/core-contracts/install";
-import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName } from "@rental-os/core-contracts/deployment";
+import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName,
+  platformCapabilityPrismaMigrationName } from "@rental-os/core-contracts/deployment";
 import { readPlatformDataCapabilityPackage } from "@rental-os/core-contracts/platform-data-package";
 import { rentalHostLegacyApiRoutes } from "@rental-os/rental-api/openapi";
 import { platformAdminVite } from "@rental-os/platform-admin/vite";
@@ -46,13 +49,35 @@ export default defineConfig(({ mode }) => {
   const root = resolve(dirname(require.resolve("@rental-os/rental-core")), "..");
   const { manifest } = requireCorePackagePin(root, lock.cores[0], host, rentalHostLegacyApiRoutes());
   if (phased) {
-    const [extension] = phased.postCapability, [capability] = lock.dataCapabilities ?? [];
-    if (phased.postCapability.length !== 1 || extension.coreId !== "rental" || lock.dataCapabilities?.length !== 1
-      || capability.id !== "ai-native" || extension.prerequisites.capability.id !== capability.id)
+    const [extension] = phased.postCapability, capabilities = lock.dataCapabilities ?? [];
+    const ai = capabilities.find(capability => capability.id === "ai-native");
+    const mcp = capabilities.find(capability => capability.id === "mcp");
+    if (phased.postCapability.length !== 1 || extension.coreId !== "rental" || !ai
+      || capabilities.length !== (mcp ? 2 : 1) || new Set(capabilities.map(capability => capability.id)).size !== capabilities.length
+      || extension.prerequisites.capability.id !== ai.id)
       throw new Error("新装后台须选择与 API 相同的完整 v2 数据组合");
-    const publicData = process.env.RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR;
-    if (!publicData) throw new Error("新装后台须核同一固定公共 AI 数据包");
-    readPlatformDataCapabilityPackage(publicData, capability);
+    // Data-package selection does not enable an MCP HTTP endpoint or grant business access.
+    for (const capability of capabilities) {
+      if (!isDeepStrictEqual(capability.source, lock.platform.source))
+        throw new Error("新装后台数据能力须来自与 API 相同的固定底座");
+      const directory = capability.id === "ai-native" ? process.env.RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR
+        : process.env.RENTAL_MCP_DATA_PACKAGE_DIR;
+      if (!directory || !isAbsolute(directory)) throw new Error(`新装后台须核同一固定 ${capability.id} 数据包绝对目录`);
+      readPlatformDataCapabilityPackage(directory, capability);
+      for (const migration of capability.data.migrations) {
+        const sql = readFileSync(resolve(dirname(path), "migrations",
+          platformCapabilityPrismaMigrationName(capability.id, migration.id), "migration.sql"));
+        if (createHash("sha256").update(sql).digest("hex") !== migration.sha256)
+          throw new Error(`新装后台 ${capability.id} 迁移与 API 锁内的原数据包不同`);
+      }
+    }
+    const { core, capability } = extension.prerequisites;
+    if (!isDeepStrictEqual(extension.migration.source, manifest.source)
+      || !isCoreVersionSupported(manifest.data.version, core.version)
+      || !manifest.data.migrations.some(migration => migration.id === core.migration.id && migration.sha256 === core.migration.sha256)
+      || !isCoreVersionSupported(ai.version, capability.version)
+      || !ai.data.migrations.some(migration => migration.id === capability.migration.id && migration.sha256 === capability.migration.sha256))
+      throw new Error("新装后台原 Rental 后置扩展的来源或数据前置不同");
     const sql = readFileSync(resolve(dirname(path), "migrations",
       corePostCapabilityPrismaMigrationName(extension.coreId, extension.migration.id), "migration.sql"));
     if (createHash("sha256").update(sql).digest("hex") !== extension.migration.sha256)

@@ -31,6 +31,8 @@ import { AiGatewayPricingHistoryController, AI_BUDGET_MANAGEMENT, AI_GATEWAY_PRI
   from "@rental-os/ai-native-server/runtime/budget/budget-management.module";
 import { TextCapabilityProbeController, TEXT_CAPABILITY_PROBE_REQUESTS }
   from "@rental-os/ai-native-server/runtime/text-capability-probe.controller";
+import { AiInputCountingController, AI_COUNTING_REQUESTS }
+  from "@rental-os/ai-native-server/runtime/input-counting/input-counting-request.module";
 import { PlatformCapabilityProbeController, PLATFORM_CAPABILITY_PROBE_REQUESTS }
   from "@rental-os/ai-native-server/runtime/platform-capability-probe/platform-capability-probe.controller";
 
@@ -60,7 +62,7 @@ export const RENTAL_AI_CONTROLLERS = Object.freeze([
   AutomationExplanationController,
   OperatorAutomationController, StaffAutomationController,
   HumanAutomationPolicyRequestController,
-  TextCapabilityProbeController,
+  TextCapabilityProbeController, AiInputCountingController,
   AiPlatformModelSettingsController,
   RentalTenantCreditController, RentalPlatformCreditController,
   RentalTenantBudgetController, RentalPlatformBudgetController, AiGatewayPricingHistoryController,
@@ -76,7 +78,7 @@ export const RENTAL_AI_MOUNTED_REQUESTS: readonly (symbol | Function)[] = Object
   AutomationExplanationApplication,
   HumanAutomationRequestFactory,
   HumanAutomationPolicyRequestFactory,
-  TEXT_CAPABILITY_PROBE_REQUESTS,
+  TEXT_CAPABILITY_PROBE_REQUESTS, AI_COUNTING_REQUESTS,
   AI_NATIVE_PLATFORM_MODEL_SETTINGS_REQUESTS,
   AI_BUDGET_MANAGEMENT, AI_GATEWAY_PRICING_HISTORY,
   AI_STAFF_INSPECTION_REQUESTS, INSPECTION_RECOGNITION_TASKS, AI_STAFF_INSPECTION_ACCOUNTING, AI_ORIGINAL_SCENE_REQUESTS, AI_ORIGINAL_SCENE_RECOVERY_REQUESTS,
@@ -95,6 +97,7 @@ const orders = AiOriginalOrderReadController.prototype;
 const plans = AiScenePlanPolicyController.prototype, actions = AiOriginalTaskActionPolicyController.prototype;
 const conversations = AiConversationController.prototype;
 const capabilityProbe = TextCapabilityProbeController.prototype;
+const counting = AiInputCountingController.prototype;
 const automationPolicy = HumanAutomationPolicyRequestController.prototype;
 const automationExplanation = AutomationExplanationController.prototype;
 const inspection = RentalStaffInspectionAssistController.prototype, recognition = InspectionRecognitionTaskController.prototype;
@@ -146,6 +149,11 @@ const declarations: readonly RentalHttpAccessDeclaration[] = [
   ...reviewed(HumanAutomationPolicyRequestController, [automationPolicy.prepare, automationPolicy.prepareConfirmed,
     automationPolicy.commit, automationPolicy.commitConfirmed], "transactional-write",
   "original confirmed grant/preparation/policy CAS transactions acquire current Auth/Tenant/Core before metadata locks, revalidate before commit and retain original deadlines and operation keys; no model or business dispatch"),
+  ...reviewed(AiInputCountingController, [counting.observe, counting.receipt, counting.readInputBound,
+    counting.readPublication, counting.usagePage, counting.usageSummary, counting.usagePricingBases, counting.taskCosts], "buffered-read",
+  "original current request identity, Task/Run/invocation lineage and counting/financial receipts; final authority and receipt rechecks, no reserve, dispatch, input publication or release"),
+  ...reviewed(AiInputCountingController, [counting.count, counting.publishInputBound], "transactional-write",
+  "explicit original counting and immutable input-bound publication; original Task transaction authority, single budget ledger and counting admission retain current scope, original call key and unknown receipt; no generation or business execution"),
   ...reviewed(TextCapabilityProbeController, [capabilityProbe.prepare, capabilityProbe.readOriginal,
     capabilityProbe.readTask, capabilityProbe.inspect, capabilityProbe.readHistory, capabilityProbe.preflight,
     capabilityProbe.readTaskAction, capabilityProbe.readTaskActionReceipt, capabilityProbe.readAccounting,
@@ -368,6 +376,8 @@ export function rentalAiDeploymentContinuationSelector(policy: ReturnType<typeof
       capabilityProbe.readTaskAction, capabilityProbe.readTaskActionReceipt, capabilityProbe.readHistory,
       capabilityProbe.readAccounting, capabilityProbe.readAccountingOperation, capabilityProbe.cancel,
       capabilityProbe.reconcile, capabilityProbe.releaseUnsent, capabilityProbe.reconcileAccounting]],
+    [AiInputCountingController, [counting.observe, counting.receipt, counting.readInputBound,
+      counting.readPublication, counting.usagePage, counting.usageSummary, counting.usagePricingBases, counting.taskCosts]],
     [RentalTenantCreditController, [credit.receipt, credit.allocationReceipt, credit.calls]],
     [RentalTenantBudgetController, [budget.readOperation, budget.readPriceReview, budget.readPlatformPriceAdoption]],
     [AiGatewayPricingHistoryController, [pricing.readPrice, pricing.readPublication, pricing.readInputBound]],
@@ -464,6 +474,8 @@ export function rentalAiOriginalReceiptSelector(policy: ReturnType<typeof create
     [TextCapabilityProbeController, [capabilityProbe.readOriginal, capabilityProbe.readTask, capabilityProbe.inspect,
       capabilityProbe.readTaskAction, capabilityProbe.readTaskActionReceipt, capabilityProbe.readHistory,
       capabilityProbe.readAccounting, capabilityProbe.readAccountingOperation]],
+    [AiInputCountingController, [counting.observe, counting.receipt, counting.readInputBound,
+      counting.readPublication, counting.usagePage, counting.usageSummary, counting.usagePricingBases, counting.taskCosts]],
     [RentalTenantCreditController, [credit.receipt, credit.allocationReceipt, credit.calls]],
     [RentalTenantBudgetController, [budget.readOperation, budget.readPriceReview, budget.readPlatformPriceAdoption]],
     [AiGatewayPricingHistoryController, [pricing.readPrice, pricing.readPublication, pricing.readInputBound]],

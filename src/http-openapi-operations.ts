@@ -183,6 +183,11 @@ function enterpriseWorkflowOperations(): ContractOperation[] {
 }
 
 export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
+  { method: "get", path: "/api/platform/system-rules", tag: "Platform", operationId: "getSystemRules",
+    summary: "Read original tenant system rules; SaaS access remains denied", permissions: ["system:params:manage"], responseSchema: "SystemRulesConfig" },
+  { method: "put", path: "/api/platform/system-rules/{sectionKey}", tag: "Platform", operationId: "saveSystemRuleSection",
+    summary: "Save one original tenant rule section; other sections and historical AI remain unchanged",
+    permissions: ["system:params:manage"], requestSchema: "SaveSystemRuleSectionRequest", responseSchema: "SystemRulesConfig" },
   backlogOperation("get", "/api/files", "Files", "listFileAssets", "List files authorized by their original business objects; credential and knowledge metadata are excluded", ["system:integration:manage"]),
   backlogOperation("post", "/api/files", "Files", "createFileAsset", "Create file asset", ["system:integration:manage"]),
   backlogOperation("post", "/api/files/upload-sessions", "Files", "createFileUploadSession", "Create or recover the original staging upload; remaining TTL only, completed/freeze_pending never issue PUT", ["system:integration:manage"], true, "CreateFileUploadSessionRequest", "FileUploadSessionSummary"),

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { sqltag as sql } from "@prisma/client/runtime/library";
 import { CoreDataObservationSchema, CorePhysicalDataObservationSchema, CoreSourceSchema, checkCoreCombination, checkPlatformDataCapabilities,
-  coreDeploymentHostVersions, isCoreVersionSupported, type CoreDataObservation, type CoreManifest } from "@rental-os/core-contracts";
+  coreDeploymentHostVersions, isCoreVersionSupported, type CoreDataObservation, type CoreManifest, type CorePlatformDataCapabilityRelease } from "@rental-os/core-contracts";
 import { CorePhasedMigrationLockSchema, corePostCapabilityPrismaMigrationName, platformCapabilityPrismaMigrationName,
   corePrismaMigrationName } from "@rental-os/core-contracts/deployment";
 import { CoreAccessError } from "@rental-os/core-host";
@@ -16,9 +16,9 @@ import { mysqlForeignKeyExtension, mysqlMigrationStatements, mysqlStructureFromM
   type MysqlForeignKeyExtension } from "@rental-os/platform-core-host/mysql-structure";
 import { readMysqlPhysicalData } from "@rental-os/platform-core-host/mysql-physical";
 import { RENTAL_PRISMA_PUBLIC_RELATIONS } from "@rental-os/rental-core/prisma-schema";
-import { composePublicAiPrismaSchema, PUBLIC_AI_DATA_VERSION, type PublicAiDataContribution } from "@rental-os/ai-native-data/public-data";
-import { readPublicAiDataPackage } from "@rental-os/ai-native-data/public-data-package";
-import { createPublicAiMysqlDataPlan } from "@rental-os/ai-native-data/public-mysql-data";
+import { composePublicAiPrismaSchema, PUBLIC_AI_DATA_VERSION, type PublicAiDataContribution } from "@rental-os/public-ai-data/public-data";
+import { readPublicAiDataPackage } from "@rental-os/public-ai-data/public-data-package";
+import { createPublicAiMysqlDataPlan } from "@rental-os/public-ai-data/public-mysql-data";
 
 export const RENTAL_AI_EXTENSION_FILES = [
   {
@@ -40,6 +40,16 @@ export const RENTAL_AI_EXTENSION_PREREQUISITES = {
   rental: { minInclusive: "0.1.0", maxExclusive: "0.1.2",
     initial: { id: "rental.20261119030000-initial", sha256: "59e69aadf4db0138561ec9233955941da32a2f27f576583bd7915b9f1a7d05ae" } }
 } as const;
+/** Version selects the release precondition, never a rewrite of the data version or SQL. */
+export function rentalAiExtensionPrerequisites(release: CorePlatformDataCapabilityRelease) {
+  if (release.id !== "ai-native" || release.data.version !== PUBLIC_AI_DATA_VERSION)
+    throw new Error("Rental AI 扩展缺少已核的公共数据版本");
+  if (release.version === "0.2.0") return RENTAL_AI_EXTENSION_PREREQUISITES;
+  if (release.version === "0.2.2") return { ...RENTAL_AI_EXTENSION_PREREQUISITES,
+    publicAi: { minInclusive: "0.2.2", maxExclusive: "0.2.3" } } as const;
+  throw new Error("Rental AI 扩展不支持该公共数据发行");
+}
+
 const rentalRelations = {
   "BusinessWorkspace": [
     "aiInspectionDrafts                AiInspectionDraft[]",
@@ -173,7 +183,7 @@ export function composeRentalPublicAiPrismaSchema(base: string, ai: PublicAiData
 /** Observe the public tables with their selected keys and the Rental-owned
  * tables separately. Registration of the extension's receipt needs the host's
  * ordered deployment contract; physical evidence alone cannot mark it applied. */
-export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension: RentalAiDataExtension) {
+export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension: RentalAiDataExtension, release?: CorePlatformDataCapabilityRelease) {
   assertRentalAiDataExtension(extension);
   const created = new Set<string>(), own: string[] = [], keys: MysqlForeignKeyExtension[] = [];
   for (const sql of mysqlMigrationStatements(extension.sql)) {
@@ -188,7 +198,7 @@ export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension
     publicAi: createPublicAiMysqlDataPlan(ai, keys),
     extension: {
       installation: "fresh-public" as const, owner: extension.owner, migration: { ...RENTAL_AI_EXTENSION_MIGRATION },
-      prerequisites: structuredClone(RENTAL_AI_EXTENSION_PREREQUISITES), sql: extension.sql,
+      prerequisites: structuredClone(release ? rentalAiExtensionPrerequisites(release) : RENTAL_AI_EXTENSION_PREREQUISITES), sql: extension.sql,
       readPhysical: (database: Pick<CoreHostSqlTransaction, "$queryRaw">) => readMysqlPhysicalData(database, expected, PUBLIC_AI_DATA_VERSION)
     }
   };
@@ -224,7 +234,7 @@ export function createFreshRentalAiDataObservation(input: {
 
   const { contribution } = readPublicAiDataPackage(input.publicAiFiles, release);
   const [publicMigration] = contribution.data.migrations;
-  const { publicAi, rental } = RENTAL_AI_EXTENSION_PREREQUISITES;
+  const { publicAi, rental } = rentalAiExtensionPrerequisites(release);
   const { initial, ...rentalVersion } = rental;
   const extensionSource = CoreSourceSchema.parse(input.extension.source);
   if (!isDeepStrictEqual(post.migration, { ...RENTAL_AI_EXTENSION_MIGRATION, source: extensionSource })
@@ -240,7 +250,7 @@ export function createFreshRentalAiDataObservation(input: {
     || !isDeepStrictEqual(input.rental.migrationNames, rentalNames))
     throw new Error("Rental AI 新装原账计划与固定底座或 Rental 不一致");
 
-  const ai = createRentalAiMysqlPlans(contribution, readRentalAiDataExtension(input.extension.files));
+  const ai = createRentalAiMysqlPlans(contribution, readRentalAiDataExtension(input.extension.files), release);
   const capabilityPlans = [{ capabilityId: release.id, plan: ai.publicAi },
     ...(mcp && input.mcp ? [{ capabilityId: mcp.id, plan: input.mcp }] : [])];
   const basePlans = [input.platform, input.rental, ...capabilityPlans.map(item => item.plan)];

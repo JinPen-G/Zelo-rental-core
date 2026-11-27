@@ -3,8 +3,8 @@ import { Buffer } from "node:buffer";
 import { isDeepStrictEqual } from "node:util";
 import type { CoreManifest, CorePlatformDataCapabilityRelease } from "@rental-os/core-contracts";
 import { createCorePhasedMigrationDeployment } from "@rental-os/core-contracts/deployment";
-import { readPublicAiDataPackage } from "@rental-os/ai-native-data/public-data-package";
-import { RENTAL_AI_EXTENSION_MIGRATION, RENTAL_AI_EXTENSION_PREREQUISITES, composeRentalPublicAiPrismaSchema,
+import { readPublicAiDataPackage } from "@rental-os/public-ai-data/public-data-package";
+import { RENTAL_AI_EXTENSION_MIGRATION, rentalAiExtensionPrerequisites, composeRentalPublicAiPrismaSchema,
   readRentalAiDataExtension } from "./ai-data-extension";
 import { createRentalDeploymentFiles } from "./prepare-deployment";
 import { rentalHostLegacyApiRoutes } from "./openapi";
@@ -23,7 +23,7 @@ export function createFreshRentalAiDeployment(input: Parameters<typeof createRen
     throw new Error("新装 MCP 数据包须来自同一固定底座");
   const extension = readRentalAiDataExtension(input.extension.files);
   const [publicMigration] = ai.contribution.migrations;
-  const { publicAi, rental } = RENTAL_AI_EXTENSION_PREREQUISITES;
+  const { publicAi, rental } = rentalAiExtensionPrerequisites(ai.release);
   const { id, file, sha256 } = RENTAL_AI_EXTENSION_MIGRATION;
   const prepared = createCorePhasedMigrationDeployment({
     lock: { ...ordinary.lock, dataCapabilities: [ai.release, ...(mcp ? [mcp.release] : [])] }, platform: input.publicMigrations,

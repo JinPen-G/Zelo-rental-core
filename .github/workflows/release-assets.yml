@@ -1,9 +1,6 @@
 name: 双仓发行归档
 
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/release-assets.yml]
   workflow_dispatch:
     inputs:
       platform_commit:
@@ -28,14 +25,14 @@ permissions:
 
 jobs:
   archive:
-    if: github.repository == 'JinPen-G/Zelo-rental-core' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'JinPen-G/Zelo-rental-core' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      ZELO_COMMIT: ${{ inputs.platform_commit || '46db0945dee92ac916f7265e95948943fc8b641d' }}
-      RENTAL_COMMIT: ${{ inputs.rental_commit || '7e20d6ef0b206e16a9162f4a2a6e88c13cbc0497' }}
-      ZELO_TAG: ${{ inputs.platform_tag || 'v0.1.18' }}
-      RENTAL_TAG: ${{ inputs.rental_tag || 'v0.1.15' }}
+      ZELO_COMMIT: ${{ inputs.platform_commit }}
+      RENTAL_COMMIT: ${{ inputs.rental_commit }}
+      ZELO_TAG: ${{ inputs.platform_tag }}
+      RENTAL_TAG: ${{ inputs.rental_tag }}
       TASK_DIR: output/.tmp/rental-release-assets
       GIT_TERMINAL_PROMPT: '0'
     steps:
@@ -44,7 +41,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$ZELO_COMMIT" =~ ^[a-f0-9]{40}$ && "$RENTAL_COMMIT" =~ ^[a-f0-9]{40}$ ]]
-          [[ "$ZELO_TAG" =~ ^v0\.1\.[0-9]+$ && "$RENTAL_TAG" =~ ^v0\.1\.[0-9]+$ ]]
+          for tag in "$ZELO_TAG" "$RENTAL_TAG"; do
+            [[ ${#tag} -le 81 && "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          done
       - name: 检出固定 Zelo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -70,8 +69,18 @@ jobs:
           task="$GITHUB_WORKSPACE/$TASK_DIR"
           test "$(git rev-parse HEAD)" = "$ZELO_COMMIT"
           test "$(git -C "$task/rental" rev-parse HEAD)" = "$RENTAL_COMMIT"
-          test "v$(node -p 'require("./package.json").version')" = "$ZELO_TAG"
-          test "v$(node -p 'require(process.argv[1]).version' "$task/rental/package.json")" = "$RENTAL_TAG"
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const path = require('node:path');
+          const { requireReleaseTag } = require('./scripts/ops/release-image-pair.cjs');
+          const env = process.env;
+          const platform = require('./package.json').version;
+          const rental = require(path.join(env.GITHUB_WORKSPACE, env.TASK_DIR, 'rental/package.json')).version;
+          assert.equal(env.ZELO_TAG, 'v' + platform);
+          assert.equal(env.RENTAL_TAG, 'v' + rental);
+          requireReleaseTag({ repository: 'https://github.com/JinPen-G/Zelo', commit: env.ZELO_COMMIT }, platform, 'platform');
+          requireReleaseTag({ repository: 'https://github.com/JinPen-G/Zelo-rental-core', commit: env.RENTAL_COMMIT }, rental, 'rental');
+          NODE
           git -C "$task/rental" fetch --no-tags --depth=1 origin "refs/tags/$RENTAL_TAG:refs/tags/$RENTAL_TAG"
           test "$(git -C "$task/rental" rev-parse "refs/tags/$RENTAL_TAG^{commit}")" = "$RENTAL_COMMIT"
           npm ci --include=dev --ignore-scripts --no-audit --no-fund --cache "$task/npm-cache"

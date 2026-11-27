@@ -175,6 +175,8 @@ function tenantManagementScope(method: string, path: string) {
     || (method === "PUT" && /^\/platform\/workspaces\/[^/]+$/u.test(path))
     || ((method === "GET" || method === "HEAD" || method === "PUT") && /^\/platform\/workspaces\/[^/]+\/members$/u.test(path))
     || ((method === "GET" || method === "HEAD") && /^\/platform\/workspaces\/[^/]+\/fulfillment-locations$/u.test(path))
+    || ((method === "GET" || method === "HEAD") && path === "/platform/system-rules")
+    || (method === "PUT" && /^\/platform\/system-rules\/[^/]+$/u.test(path))
     || (method === "POST" && path === "/platform/users/access")
     || (method === "PUT" && /^\/platform\/users\/[^/]+\/access$/u.test(path))
     || ((method === "GET" || method === "HEAD") && path === "/rental/v1/categories")

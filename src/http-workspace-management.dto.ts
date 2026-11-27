@@ -3,7 +3,7 @@ import type { SaveWorkspaceAccessRequest } from "@rental-os/platform-contracts";
 import { BUSINESS_WORKSPACE_RUN_MODES, RENTAL_CATEGORY_CODE_PATTERN, RENTAL_CURRENCY_CODES, type RentalCurrency, type RentalCategoryCode,
   type CreateBusinessWorkspaceRequest, type SaveWorkspaceMemberRequest, type UpdateBusinessWorkspaceRequest,
   type SaveSystemUserAccessRequest } from "./contracts";
-import type { TenantBootstrapRequest } from "./tenant-bootstrap-contracts";
+import type { SaveSystemRuleSectionBody, SystemRulesConfig, TenantBootstrapRequest } from "./tenant-bootstrap-contracts";
 import type { RentalCategoryOpeningOptionsQuery } from "./category-governance";
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, Matches, MaxLength, ValidateNested } from "class-validator";
@@ -81,4 +81,10 @@ export class TenantBootstrapDto implements TenantBootstrapRequest {
   @IsOptional() @IsString() @IsNotEmpty() adminPhone?: string;
   @IsOptional() @IsString() @IsNotEmpty() storeName?: string;
   @IsOptional() @IsString() @IsNotEmpty() storeCode?: string;
+}
+
+/** 原七分区body保持对象与操作人校验，分区白名单由同一业务服务处理。 */
+export class SaveSystemRuleSectionBodyInputDto implements SaveSystemRuleSectionBody {
+  @IsObject() config!: SystemRulesConfig;
+  @IsString() @IsNotEmpty() operator!: string;
 }

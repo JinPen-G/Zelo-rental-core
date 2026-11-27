@@ -103,6 +103,10 @@ export interface SystemRulesConfig {
   updatedBy: string;
 }
 
+/** 原七分区API的请求形状；完整config仅从所选分区取值，不授权其他字段。 */
+export interface SaveSystemRuleSectionBody { config: SystemRulesConfig; operator: string; }
+export interface SaveSystemRuleSectionRequest extends SaveSystemRuleSectionBody { sectionKey: string; }
+
 export interface TenantBootstrapRequest {
   tenantCode: string;
   tenantName: string;

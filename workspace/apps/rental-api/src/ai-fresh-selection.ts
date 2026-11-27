@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { CoreDeploymentLock, CoreManifest, CorePlatformDataCapabilityRelease } from "@rental-os/core-contracts";
 import { CorePhasedMigrationLockSchema } from "@rental-os/core-contracts/deployment";
 import { readPlatformDataCapabilityPackage } from "@rental-os/core-contracts/platform-data-package";
-import { readPublicAiDataPackage, requirePublicAiDataPackage } from "@rental-os/ai-native-data/public-data-package";
+import { readPublicAiDataPackage, requirePublicAiDataPackage } from "@rental-os/public-ai-data/public-data-package";
 import { createPublicPlatformDataPlan } from "@rental-os/platform-api/data-plan";
 import type { CoreMysqlDataPlan } from "@rental-os/core-host/mysql-deployment";
 import { requireRentalDeploymentPackage } from "./deployment-package";
@@ -41,7 +41,7 @@ export class FreshRentalAiSelection {
     const extension = readRentalAiDataExtension(input.extension.files);
     this.#observe = createFreshRentalAiDataObservation({ lock, platform: createPublicPlatformDataPlan(rental.dataPlan.publicForeignKeys),
       rental: rental.dataPlan, publicAiFiles: data.files, extension: input.extension, mcp: input.mcp?.plan });
-    this.#dataPlan = createRentalAiMysqlPlans(contribution, extension).publicAi;
+    this.#dataPlan = createRentalAiMysqlPlans(contribution, extension, data.release).publicAi;
     this.#schema = composeRentalPublicAiPrismaSchema(input.publicSchema, contribution, rental.schema, extension);
     this.#base = lock.base;
     this.#data = data.release;

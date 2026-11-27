@@ -13,6 +13,8 @@ import type { RentalCoreService } from "./mysql-core-runtime";
 import type { WorkspaceCapabilityService } from "./workspace-capabilities";
 import { RentalWorkspaceManagementRepository } from "./mysql-workspace-management";
 import type { RentalApplication } from "./application";
+import { RentalSystemRulesApplication } from "./application-system-rules";
+import type { SaveSystemRuleSectionRequest } from "./tenant-bootstrap-contracts";
 import { RentalTenantBootstrapApplication, type RentalTenantBootstrapDependencies } from "./application-tenant-bootstrap";
 import { createRentalTenantBootstrapSeed } from "./tenant-bootstrap-defaults";
 import type { TenantBootstrapRequest, TenantBootstrapResult } from "./tenant-bootstrap-contracts";
@@ -25,6 +27,7 @@ export interface RentalWorkspaceManagementDependencies {
   logger: Pick<Logger, "warn">;
   /** 只有实际独立宿主供给同事务部署观察后，才开放原SaaS租户初始化。 */
   tenantBootstrap?: RentalTenantBootstrapApplication;
+  systemRules?: RentalSystemRulesApplication;
   /** 仅原内存兼容宿主传入原行读取器；不成为新宿主的权限或持久化事实。 */
   legacyAccounts?: {
     roles(): readonly Pick<SystemRoleRow, "id" | "tenantId" | "isActive" | "fixedAllPermissions">[];
@@ -36,7 +39,7 @@ export function createRentalWorkspaceManagementApplication(application: RentalAp
   options?: Pick<RentalTenantBootstrapDependencies, "deploymentForTransaction"> & { freshAi?: boolean }) {
   const repository = new RentalWorkspaceManagementRepository(application.database);
   return new RentalWorkspaceManagementApplication({ configService: application.configuration,
-    repository,
+    repository, systemRules: new RentalSystemRulesApplication(application.database),
     rentalCoreService: application.primary.core, workspaceCapabilityService: application.foundation.capabilities,
     tenantBootstrap: options ? new RentalTenantBootstrapApplication({ database: application.database,
       repository, users: application.authSource, core: application.primary.core,
@@ -51,6 +54,13 @@ export class RentalWorkspaceManagementApplication {
     if (!this.input.tenantBootstrap) throw new ConflictException("Rental租户初始化及同事务部署观察未装配");
     return this.input.tenantBootstrap;
   }
+
+  private requireSystemRules() {
+    if (!this.input.systemRules) throw new ConflictException("原租户系统参数服务未装配");
+    return this.input.systemRules;
+  }
+  getSystemRules() { return this.requireSystemRules().getSystemRules(); }
+  saveSystemRuleSection(input: SaveSystemRuleSectionRequest) { return this.requireSystemRules().saveSystemRuleSection(input); }
 
   get tenantBootstrapHttpAccess() { return this.requireTenantBootstrap().httpAccess; }
   getTenantBootstrapPreview() { return this.requireTenantBootstrap().getTenantBootstrapPreview(); }

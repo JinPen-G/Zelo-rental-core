@@ -1,14 +1,22 @@
-/** 原空间管理、开业品类与租户初始化的14条HTTP接口；只转交同一门面，权限仍由唯一原Guard/服务裁定。 */
+/** 原空间管理、开业品类与租户初始化及原七分区设置HTTP接口；只转交同一门面，权限仍由唯一原Guard/服务裁定。 */
 import { Body, Controller, Get, Inject, Param, Post, Put, Query, Req } from "@nestjs/common";
 import type { SystemUserRow } from "@rental-os/platform-contracts";
 import type { RentalWorkspaceManagementApplication } from "./application-workspace-management";
-import { CreateBusinessWorkspaceDto, SaveWorkspaceMemberDto, UpdateBusinessWorkspaceDto, SaveSystemUserAccessDto, RentalCategoryOpeningOptionsQueryDto, TenantBootstrapDto } from "./http-workspace-management.dto";
+import { CreateBusinessWorkspaceDto, SaveWorkspaceMemberDto, UpdateBusinessWorkspaceDto, SaveSystemUserAccessDto, RentalCategoryOpeningOptionsQueryDto, TenantBootstrapDto, SaveSystemRuleSectionBodyInputDto } from "./http-workspace-management.dto";
 interface RequestWithUser { user?: SystemUserRow; }
-export type RentalWorkspacesHttpApplication = Pick<RentalWorkspaceManagementApplication, "listTenantBusinessWorkspaces" | "createTenantBusinessWorkspace" | "updateTenantBusinessWorkspace" | "listBusinessWorkspaces" | "createBusinessWorkspace" | "updateBusinessWorkspace" | "listWorkspaceMembers" | "listWorkspaceFulfillmentLocations" | "saveWorkspaceMember" | "saveUserWithWorkspaceAccess" | "getRentalCategoryOpeningOptions" | "getTenantBootstrapPreview" | "bootstrapTenant">;
+export type RentalWorkspacesHttpApplication = Pick<RentalWorkspaceManagementApplication, "listTenantBusinessWorkspaces" | "createTenantBusinessWorkspace" | "updateTenantBusinessWorkspace" | "listBusinessWorkspaces" | "createBusinessWorkspace" | "updateBusinessWorkspace" | "listWorkspaceMembers" | "listWorkspaceFulfillmentLocations" | "saveWorkspaceMember" | "saveUserWithWorkspaceAccess" | "getRentalCategoryOpeningOptions" | "getTenantBootstrapPreview" | "bootstrapTenant" | "getSystemRules" | "saveSystemRuleSection">;
 export const RENTAL_WORKSPACES_HTTP_APPLICATION = Symbol("rental.workspaces.http-application");
 @Controller("platform")
 export class RentalWorkspacesController {
   constructor(@Inject(RENTAL_WORKSPACES_HTTP_APPLICATION) private readonly application: RentalWorkspacesHttpApplication) {}
+
+  @Get("system-rules")
+  systemRules() { return this.application.getSystemRules(); }
+
+  @Put("system-rules/:sectionKey")
+  saveSystemRuleSection(@Param("sectionKey") sectionKey: string, @Body() body: SaveSystemRuleSectionBodyInputDto) {
+    return this.application.saveSystemRuleSection({ ...body, sectionKey });
+  }
 
   @Get("tenant-bootstrap/preview")
   tenantBootstrapPreview() { return this.application.getTenantBootstrapPreview(); }

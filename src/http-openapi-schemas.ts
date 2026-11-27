@@ -29,6 +29,8 @@ export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
   ...JOBS_OPENAPI_SCHEMAS,
   ...NOTIFICATIONS_OPENAPI_SCHEMAS,
   ...STAFF_UPLOAD_OBSERVATION_SCHEMAS,
+  SystemRulesConfig: objectSchema,
+  SaveSystemRuleSectionRequest: objectOf({ config: ref("SystemRulesConfig"), operator: stringSchema }, ["config", "operator"]),
   TenantSummary: objectOf(
     {
       tenantId: stringSchema,

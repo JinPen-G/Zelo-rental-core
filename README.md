@@ -242,7 +242,7 @@ Zelo-rental-core/
 
 ## HTTP API 文档
 
-正式出口 `@rental-os/rental-core/http-openapi` 导出 `createRentalOpenApi()`，返回符合 Zelo `CoreOpenApiContribution` 规范的 `paths` 与 `schemas`（统一使用 `rental.` 命名空间，覆盖 **595 个业务操作与 413 个 Schema**），由宿主通过 `composeCoreOpenApi` 与公共底座文档组合并通过 `GET /api/openapi.json` 提供。
+正式出口 `@rental-os/rental-core/http-openapi` 导出 `createRentalOpenApi()`，返回符合 Zelo `CoreOpenApiContribution` 规范的 `paths` 与 `schemas`（统一使用 `rental.` 命名空间，覆盖业务操作与 Schema），由宿主通过 `composeCoreOpenApi` 与公共底座文档组合并通过 `GET /api/openapi.json` 提供。
 
 - **同源实现**：[HTTP OpenAPI 贡献](src/http-openapi.ts) · [操作定义](src/http-openapi-operations.ts) · [Schema 聚合](src/http-openapi-schemas.ts) · [规范可移植路径](src/http-portable.ts)
 - **离线导出完整 OpenAPI JSON**：
@@ -256,6 +256,9 @@ node -e "const { createRentalOpenApi } = require('@rental-os/rental-core/http-op
 ---
 
 ## 历史与业务收尾
+
+- **原租户七分区设置**：`GET /api/platform/system-rules` 和 `PUT /api/platform/system-rules/:sectionKey` 由[原工作空间 Controller](src/http-workspaces.controller.ts)接入[兼容应用](src/application-system-rules.ts)。保留 `memberRegister`、`memberPoints`、`fleetMaintenance`、`fleetCleaning`、`calendarFixed`、`calendarSpecial`、`push` 的原分区替换规则，其中两个会员入口都替换整个会员分区。仍须当前租户的 `system:params:manage` 或原管理员授权、Rental 开通和成员分配；SaaS 管理员不可调用。保存沿原生效版本，在同一租户事务中合并并记录审计；其他分区和历史 AI 存储不变，响应屏蔽旧 AI 字段，不接受旧密钥写回。
+
 
 Rental Core 为存量租赁租户切入 Zelo 标准 Core 授权体系、以及 Core 停用后的善后只读核对提供了严格的服务端接点：
 
