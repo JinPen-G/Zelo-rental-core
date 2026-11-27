@@ -1,6 +1,8 @@
 # Rental OS 员工小程序（微信原生）
 
-面向租户门店、仓库、现场交付人员以及店长/管理员的微信小程序（原生 + TypeScript）。一套包服务所有租户，租户编码在登录页输入；包内只含公开配置、不含任何密钥。业务工厂及接入步骤见[员工客户端](../../packages/rental-core/clients/staff/README.md)。
+> 本文件按独立仓源码布局导航；公共底座链接固定到已核 Zelo 提交。原组合调用链与历史验证记录保留拆分前 `322c9d43` 的源码链接，不能据此调用现行已退场入口。当前宿主与合同以 [Core 接入指南](../../../CORE_GUIDE.md) 和本仓正式出口为准。
+
+面向租户门店、仓库、现场交付人员以及店长/管理员的微信小程序（原生 + TypeScript）。一套包服务所有租户，租户编码在登录页输入；包内只含公开配置、不含任何密钥。业务工厂及接入步骤见[员工客户端](../../../clients/staff/README.md)。
 
 > 当前是可编译的前端联调版本，尚未满足需求文档的安全验收、未达发布标准（见[后端前置](#后端前置)）。这是员工端；客户使用的是 [`apps/miniprogram`](../miniprogram/README.md)。
 
@@ -78,7 +80,7 @@ npm run test:staff-miniprogram           # 构建 + 静态/沙箱测试
 
 用微信开发者工具导入 `apps/staff-miniprogram/dist`（构建脚本已把 `project.config.json` 复制进 dist、代码根设为当前目录，`libVersion 3.4.0`）。本机联调构建会关闭开发者工具的合法域名校验，仅供模拟器访问本机 `localhost`（真机上 `localhost` 指手机自身，连不到电脑 API）。修改 API 地址改 `src/config/public.ts` 的 `apiOrigin`，或构建时设 `STAFF_MINIPROGRAM_API_ORIGIN`。
 
-原构建脚本在本树任务临时目录私有编译当前 Shared 声明和完整 Rental Native 客户端，按正式 `dist-clients/` 出口将七组业务、认证、附件及实际相对运行时和原许可写入 `dist/vendor/rental-core/`。原业务薄入口继续使用同一员工会话及运输，退出时释放私有编译产物。[原生编译步骤](../../packages/rental-core/clients/staff/README.md#原生编译与微信打包) · [构建实现](scripts/build.cjs)
+原构建脚本在本树任务临时目录私有编译当前 Shared 声明和完整 Rental Native 客户端，按正式 `dist-clients/` 出口将七组业务、认证、附件及实际相对运行时和原许可写入 `dist/vendor/rental-core/`。原业务薄入口继续使用同一员工会话及运输，退出时释放私有编译产物。[原生编译步骤](../../../clients/staff/README.md#原生编译与微信打包) · [构建实现](scripts/build.cjs)
 
 ## 发布构建
 
@@ -92,7 +94,7 @@ npm run build -w @rental-os/staff-miniprogram -- --release --rental-package <待
 
 标准包模式的 AI 合同从正式 `./contracts`、`./client-contracts` 和 `./enterprise-order-delegation` JS 出口及其已编译相对依赖打包，读取文件须在锁定清单内。原 Shared 白名单、公开出口、资源上限和无宿主全局变量的运行检查继续生效。发布收尾重新校验安装包摘要，失败时清理本次输出与私有声明。
 
-Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai-task` 两个正式出口读取同一源码及其相对依赖；[原打包器](../../scripts/miniprogram-ai-runtime.cjs)限定这两个入口，不引入公共服务或整个合同总入口，页面与校验规则保持原实现。
+Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai-task` 两个正式出口读取同一源码及其相对依赖；[原打包器](https://github.com/JinPen-G/Zelo/blob/7f9e2ec1a90f0d624f5764dc75dfae01aabb1752/scripts/miniprogram-ai-runtime.cjs)限定这两个入口，不引入公共服务或整个合同总入口，页面与校验规则保持原实现。
 
 发布构建强制 HTTPS API 域名并开启 `urlCheck`。可用 `STAFF_MINIPROGRAM_API_ORIGIN` / `STAFF_MINIPROGRAM_APP_ID` 在构建时覆盖（无租户编码，租户在登录页输入）。
 
@@ -116,7 +118,7 @@ Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai
 
 ## 相关文档
 
-- 平台整体说明：仓库根 [README](../../README.md)
-- 业务工厂与宿主端口：[员工客户端](../../packages/rental-core/clients/staff/README.md)
-- 服务端准入与接口：[员工门面](../api/src/common/staff-api-routing.ts)、[Rental HTTP](../../packages/rental-core/src/http.module.ts)
+- 平台整体说明：仓库根 [README](../../../README.md)
+- 业务工厂与宿主端口：[员工客户端](../../../clients/staff/README.md)
+- 服务端准入与接口：[员工门面](https://github.com/JinPen-G/Zelo/blob/322c9d43cce484296da025404b11e298525029cd/apps/api/src/common/staff-api-routing.ts)、[Rental HTTP](../../../src/http.module.ts)
 - 客户端小程序：[apps/miniprogram](../miniprogram/README.md)

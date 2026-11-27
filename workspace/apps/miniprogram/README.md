@@ -1,5 +1,7 @@
 # Rental OS 客户小程序（微信原生）
 
+> 本文件按独立仓源码布局导航；公共底座链接固定到已核 Zelo 提交。原组合调用链与历史验证记录保留拆分前 `322c9d43` 的源码链接，不能据此调用现行已退场入口。当前宿主与合同以 [Core 接入指南](../../../CORE_GUIDE.md) 和本仓正式出口为准。
+
 面向租赁客户的微信小程序：浏览商户目录、查看服务端报价、下单与支付、管理租赁订单、续租、处理押金与费用，以及会员、资质、优惠券、地址等个人中心功能。原生微信小程序 + TypeScript，一个租户一个包，包内只含公开配置、不含任何密钥。
 
 > 这是客户端小程序；租户员工使用的是 [`apps/staff-miniprogram`](../staff-miniprogram/README.md)。
@@ -72,7 +74,7 @@ npm run build:miniprogram
 
 默认按 `src/config/public.ts` 常量打包（演示租户 `demo` + `http://localhost:3000`），产物在 `apps/miniprogram/dist`，并写入 `allowLocalApi: true` 放宽回环地址（仅供开发者工具本地预览）。
 
-原构建脚本在本树任务临时目录私有编译当前 Shared 声明和完整 Rental Native 客户端，按正式 `dist-clients/` 出口将七组业务工厂、原 16 方法认证、time 及其相对运行时和原许可带入 `dist/vendor/rental-core/`。原 API 薄入口继续供给同一客户会话与运输，退出时释放私有编译产物。[原生编译步骤](../../packages/rental-core/clients/miniprogram/README.md#原生编译与微信打包) · [构建实现](scripts/build.cjs)
+原构建脚本在本树任务临时目录私有编译当前 Shared 声明和完整 Rental Native 客户端，按正式 `dist-clients/` 出口将七组业务工厂、原 16 方法认证、time 及其相对运行时和原许可带入 `dist/vendor/rental-core/`。原 API 薄入口继续供给同一客户会话与运输，退出时释放私有编译产物。[原生编译步骤](../../../clients/miniprogram/README.md#原生编译与微信打包) · [构建实现](scripts/build.cjs)
 
 3. 用微信开发者工具导入 `apps/miniprogram`（工程根含 `project.config.json`，代码目录 `dist/`）。没有正式 AppID 时选「测试号」，并在「详情 → 本地设置」勾选不校验合法域名（`libVersion 3.4.0`）。真机调试时 `localhost` 指手机本身，连不到开发机 API。
 
@@ -88,7 +90,7 @@ npm run build -w @rental-os/miniprogram -- --release --rental-package <待部署
 
 标准包模式的 AI 合同从正式 `./contracts`、`./client-contracts` 和 `./enterprise-order-delegation` JS 出口及其已编译相对依赖打包，读取文件须在锁定清单内。原 Shared 白名单、公开出口、资源上限和无宿主全局变量的运行检查继续生效。发布收尾重新校验安装包摘要，失败时清理本次输出与私有声明。
 
-Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai-task` 两个正式出口读取同一源码及其相对依赖；[原打包器](../../scripts/miniprogram-ai-runtime.cjs)限定这两个入口，不引入公共服务或整个合同总入口，页面与校验规则保持原实现。
+Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai-task` 两个正式出口读取同一源码及其相对依赖；[原打包器](https://github.com/JinPen-G/Zelo/blob/7f9e2ec1a90f0d624f5764dc75dfae01aabb1752/scripts/miniprogram-ai-runtime.cjs)限定这两个入口，不引入公共服务或整个合同总入口，页面与校验规则保持原实现。
 
 发布构建强制 `apiOrigin` 为 HTTPS 根地址（任何 `http`、含回环一律拒绝），且不带 `allowLocalApi`。换租户或正式发布时，修改 `src/config/public.ts` 的 `tenantCode`、`apiOrigin`、`appId`，或用环境变量 `MINIPROGRAM_TENANT_CODE` / `MINIPROGRAM_API_ORIGIN` / `MINIPROGRAM_APP_ID`（仅在显式设置时覆盖，供 CI 批量打包）。
 
@@ -102,7 +104,7 @@ Shared 的公共 AI 合同沿 `@rental-os/platform-contracts/ai-gateway` 与 `ai
 
 ## 测试
 
-业务请求沿 [Rental 客户小程序工厂](../../packages/rental-core/clients/miniprogram/README.md)维护，原 `src/api` 七组业务入口注入同一 `core/http.request` 并窄委托。认证入口通过同一正式出口供给原 16 个认证与会话采用方法，注入公开渠道配置、原错误转换、会话保存和退出清理。[认证端口与用法](../../packages/rental-core/clients/miniprogram/auth/README.md)
+业务请求沿 [Rental 客户小程序工厂](../../../clients/miniprogram/README.md)维护，原 `src/api` 七组业务入口注入同一 `core/http.request` 并窄委托。认证入口通过同一正式出口供给原 16 个认证与会话采用方法，注入公开渠道配置、原错误转换、会话保存和退出清理。[认证端口与用法](../../../clients/miniprogram/auth/README.md)
 
 宿主继续供给公开渠道配置、客户会话、页面寿命及原操作键。六个原 AI 预约请求通过 orders 工厂消费原运输，能力观察、接受、提交和结果读取保留原请求选项；原预约宿主负责绑定及读取寿命。微信支付沿原支付宿主消费。[订单入口](src/api/orders.ts) · [原预约宿主](src/components/ai-native/booking-host.factory.ts)
 
@@ -114,7 +116,7 @@ npm run test:miniprogram
 
 ## 相关文档
 
-- 平台整体说明：仓库根 [README](../../README.md)
-- 业务工厂与宿主端口：[客户业务客户端](../../packages/rental-core/clients/miniprogram/README.md)
-- 客户端 API 边界：[客户公开合同](../../packages/rental-core/src/client-contracts.ts)、[客户 HTTP 入口](../../packages/rental-core/src/http-client.controller.ts)
+- 平台整体说明：仓库根 [README](../../../README.md)
+- 业务工厂与宿主端口：[客户业务客户端](../../../clients/miniprogram/README.md)
+- 客户端 API 边界：[客户公开合同](../../../src/client-contracts.ts)、[客户 HTTP 入口](../../../src/http-client.controller.ts)
 - 员工端小程序：[apps/staff-miniprogram](../staff-miniprogram/README.md)

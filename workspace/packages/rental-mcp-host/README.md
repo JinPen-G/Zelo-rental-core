@@ -1,5 +1,7 @@
 # Rental MCP 宿主参加者
 
+> 本文件按独立仓源码布局导航；公共底座链接固定到已核 Zelo 提交。原组合调用链与历史验证记录保留拆分前 `322c9d43` 的源码链接，不能据此调用现行已退场入口。当前宿主与合同以 [Core 接入指南](../../../CORE_GUIDE.md) 和本仓正式出口为准。
+
 本包提供 Rental 的原 OAuth、Web 控制面、受控读取和事务审计组合。宿主显式选择 MCP 时，使用同一 Rental 认证、Guard、Native 数据库及 Core 准入来源。普通 Rental 和无 Core 公共宿主沿各自的构建入口运行。
 
 ## 接入顺序
@@ -31,7 +33,7 @@
 | 空间管理 | `/workspace-management` 的 [权威适配](src/workspace-management.ts) | 从宿主的真实账号仓储、空间投影与配置，在原事务复验管理范围 |
 | 严格事务审计 | `/operation-log` 的 [OperationLogService](src/operation-log.service.ts) | 将原授权、请求、目标和绑定事件与原业务事实一并提交 |
 
-旧组合宿主的 `apps/api/src/modules/auth/original-mcp-*.ts` 通过正式出口消费这些相同实现。运输、协议和 SQL 仓储继续由 [MCP 服务包](../mcp-server/README.md)提供，业务对象及最终裁定沿 [Rental Core](../rental-core/README.md)读取。
+旧组合宿主的 `apps/api/src/modules/auth/original-mcp-*.ts` 通过正式出口消费这些相同实现。运输、协议和 SQL 仓储继续由 [MCP 服务包](https://github.com/JinPen-G/Zelo/blob/7f9e2ec1a90f0d624f5764dc75dfae01aabb1752/packages/mcp-server/README.md)提供，业务对象及最终裁定沿 [Rental Core](../../../README.md)读取。
 
 选装宿主的 [MCP 装配](../../apps/rental-api/src/mcp-host.ts)从 `@rental-os/rental-mcp-host/capability-mapping` 加载本包映射，并与通用 MCP 工厂一并显式传给原参加者。映射依赖 shared 的同源运行时工具码，返回通用 `McpReadTool`；同一原 Guard、Native 事务、持久计量与字段释放继续决定实际读取。旧 `@rental-os/mcp-server/capability-mapping` 导入须迁到本包子出口；通用包不保留反向兼容转发。包版本仍为 `0.1.0`，发布者须将生产者、消费者和锁文件作为同一兼容变更核定。
 
@@ -49,7 +51,7 @@
 
 ## 构建与验证
 
-本包采用 NodeNext，保留正式 ESM 运输的加载方式。构建时沿宿主的 `RENTAL_PRISMA_CLIENT` 使用已生成的 Rental＋AI Client。包出口、依赖和前置链以 [package.json](package.json)与[所选编译器](../../scripts/build-selected-prisma.cjs)为准。
+本包采用 NodeNext，保留正式 ESM 运输的加载方式。构建时沿宿主的 `RENTAL_PRISMA_CLIENT` 使用已生成的 Rental＋AI Client。包出口、依赖和前置链以 [package.json](package.json)与[所选编译器](https://github.com/JinPen-G/Zelo/blob/7f9e2ec1a90f0d624f5764dc75dfae01aabb1752/scripts/build-selected-prisma.cjs)为准。
 
 运行时复用宿主的数据库实例。审计中的 Prisma 引用仅用于所选 Client 的类型约束，原 `OPERATOR` 存储值保持一致，加载本包不会再载入默认生成 Client。
 
@@ -59,6 +61,6 @@
 node scripts/check-selected-prisma-types.cjs --deps '已有node_modules的绝对目录' --mode rental-ai --config packages/rental-mcp-host/tsconfig.json
 ```
 
-原行为入口包括 [Web consent](../../tests/mcp-web-consent.test.cjs)、[原事务审计](../../tests/mcp-original-audit.test.cjs)、[可信主体](../../tests/mcp-trusted-principal.test.cjs)与[空间管理](../../tests/mcp-workspace-management.test.cjs)。各入口的依赖、写入范围和清理方式见 [MCP 验证约定](../mcp-server/README.md#验证入口与证据范围)。实际启用组合还须核定所选 SQL、真实身份政策、TLS、代理和客户端运行。
+原行为入口包括 [Web consent](../../tests/mcp-web-consent.test.cjs)、[原事务审计](../../tests/mcp-original-audit.test.cjs)、[可信主体](../../tests/mcp-trusted-principal.test.cjs)与[空间管理](../../tests/mcp-workspace-management.test.cjs)。各入口的依赖、写入范围和清理方式见 [MCP 验证约定](https://github.com/JinPen-G/Zelo/blob/7f9e2ec1a90f0d624f5764dc75dfae01aabb1752/packages/mcp-server/README.md#验证入口与证据范围)。实际启用组合还须核定所选 SQL、真实身份政策、TLS、代理和客户端运行。
 
 本包的自有源码采用 MIT。分发时保留 [许可证](LICENSE)和所消费包的来源声明。
