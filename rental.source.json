@@ -72,6 +72,10 @@
         "src/mcp-fresh-main.ts",
         "src/mcp-host.ts",
         "tsconfig.mcp.json"
+      ],
+      "publicRetentionFiles": [
+        "src/ai-public-retention-main.ts",
+        "tsconfig.public-retention.json"
       ]
     },
     {

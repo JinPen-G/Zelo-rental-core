@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.ai.json",
+  "compilerOptions": { "outDir": "dist-ai-public-retention", "module": "NodeNext", "moduleResolution": "NodeNext" },
+  "include": [],
+  "files": ["src/ai-public-retention-main.ts"]
+}

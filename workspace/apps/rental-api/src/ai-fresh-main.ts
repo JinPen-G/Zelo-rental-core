@@ -8,19 +8,20 @@ import { Prisma } from "../generated/client";
 import { FreshRentalAiSelection } from "./ai-fresh-selection";
 import { RENTAL_AI_EXTENSION_FILES } from "./ai-data-extension";
 import { createRentalAiHostModule } from "./ai-app.module";
+import type { RentalAiPlatformRetentionFactory } from "./ai-composition";
 import { bootstrapFreshRentalComposition } from "./bootstrap";
 import { samePrismaSchema } from "./ai-fresh-schema";
 
 const hostRoot = resolve(__dirname, "..");
 const modelNames = (schema: string) => [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map(item => item[1]).sort();
 
-export function bootstrapFreshRentalAi() {
+export function bootstrapFreshRentalAi(platformRetention?: RentalAiPlatformRetentionFactory) {
   return bootstrapFreshRentalComposition(async lock => {
     const publicAiDirectory = process.env.RENTAL_PUBLIC_AI_DATA_PACKAGE_DIR ?? "";
     if (!isAbsolute(publicAiDirectory)) throw new Error("新装须配置固定公共 AI 归档解包目录的绝对路径");
     const fresh = await readFreshRentalAiSelection(lock, publicAiDirectory);
     const base = fresh.base;
-    return { base, register: () => createRentalAiHostModule({ lock: base, fresh }) };
+    return { base, register: () => createRentalAiHostModule({ lock: base, fresh, platformRetention }) };
   });
 }
 

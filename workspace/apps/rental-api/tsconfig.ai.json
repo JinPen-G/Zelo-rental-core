@@ -2,5 +2,5 @@
   "extends": "./tsconfig.json",
   "compilerOptions": { "outDir": "dist-ai" },
   "include": ["src/ai-*.ts", "src/prepare-deployment.ts", "src/package.ts"],
-  "exclude": ["dist", "dist-ai", "generated", "src/main.ts"]
+  "exclude": ["dist", "dist-ai", "dist-ai-public-retention", "generated", "src/main.ts", "src/ai-public-retention-main.ts"]
 }

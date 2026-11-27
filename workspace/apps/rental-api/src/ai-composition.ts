@@ -28,6 +28,7 @@ import { FileStoragePrimitives } from "@rental-os/platform-server/files";
 import { PlatformOperationLogService } from "@rental-os/platform-server/operation-log";
 import * as original from "@rental-os/ai-native-server/runtime/ai-native-application.providers";
 import { createAiBodyStorageDatabase } from "@rental-os/ai-native-server/runtime/privacy/prisma-ai-body-storage";
+import type { AiPlatformRetentionController } from "@rental-os/ai-native-server/runtime/privacy/retention.controller";
 import { CoreBusinessFailureResourceSource } from "@rental-os/ai-native-server/runtime/business-events/core-business-failure-resource.source";
 import { RuntimeBusinessFailureConfigurationSource } from "@rental-os/ai-native-server/runtime/business-events/business-failure-configuration";
 import { StaffInspectionRequestFactory } from "@rental-os/ai-native-server/runtime/inspection-assist/inspection-assist.composition";
@@ -396,6 +397,12 @@ export interface RentalAiBinding extends RentalAiBindingInput {
   withRequest<T>(request: RentalAiAuthenticatedRequest, consume: () => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
+/** The selected entry supplies only the factory. The original host owns the
+ * controller, token, Guard and transaction-bound application. */
+export type RentalAiPlatformRetentionFactory = (native: RentalAiDatabase, auth: RentalApplication["auth"],
+  users: RentalApplication["authSource"], cipher: RentalApplication["secrets"], keyHash?: unknown,
+  configuration?: unknown) => ConstructorParameters<typeof AiPlatformRetentionController>[0];
+
 export const RENTAL_AI_BINDING = Symbol("RENTAL_AI_BINDING");
 export const RENTAL_AI_INSPECTION_BINDING = Symbol("RENTAL_AI_INSPECTION_BINDING");
 
@@ -484,12 +491,24 @@ export class RentalAiCompositionModule {
     useFactory: (...dependencies: any[]) => RentalAiBinding | Promise<RentalAiBinding>;
     httpPublication?: AiNativeHttpHostPublication;
     inspectionOperations?: readonly string[];
+    platformRetention?: RentalAiPlatformRetentionFactory;
   }): DynamicModule {
-    const requests = originalProviders.map(provider => provider.provide !== AI_STAFF_INSPECTION_OPERATIONS || !input.inspectionOperations
-      ? provider : { ...provider, useFactory: async (...dependencies: unknown[]) => {
+    const retention = input.platformRetention;
+    if (retention !== undefined && typeof retention !== "function") throw new Error("平台保留缺少所选请求工厂");
+    const requests = originalProviders.map(provider => {
+      if (provider === original.AI_NATIVE_PLATFORM_RETENTION_PROVIDER && retention) return {
+        provide: provider.provide,
+        inject: [RENTAL_AI_BINDING, { token: original.AI_NATIVE_PLATFORM_RETENTION_RESTORE_KEY_HASH, optional: true },
+          { token: original.AI_NATIVE_RETENTION_RESTORE_CONFIGURATION, optional: true }],
+        useFactory: (binding: RentalAiBinding, keyHash?: unknown, configuration?: unknown) =>
+          retention(binding.database, binding.rental.auth, binding.rental.authSource, binding.rental.secrets, keyHash, configuration)
+      };
+      if (provider.provide !== AI_STAFF_INSPECTION_OPERATIONS || !input.inspectionOperations) return provider;
+      return { ...provider, useFactory: async (...dependencies: unknown[]) => {
         const published: readonly string[] = await provider.useFactory(...dependencies);
         return Object.freeze(published.filter(operation => input.inspectionOperations!.includes(operation)));
-      } });
+      } };
+    });
     const providers: Provider[] = [{ provide: RENTAL_AI_BINDING, inject: input.inject, useFactory: input.useFactory },
       ...serviceAliases, ...requests, AiCreditService,
       ...(input.httpPublication ? [{ provide: AI_NATIVE_HTTP_HOST_PUBLICATION, useValue: input.httpPublication }] : []),
@@ -498,7 +517,7 @@ export class RentalAiCompositionModule {
     const tokens = providers.map(provider => typeof provider === "function" ? provider : provider.provide);
     if (new Set(tokens).size !== tokens.length) throw new Error("AI 原 provider 重复登记");
     // ModuleRef 由 Nest 提供；其它非 optional 注入必须来自本组合，不能隐式掉入旧全局模块。
-    for (const provider of originalProviders) for (const dependency of provider.inject ?? []) {
+    for (const provider of requests) for (const dependency of provider.inject ?? []) {
       const optional = typeof dependency === "object" && "token" in dependency;
       const token = optional ? dependency.token : dependency;
       if (token !== ModuleRef && !tokens.includes(token) && !(optional && dependency.optional))

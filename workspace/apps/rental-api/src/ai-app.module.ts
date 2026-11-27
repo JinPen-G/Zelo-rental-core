@@ -5,7 +5,8 @@ import { RENTAL_STAFF_INSPECTION_EVIDENCE, type RentalStaffInspectionEvidence } 
 import type { CoreDeploymentLock, CoreOpenApiSource } from "@rental-os/core-contracts";
 import { createRentalHostModule, RENTAL_HOST_ASSEMBLY } from "./app.module";
 import { composeRentalAiApplication, type RentalAiHostAssembly } from "./ai-assembly";
-import { RentalAiCompositionModule, RENTAL_AI_INSPECTION_BINDING, type RentalAiInspectionBinding } from "./ai-composition";
+import { RentalAiCompositionModule, RENTAL_AI_INSPECTION_BINDING, type RentalAiInspectionBinding,
+  type RentalAiPlatformRetentionFactory } from "./ai-composition";
 import { createRentalAiHttpPolicy, rentalAiRouteSelector, RENTAL_AI_CONTROLLERS, RENTAL_AI_INSPECTION_OPERATIONS,
   RENTAL_AI_MOUNTED_REQUESTS } from "./ai-http-policy";
 import { createRentalAiOpenApi } from "./ai-openapi";
@@ -22,6 +23,8 @@ export type { RentalAiHostAssembly } from "./ai-assembly";
 export interface RentalAiModuleOptions<Additional = unknown> {
   lock: CoreDeploymentLock;
   fresh?: FreshRentalAiSelection;
+  /** Static source selection for the original three PLATFORM retention routes. */
+  platformRetention?: RentalAiPlatformRetentionFactory;
   additionalCores?: readonly RentalHostCoreSetup<Additional>[];
   additionalHttp?(assembly: DynamicModule): readonly DynamicModule[];
   additionalOpenApi?: readonly CoreOpenApiSource[];
@@ -32,6 +35,7 @@ class RentalAiHttpModule {}
 
 /** 额外 Core 沿原固定包/同实例接点装配；仅 Rental 提供已审定 AI 工具。 */
 export function createRentalAiHostModule<Additional = unknown>(options: RentalAiModuleOptions<Additional>): DynamicModule {
+    const platformRetention = options.platformRetention;
     return createRentalHostModule<RentalAiHostAssembly<Additional>>({ lock: options.lock,
       assemble: (database, configuration) => composeRentalAiApplication({ database, configuration, lock: options.lock, fresh: options.fresh,
         additionalCores: options.additionalCores }),
@@ -45,14 +49,16 @@ export function createRentalAiHostModule<Additional = unknown>(options: RentalAi
           return { access: host.aiAccess, ...selector,
             withRequest: (request, consume, signal) => selector.isClientRoute(request)
               ? withRentalAiClientRequest(request, consume, signal)
-              : host.ai!.withRequest(request, consume, signal) };
+              // The selected access interceptor owns the SaaS request. Only the
+              // explicitly replaced platform handlers skip the workspace file scope.
+              : platformRetention && selector.isPlatformRetentionRoute(request) ? consume() : host.ai!.withRequest(request, consume, signal) };
         },
         register: assembly => {
           const composition = RentalAiCompositionModule.registerFactory({ imports: [assembly], inject: [RENTAL_HOST_ASSEMBLY],
             useFactory: (host: RentalAiHostAssembly<Additional>) => {
               if (!host.ai) throw new Error("AI 实际装配缺少原参加者");
               return host.ai;
-            }, inspectionOperations: RENTAL_AI_INSPECTION_OPERATIONS,
+            }, inspectionOperations: RENTAL_AI_INSPECTION_OPERATIONS, platformRetention,
             httpPublication: { isMounted: token => RENTAL_AI_MOUNTED_REQUESTS.includes(token) } });
           return { module: RentalAiHttpModule, imports: [composition], controllers: [...RENTAL_AI_CONTROLLERS],
             providers: [{ provide: RENTAL_STAFF_INSPECTION_EVIDENCE, inject: [RENTAL_AI_INSPECTION_BINDING],

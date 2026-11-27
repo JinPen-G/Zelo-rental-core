@@ -439,13 +439,16 @@ export function rentalAiRouteSelector(policy: ReturnType<typeof createRentalAiHt
     || route.controller === StaffUploadsController && route.handler === StaffUploadsController.prototype.bindInspectionEvidence);
   const patterns = routes.map(route => ({ route,
     pattern: new RegExp(`^${route.path.split("/").map(segment => segment.startsWith(":") ? "[^/]+" : segment.replace(/\./g, "\\.")).join("/")}$`, "u") }));
+  const matches = (route: typeof routes[number], pattern: RegExp, request: { method: string; url: string }) =>
+    route.method === request.method.toUpperCase() && pattern.test(matchableRequestPath(request.url));
   return Object.freeze({
     isHandler: (controller: Function, handler: Function) => routes.some(route => route.controller === controller && route.handler === handler),
-    isRoute: (request: { method: string; url: string }) => patterns.some(({ route, pattern }) =>
-      route.method === request.method.toUpperCase() && pattern.test(matchableRequestPath(request.url))),
+    isRoute: (request: { method: string; url: string }) => patterns.some(({ route, pattern }) => matches(route, pattern, request)),
+    isPlatformRetentionRoute: (request: { method: string; url: string }) => patterns.some(({ route, pattern }) =>
+      route.controller === AiPlatformRetentionController && matches(route, pattern, request)),
     isClientRoute: (request: { method: string; url: string }) => patterns.some(({ route, pattern }) =>
       (route.controller === RentalWebsiteClientEntryController || route.controller === RentalWechatClientEntryController)
-      && route.method === request.method.toUpperCase() && pattern.test(matchableRequestPath(request.url)))
+      && matches(route, pattern, request))
   });
 }
 
