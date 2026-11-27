@@ -1,16 +1,11 @@
 const assert = require("node:assert/strict");
 
-require("ts-node").register({
-  transpileOnly: true,
-  compilerOptions: { module: "commonjs", moduleResolution: "node", experimentalDecorators: true, emitDecoratorMetadata: true }
-});
-
-const { PlatformService } = require("../apps/api/src/modules/platform/platform.service");
-const { OriginalPublicManagementAdapter } = require("../apps/api/src/modules/platform/public-management.adapter");
+// 当前公共身份与管理走正式出口；原 Rental 空间授权和事务断言保持。
+const { PlatformIdentityRepository } = require("@rental-os/platform-server/identity");
 const { fixture: publicManagementFixture } = require("./fixtures/platform-management.cjs");
 const { RentalWorkspaceManagementApplication } = require("@rental-os/rental-core/workspace-management");
 const { RentalWorkspaceManagementRepository } = require("@rental-os/rental-core/mysql-workspace-management");
-const { Prisma } = require("@prisma/client");
+const { prismaRuntime: Prisma } = require("@rental-os/platform-server/prisma-runtime");
 
 const tenantId = "tenant-a";
 const privilegedRoleId = "tenant-admin-role";
@@ -42,12 +37,11 @@ async function rejectsForbidden(promise, label) {
 
 async function main() {
   const fixture = serviceFixture();
-  const inactiveFixedRoleUser = PlatformService.prototype.toUserRow.call({
-    organizations: [],
-    roleRows: [{ id: "inactive-admin-role", tenantId, fixedAllPermissions: true, isActive: false, permissions: [], buttonPermissions: [] }],
-    resolveUserDataScope: () => "workspace"
-  }, {
-    id: "inactive-role-user", tenantId, account: "inactive", displayName: "Inactive", roleIds: ["inactive-admin-role"],
+  const inactiveRole = { id: "inactive-admin-role", tenantId, name: "Inactive admin", fixedAllPermissions: true,
+    isActive: false, permissions: [], buttonPermissions: [], dataScope: "WORKSPACE", scope: "OPERATOR" };
+  const inactiveFixedRoleUser = new PlatformIdentityRepository({}).toUserRow({
+    id: "inactive-role-user", tenantId, account: "inactive", displayName: "Inactive",
+    roleAssignments: [{ role: inactiveRole }], role: inactiveRole,
     isPlatformAdmin: false, isSaasAdmin: false, isActive: true
   });
   assert.equal(inactiveFixedRoleUser.isPlatformAdmin, false, "disabled fixed roles must not count as current tenant administrators");
@@ -123,7 +117,7 @@ async function main() {
     toUserRow: (user) => user
   };
   const publicFixture = publicManagementFixture();
-  const management = new OriginalPublicManagementAdapter(publicFixture.service);
+  const management = publicFixture.service;
   await publicFixture.as("admin", () => management.saveUser({
     id: "target", tenantId, account: "target", displayName: "Target",
     roleIds: ["role-a"], isPlatformAdmin: false, isActive: true
