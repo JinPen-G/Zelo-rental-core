@@ -809,6 +809,9 @@ function requiredPermissions(method: string, path: string) {
   if (path === "/rental/v1/coupon-templates" || path.startsWith("/rental/v1/coupon-templates/")) {
     return ["rental-os:marketing:manage", "rental-os:price:manage"];
   }
+  if (path === "/rental/v1/marketing-pricing-policy" || path.startsWith("/rental/v1/marketing-pricing-policy/")) {
+    return method === "GET" ? [...RENTAL_MARKETING_READ_PERMISSIONS] : [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
+  }
   if (path === "/rental/v1/marketing-plans" || path.startsWith("/rental/v1/marketing-plans/")) {
     if (method === "GET") return [...RENTAL_MARKETING_READ_PERMISSIONS];
     if (/\/(publish|pause|end)$/u.test(path)) return [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];

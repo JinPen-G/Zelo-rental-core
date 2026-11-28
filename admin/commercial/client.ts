@@ -7,6 +7,9 @@ import type {
   RentalCustomerCoupon,
   RentalDiscountPlan,
   RentalMarketingPlan,
+  RentalMarketingPricingPolicy,
+  RentalMarketingPricingPolicyReceipt,
+  ChangeRentalMarketingPricingPolicyRequest,
   RentalMarketingPlanHistory,
   RentalMarketingPlanOperationReceipt,
   RentalMarketingPlanEvent,
@@ -107,6 +110,11 @@ export function createRentalCommercialApi(
         { method: data.id ? "put" : "post", data },
       ),
     marketingPlans: (options?: ReadOptions) => request<RentalMarketingPlan[]>("/rental/v1/marketing-plans", readOptions(options)),
+    marketingPricingPolicy: (options?: ReadOptions) => request<RentalMarketingPricingPolicy>("/rental/v1/marketing-pricing-policy", readOptions(options)),
+    marketingPricingPolicyOperation: (operationId: string, options?: ReadOptions) =>
+      request<RentalMarketingPricingPolicyReceipt>(`/rental/v1/marketing-pricing-policy/operations/${encodeURIComponent(operationId)}`, readOptions(options)),
+    changeMarketingPricingPolicy: (input: ChangeRentalMarketingPricingPolicyRequest) =>
+      request<RentalMarketingPricingPolicy>("/rental/v1/marketing-pricing-policy", { method: "put", data: input, retryAuthentication: false }),
     marketingPlanHistory: (id: string, options?: ReadOptions) =>
       request<RentalMarketingPlanHistory>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/history`, readOptions(options)),
     marketingPlanOperation: (operationId: string, action: RentalMarketingPlanEvent["action"], options?: ReadOptions) =>

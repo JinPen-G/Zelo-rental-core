@@ -3485,6 +3485,25 @@ export type RentalDiscountType = (typeof RENTAL_DISCOUNT_TYPES)[number];
 
 /** 新营销策略显式声明版本；没有此标识的历史报价仍按原叠加/会员策略解释。 */
 export const RENTAL_SINGLE_MARKETING_RULE_POLICY = "single_rule_v1" as const;
+export const RENTAL_MARKETING_PRICING_POLICIES = ["legacy", RENTAL_SINGLE_MARKETING_RULE_POLICY] as const;
+export interface RentalMarketingPricingPolicy {
+  tenantId: string;
+  workspaceId: string;
+  policy: (typeof RENTAL_MARKETING_PRICING_POLICIES)[number];
+  /** 尚未显式切换时为legacy/0，须由持久读口确认无记录。 */
+  revision: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+export interface ChangeRentalMarketingPricingPolicyRequest {
+  operationId: string;
+  expectedRevision: number;
+  policy: RentalMarketingPricingPolicy["policy"];
+  changeReason: string;
+}
+export type RentalMarketingPricingPolicyReceipt = { status: "unknown" } | {
+  status: "committed"; operationId: string; result: RentalMarketingPricingPolicy;
+};
 export const RENTAL_MARKETING_RULE_ACTIONS = [...RENTAL_DISCOUNT_TYPES, "fixed_price"] as const;
 export const RENTAL_MARKETING_DURATION_UNITS = ["hour", "shift", "day_24h", "calendar_day", "night", "week", "month"] as const;
 export interface RentalMarketingRentalDuration {
@@ -3674,7 +3693,7 @@ export interface RentalQuoteDiscountEvaluation {
   /** 方案所属经营空间。营销权益按空间隔离，快照必须能证明用的是本空间的方案。 */
   workspaceId: string;
   appliesTo: RentalDiscountTarget;
-  discountType: RentalDiscountType;
+  discountType: (typeof RENTAL_MARKETING_RULE_ACTIONS)[number];
   priority: number;
   exclusiveGroup?: string;
   stackableWithOtherPlans: boolean;
@@ -6428,7 +6447,28 @@ export type RentalOrderExtensionStatus = "pending_payment" | "effective" | "canc
  * 一次续租 / 延期（需求 4.6.9）。append-only，不可编辑——它是"这段时间按什么价延长的"
  * 的唯一凭据，改它等于改历史账。
  */
+export interface RentalMarketingPricingLine {
+  id: string;
+  itemGroupId: string;
+  pricingGroupId?: string;
+  amount: number;
+  quantity: number;
+  pricingUnit: RentalPricingUnit;
+  billableUnits: number;
+}
+export interface RentalMarketingPricingSnapshot {
+  policy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  policyRevision: number;
+  baseRentalAmount: number;
+  marketingRentalAmount: number;
+  selected?: { planId: string; planVersion: string; ruleId: string; ruleVersion: string };
+  rentalLines: RentalMarketingPricingLine[];
+  dayTypes: RentalDayType[];
+}
+
 export interface RentalRepricingContext {
+  /** 与原pricingContext一起持久化。缺省是历史旧策略，不取当前空间配置补写。 */
+  marketing?: RentalMarketingPricingSnapshot;
   /** 小时转日租/逾时所需的同版本24小时日价，不能事后读取现价。 */
   dayRates?: RentalPricingRate[];
   timeZone: string;

@@ -11,7 +11,7 @@ import { snapshotInspectionTemplate } from './inspection-template-snapshot';
 import { normalizeBusinessSettingsForCategory } from './business-settings';
 
 type BusinessConfiguration = Pick<TenantBusinessConfigSnapshot,
-  'pricingPlans' | 'discountPlans' | 'marketingPlans' | 'services' | 'calendars' | 'ruleVersions'>;
+  'pricingPlans' | 'discountPlans' | 'marketingPlans' | 'marketingPricingPolicy' | 'services' | 'calendars' | 'ruleVersions'>;
 type QuotePrice = { versionId: string; version: string; effectiveFrom: string; rates: RentalPricingRate[] };
 type ContextCollection = 'groups' | 'pricingGroups' | 'locations' | 'operators';
 /** 由应用组合提供同一仓储和调用方事务，不在事实仓储中重建数据库或事件适配。 */
@@ -59,6 +59,7 @@ const businessHash = (value: BusinessConfiguration) => requestFingerprint({
   // 草稿不进入生产读模型，发布、暂停、结束及规则集合变化才改变计价依据。
   marketingPlans: value.marketingPlans === undefined ? null
     : sorted(value.marketingPlans).map(plan => ({ ...plan, rules: sorted(plan.rules) })),
+  marketingPricingPolicy: value.marketingPricingPolicy ?? null,
   calendars: [...value.calendars].sort((a, b) => a.year - b.year || a.version.localeCompare(b.version)),
   ruleVersions: sorted(value.ruleVersions)
 });

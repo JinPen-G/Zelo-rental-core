@@ -29,9 +29,11 @@ import { requestFingerprint } from '@rental-os/platform-contracts/request-finger
 import { RULE_VERSION_ISSUED_STATUSES, type RuleVersionTimelineEntry } from './rule-version-chain';
 import { lockRentalBusinessTenant } from "./mysql-business-fence";
 import { RentalMarketingPlanRepository } from "./mysql-marketing-plans";
+import { RentalMarketingPricingPolicyRepository } from "./mysql-marketing-pricing-policy";
 import type { RentalMarketingScope, RentalMarketingAction, RentalMarketingOperationScope } from "./marketing-plan";
 import type { RentalMarketingPlan, RentalMarketingPlanVersion, RentalMarketingPlanHistory, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest,
-  ChangeRentalMarketingPlanStatusRequest } from "./contracts";
+  ChangeRentalMarketingPlanStatusRequest, RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest,
+  RentalMarketingPricingPolicyReceipt } from "./contracts";
 
 // 原生成客户端也导出这个runtime单例；类型采用所选schema的官方空值声明。
 const DbNull = objectEnumValues.instances.DbNull as unknown as typeof Prisma.DbNull;
@@ -54,6 +56,7 @@ export interface TenantBusinessConfigSnapshot {
   discountPlans: RentalDiscountPlan[];
   /** 完整当前读取器提供发布正文及当前适用状态；undefined 表示旧读口未观察，不能当作空集合。 */
   marketingPlans?: RentalMarketingPlanVersion[];
+  marketingPricingPolicy?: RentalMarketingPricingPolicy;
   services: RentalValueAddedService[];
   calendars: RentalCalendarYear[];
   ruleVersions: RentalRuleVersion[];
@@ -156,6 +159,10 @@ export interface RentalBusinessConfigStore<TTransaction = RentalBusinessConfigur
   captureOpeningConfiguration?(tenantId: string, tx: TTransaction): Promise<void>;
   upsertDiscountPlan(plan: RentalDiscountPlan, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
   listMarketingPlans?(scope: RentalMarketingScope): Promise<RentalMarketingPlan[]>;
+  readMarketingPricingPolicy?(scope: RentalMarketingOperationScope): Promise<RentalMarketingPricingPolicy>;
+  changeMarketingPricingPolicy?(scope: RentalMarketingScope, binding: CategoryWriteBinding,
+    input: ChangeRentalMarketingPricingPolicyRequest): Promise<RentalMarketingPricingPolicy>;
+  marketingPricingPolicyOperation?(scope: RentalMarketingOperationScope, operationId: string): Promise<RentalMarketingPricingPolicyReceipt>;
   marketingPlanHistory?(scope: RentalMarketingScope, id: string): Promise<RentalMarketingPlanHistory>;
   marketingPlanOperation?(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string): Promise<RentalMarketingPlanOperationReceipt>;
   writeMarketingPlan?(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
@@ -250,6 +257,15 @@ export class RentalBusinessConfigRepository<TTransaction extends RentalBusinessC
     private readonly contacts: RentalBusinessConfigurationContacts<TTransaction>
   ) {}
 
+  readMarketingPricingPolicy(scope: RentalMarketingOperationScope) {
+    return new RentalMarketingPricingPolicyRepository(this.store, this.contacts).read(scope);
+  }
+  changeMarketingPricingPolicy(scope: RentalMarketingScope, binding: CategoryWriteBinding, input: ChangeRentalMarketingPricingPolicyRequest) {
+    return new RentalMarketingPricingPolicyRepository(this.store, this.contacts).change(scope, binding, input);
+  }
+  marketingPricingPolicyOperation(scope: RentalMarketingOperationScope, operationId: string) {
+    return new RentalMarketingPricingPolicyRepository(this.store, this.contacts).original(scope, operationId);
+  }
   listMarketingPlans(scope: RentalMarketingScope) {
     return new RentalMarketingPlanRepository(this.store, this.contacts).list(scope);
   }
@@ -283,14 +299,15 @@ export class RentalBusinessConfigRepository<TTransaction extends RentalBusinessC
     const read = async (tx: TTransaction): Promise<TenantBusinessConfigSnapshot> => {
       const { definition } = await this.contacts.lockCategoryBinding(tx, tenantId, workspaceId, expected);
       const where = { tenantId, workspaceId };
-      const [pricing, discounts, services, calendars, rules, templates, marketingPlans] = await Promise.all([
+      const [pricing, discounts, services, calendars, rules, templates, marketingPlans, marketingPricingPolicy] = await Promise.all([
         tx.rentalPricingPlan.findMany({ where, orderBy: { createdAt: "desc" } }), tx.rentalDiscountPlan.findMany({ where, orderBy: { createdAt: "desc" } }),
         tx.rentalValueAddedService.findMany({ where, orderBy: { createdAt: "desc" } }), tx.rentalBusinessCalendar.findMany({ where, orderBy: { year: "desc" } }),
         tx.rentalRuleVersion.findMany({ where, orderBy: { createdAt: "desc" } }), tx.rentalNotificationTemplate.findMany({ where, orderBy: { createdAt: "desc" } }),
-        new RentalMarketingPlanRepository(this.store, this.contacts).configuration(tx, { ...where, categoryCode: definition.code })
+        new RentalMarketingPlanRepository(this.store, this.contacts).configuration(tx, { ...where, categoryCode: definition.code }),
+        new RentalMarketingPricingPolicyRepository(this.store, this.contacts).configuration(tx, where)
       ]);
       return { tenantId, workspaceId, categoryCode: definition.code,
-        pricingPlans: pricing.map(row => this.toPricingPlan(row)), discountPlans: discounts.map(row => this.toDiscountPlan(row)), marketingPlans,
+        pricingPlans: pricing.map(row => this.toPricingPlan(row)), discountPlans: discounts.map(row => this.toDiscountPlan(row)), marketingPlans, marketingPricingPolicy,
         services: services.map(row => this.toService(row)), calendars: calendars.map(row => this.toCalendar(row)),
         ruleVersions: rules.map(row => this.toRuleVersion(row)), notificationTemplates: templates.map(row => this.toNotificationTemplate(row)),
         hasPersistedConfig: true };

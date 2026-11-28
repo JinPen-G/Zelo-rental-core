@@ -12,6 +12,7 @@ const days = arrayOf({ type: "string", enum: ["workday", "weekend", "statutory_h
 const reason: SchemaObject = { type: "string", minLength: 1, maxLength: 500 };
 const operationId: SchemaObject = { type: "string", pattern: "^[A-Za-z0-9_-]{1,128}$", minLength: 1, maxLength: 128 };
 const operationAction: SchemaObject = { type: "string", enum: ["save_draft", "publish", "pause", "end"] };
+const pricingPolicy: SchemaObject = { type: "string", enum: ["legacy", "single_rule_v1"] };
 const conditions = { minimumSpend: money, customerScope: scope, applicableItemGroupIds: arrayOf(id),
   applicablePricingGroupIds: arrayOf(id), applicableDayTypes: days, effectiveFrom: date, effectiveTo: date };
 const rule = { id, name: id, status: { type: "string", enum: ["enabled", "disabled"] } as SchemaObject,
@@ -22,6 +23,20 @@ const commonRequired = ["code", "name", "pricingPolicy", "appliesTo", "minimumSp
   "applicableItemGroupIds", "applicableDayTypes", "priority", "effectiveFrom"];
 
 export const RENTAL_MARKETING_SCHEMAS: Record<string, SchemaObject> = {
+  RentalMarketingPricingSnapshot: objectOf({ policy: { type: "string", enum: ["single_rule_v1"] },
+    policyRevision: { type: "integer", minimum: 1 }, baseRentalAmount: money, marketingRentalAmount: money,
+    selected: objectOf({ planId: id, planVersion: id, ruleId: id, ruleVersion: id }, ["planId", "planVersion", "ruleId", "ruleVersion"], false),
+    rentalLines: arrayOf(objectOf({ id, itemGroupId: id, pricingGroupId: id, amount: money,
+      quantity: { type: "integer", minimum: 1 }, pricingUnit: { type: "string" }, billableUnits: money },
+      ["id", "itemGroupId", "amount", "quantity", "pricingUnit", "billableUnits"], false)), dayTypes: days },
+    ["policy", "policyRevision", "baseRentalAmount", "marketingRentalAmount", "rentalLines", "dayTypes"], false),
+  RentalMarketingPricingPolicy: objectOf({ tenantId: id, workspaceId: id, policy: pricingPolicy,
+    revision, updatedAt: date, updatedBy: id }, ["tenantId", "workspaceId", "policy", "revision"], false),
+  ChangeRentalMarketingPricingPolicyRequest: objectOf({ operationId, expectedRevision: revision,
+    policy: pricingPolicy, changeReason: reason }, ["operationId", "expectedRevision", "policy", "changeReason"], false),
+  RentalMarketingPricingPolicyReceipt: { oneOf: [objectOf({ status: { type: "string", enum: ["unknown"] } }, ["status"], false),
+    objectOf({ status: { type: "string", enum: ["committed"] }, operationId, result: ref("RentalMarketingPricingPolicy") },
+      ["status", "operationId", "result"], false)] },
   RentalMarketingRentalDuration: objectOf({ unit: { type: "string", enum: [...RENTAL_MARKETING_DURATION_UNITS] },
     minimum: { type: "number", minimum: 0, exclusiveMinimum: true }, maximum: { type: "number", minimum: 0, exclusiveMinimum: true } }, ["unit"], false),
   RentalMarketingRuleConditions: objectOf({ ...conditions, rentalDuration: ref("RentalMarketingRentalDuration") }, [], false),
@@ -55,6 +70,14 @@ const errors = { "400": { description: "规则或请求字段无效", schema: ob
   "409": { description: "方案修订、范围或发布依据已变化", schema: objectSchema },
   "503": { description: "必要持久化或规则资料不可用", schema: objectSchema } };
 const operations: Omit<ContractOperation, "tag">[] = [
+  { method: "get", path: "/api/rental/v1/marketing-pricing-policy", operationId: "readRentalMarketingPricingPolicy",
+    summary: "读取当前空间营销策略及原修订", permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: "RentalMarketingPricingPolicy" },
+  { method: "put", path: "/api/rental/v1/marketing-pricing-policy", operationId: "changeRentalMarketingPricingPolicy",
+    summary: "显式切换后续新报价的营销策略", permissions: [...RENTAL_MARKETING_PUBLISH_PERMISSIONS],
+    requestSchema: "ChangeRentalMarketingPricingPolicyRequest", responseSchema: "RentalMarketingPricingPolicy" },
+  { method: "get", path: "/api/rental/v1/marketing-pricing-policy/operations/{operationId}", operationId: "readRentalMarketingPricingPolicyOperation",
+    summary: "只读核对本人原营销策略切换收据", permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: "RentalMarketingPricingPolicyReceipt",
+    parameters: [{ name: "operationId", in: "path", required: true, schema: operationId }] },
   { method: "get", path: "/api/rental/v1/marketing-plans", operationId: "listRentalMarketingPlans", summary: "读取营销草稿及当前发布版本",
     permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: arrayOf("RentalMarketingPlan") },
   { method: "get", path: "/api/rental/v1/marketing-plans/operations/{operationId}", operationId: "readRentalMarketingPlanOperation", summary: "只读核对本人原营销操作收据",

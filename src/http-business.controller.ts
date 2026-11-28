@@ -33,6 +33,7 @@ import {
   SaveRentalMarketingPlanDraftDto,
   ChangeRentalMarketingPlanStatusDto,
   ReadRentalMarketingOperationDto,
+  ChangeRentalMarketingPricingPolicyDto,
   SaveRentalNotificationTemplateDto,
   SaveRentalPricingPlanDto,
   SaveRentalRuleVersionDto,
@@ -162,6 +163,17 @@ export class RentalBusinessController {
   @Get("discount-plans") async discountPlans(@Req() req: AuthenticatedRequest) { return this.business.listDiscountPlans(req.user.tenantId, (await this.context(req.user.tenantId))); }
   @Get("marketing-plans") async marketingPlans(@Req() req: AuthenticatedRequest) {
     return this.business.listMarketingPlans(req.user.tenantId, await this.context(req.user.tenantId));
+  }
+  @Get("marketing-pricing-policy") marketingPricingPolicy(@Req() req: AuthenticatedRequest) {
+    return this.business.readMarketingPricingPolicy(req.user.tenantId);
+  }
+  @Get("marketing-pricing-policy/operations/:operationId") marketingPricingPolicyOperation(@Req() req: AuthenticatedRequest,
+    @Param("operationId") operationId: string) {
+    return this.business.marketingPricingPolicyOperation(req.user.tenantId, operationId);
+  }
+  @Put("marketing-pricing-policy") async changeMarketingPricingPolicy(@Req() req: AuthenticatedRequest,
+    @Body() body: ChangeRentalMarketingPricingPolicyDto) {
+    return this.business.changeMarketingPricingPolicy(req.user.tenantId, await this.context(req.user.tenantId), body);
   }
   @Get("marketing-plans/operations/:operationId") async marketingPlanOperation(@Req() req: AuthenticatedRequest,
     @Param("operationId") operationId: string, @Query() query: ReadRentalMarketingOperationDto) {

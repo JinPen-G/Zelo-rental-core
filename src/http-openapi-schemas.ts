@@ -1789,6 +1789,9 @@ export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
   }, ['version', 'tenantId', 'workspaceId', 'groups'], false),
   RentalQuoteSnapshot: objectOf({
     id: stringSchema, tenantId: stringSchema, quoteNo: stringSchema, request: objectSchema,
+    pricingContext: objectOf({ timeZone: stringSchema, legacyDayTypeMultipliers: { type: "boolean" },
+      calendars: arrayOf(objectSchema), dayRates: arrayOf(objectSchema), marketing: ref("RentalMarketingPricingSnapshot") },
+      ["timeZone", "legacyDayTypeMultipliers", "calendars"]),
     inventoryBasis: { ...ref('RentalQuoteInventoryBasis'), readOnly: true, description: 'Core-owned inventory composition; not a reservation or authorization. Legacy records omit it.' },
     sourceSnapshot: { ...ref('RentalQuoteSourceSnapshot'), readOnly: true,
       description: 'Server-derived provenance, never authorization. Legacy records may omit it; own-scope access then fails closed.' },

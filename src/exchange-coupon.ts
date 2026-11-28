@@ -4,14 +4,19 @@ import type { RentalOrderChange, RentalOrderExchangeExecutionBasis, RentalOrderE
   RentalQuoteCouponEvaluation, RentalQuoteSnapshotV1 } from "./contracts";
 import { roundMoney } from "./money";
 import { isIndependentBenefitFreeSegment, segmentMarketingAmount } from "./exchange-discount";
+import { isSingleRuleEvaluation, originalMarketingPlan } from "./marketing-quote-history";
 
 type LinePricing = NonNullable<RentalOrderExchangeExecutionBasis["linePricing"]>;
 
 /** Read the adopted coupon's frozen scope; allocations alone do not prove a
  * replacement's eligibility. No claim, redemption, or budget write occurs here. */
-export function originalExchangeCoupon(quote: RentalQuoteSnapshotV1): RentalQuoteCouponEvaluation {
+export function originalExchangeCoupon(quote: RentalQuoteSnapshotV1, workspaceId?: string): RentalQuoteCouponEvaluation {
   const coupon = quote.couponEvaluation, target = quote.request.lines[0]?.pricingGroupId ?? quote.request.lines[0]?.itemGroupId;
   const marketing = quote.discountEvaluations.filter(row => row.applied && row.appliesTo === "rental" && row.discountAmount > 0);
+  if (quote.pricingContext?.marketing || marketing.some(isSingleRuleEvaluation)) {
+    if (!workspaceId) throw new ConflictException("原单规则营销缺少经营空间依据");
+    originalMarketingPlan(quote, workspaceId);
+  }
   const marketingAmount = roundMoney(marketing.reduce((sum, row) => sum + row.discountAmount, 0));
   if (!coupon || quote.request.lines.length !== 1 || !target || coupon.appliesTo !== "rental"
     || !coupon.couponId || !coupon.templateId || !coupon.templateVersion
@@ -25,7 +30,8 @@ export function originalExchangeCoupon(quote: RentalQuoteSnapshotV1): RentalQuot
     || coupon.maximumDiscount !== undefined && (!Number.isFinite(coupon.maximumDiscount) || coupon.maximumDiscount < 0)
     || !Number.isFinite(coupon.discountAmount) || coupon.discountAmount <= 0 || coupon.discountAmount !== quote.couponAmount
     || !Number.isFinite(marketingAmount) || marketingAmount < 0 || marketingAmount > quote.rentalAmount
-    || marketing.length > 0 && (!coupon.stackableWithDiscountPlans || marketing.some(row => !row.planSnapshot?.stackableWithCoupon))
+    || marketing.length > 0 && (!coupon.stackableWithDiscountPlans
+      || marketing.some(row => !isSingleRuleEvaluation(row) && !row.planSnapshot?.stackableWithCoupon))
     || coupon.baseBeforeDiscount !== quote.rentalAmount || coupon.runningBase !== roundMoney(quote.rentalAmount - marketingAmount)
     || !isDeepStrictEqual(coupon.rentalAllocations, { [target]: coupon.discountAmount })) {
     throw new ConflictException("原优惠券规则、完整商品范围或原租金分摊缺失，不能推断换货资格");

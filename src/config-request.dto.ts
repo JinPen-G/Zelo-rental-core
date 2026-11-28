@@ -4,6 +4,7 @@
  * 倍率上界保护直接乘入金额的输入，字段覆盖门禁扫描本实际源码。 */
 import { RENTAL_CURRENCY_CODES, RENTAL_DISCOUNT_TARGETS, RENTAL_DISCOUNT_TYPES, RENTAL_MARKETING_RULE_ACTIONS, RENTAL_MARKETING_DURATION_UNITS, RENTAL_FULFILLMENT_MODES, RENTAL_INSURANCE_PROVIDER_STATUSES, RENTAL_PAYMENT_METHOD_CODES, RENTAL_PRICING_UNIT_CODES, RENTAL_SECURITY_RISK_LEVELS, RENTAL_SERVICE_BILLING_UNITS, RENTAL_SERVICE_SELECTION_MODES, type RentalCurrency, type RentalDayType, type RentalDiscountTarget, type RentalInsuranceProviderStatus, type RentalPricingUnit, type RentalServiceMandatoryRule, type RentalServiceSelectionMode } from "./contracts";
 import type {
+  ChangeRentalMarketingPricingPolicyRequest,
   ChangeRentalMarketingPlanStatusRequest,
   RentalMarketingRule,
   RentalMarketingRuleConditions,
@@ -604,6 +605,13 @@ export class RentalMarketingRentalDurationDto {
   @IsIn(RENTAL_MARKETING_DURATION_UNITS) unit!: (typeof RENTAL_MARKETING_DURATION_UNITS)[number];
   @IsOptional() @IsNumber() @Min(0) minimum?: number;
   @IsOptional() @IsNumber() @Min(0) maximum?: number;
+}
+
+export class ChangeRentalMarketingPricingPolicyDto implements ChangeRentalMarketingPricingPolicyRequest {
+  @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
+  @IsInt() @Min(0) expectedRevision!: number;
+  @IsIn(["legacy", "single_rule_v1"]) policy!: ChangeRentalMarketingPricingPolicyRequest["policy"];
+  @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
 }
 
 export class RentalMarketingRuleConditionsDto implements RentalMarketingRuleConditions {
