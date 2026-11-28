@@ -16,6 +16,7 @@ import type { TrustedWorkspaceAccess } from "./trusted-workspace-principal";
 import type { ClientRequestContext } from "./client-context";
 import type { RentalGuardContracts } from "./auth-guard-contracts";
 import { createRentalStaffPolicy } from "./staff-api-policy";
+import { rentalClientLocationId } from "./client-location-selection";
 import { createRentalPlatformAiPolicy } from "./platform-ai-access-policy";
 export type RentalGuardDatabase = Pick<PrismaClient, "organizationUnit" | "rentalFulfillmentLocation" | "rentalOrder" | "rentalAsset"
   | "rentalWorkOrder" | "rentalStockDisposition" | "fileUploadSession" | "customerProfile" | "customerCorporateMembership">;
@@ -317,6 +318,7 @@ const originalOrderExecutionRoutes = new Set(([
 function requiredPermissions(method: string, path: string) {
   if (method.toUpperCase() === "GET" && path === "/rental/v1/contribution-access") return ["rental-os:order:operate"];
   if (method.toUpperCase() === "GET" && path === "/rental/v1/contribution-page-access") return ["rental-os:order:view"];
+  if (method.toUpperCase() === "GET" && path === "/rental/v1/contribution-locations") return ["rental-os:order:view"];
   // Original inspection entry policy is shared with the staff Guard. The action
   // authority still checks the persisted order and pickup/return stage rights.
   const { basePath: recognitionBase, method: recognitionMethod, ...recognitionOperations } = AI_INSPECTION_RECOGNITION_TASK_HTTP_DRAFT;
@@ -1460,6 +1462,17 @@ class RentalApiAuthGuard implements CanActivate {
     const configuredLocationScope = accessContext?.user.locationScope ?? { mode: "all" as const, locationIds: [] };
     const locationScope = await resolveMemberLocationScope(staffApiRequest, path, user, workspaceId,
       configuredLocationScope, scopedDatabase);
+    const selectedLocation = rentalClientLocationId(request);
+    if (selectedLocation) {
+      if (!staffApiRequest || !/^\/rental\/v1\/(?:contribution-(?:access|page-access)|orders(?:\/[^/]+(?:\/services\/[^/]+\/(?:execution|execution-receipt))?)?)$/u.test(path) || !workspaceId || !scopedDatabase
+        || user.dataScope === "own" || locationScope.mode === "selected" && !locationScope.locationIds.includes(selectedLocation)) {
+        throw new ForbiddenException("所选门店不在当前员工授权范围内");
+      }
+      const location = await scopedDatabase.rentalFulfillmentLocation.findFirst({
+        where: { id: selectedLocation, tenantId: user.tenantId, workspaceId, status: "enabled" }, select: { id: true }
+      });
+      if (!location) throw new ForbiddenException("所选门店已停用、移除或不属于当前经营空间");
+    }
     const operationalRentalPath = path.startsWith("/rental/v1/") || path.startsWith("/staff/v1/");
     const scopedRentalPath = operationalRentalPath && path !== "/rental/v1/categories" && path !== "/rental/v1/subscription/context";
     const restrictedRentalRequest = scopedRentalPath && (

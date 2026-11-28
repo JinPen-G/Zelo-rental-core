@@ -106,21 +106,21 @@ function staffContribution(bridge: RentalContributionSession, options: RentalCon
       async load(page, scope, life) {
         const order = await bridge.request<RentalOrder>(orderPath(page.params.orderId), scope, life);
         return { title: order.orderNo, emptyText: "本订单没有可定位的服务发生项",
-          items: (order.serviceSnapshots ?? []).filter(row => row.occurrenceId).map(row => ({ id: row.occurrenceId!,
+          items: (order.serviceSnapshots ?? []).filter(row => row.occurrenceId && (!scope.locationId || row.serviceLocationId === scope.locationId)).map(row => ({ id: row.occurrenceId!,
             title: row.serviceName, status: row.executionStatus, destination: { routeId, params: { orderId: order.id, occurrenceId: row.occurrenceId! } } })) };
       } },
     { id: routeId, label: text("服务执行", "Service execution"),
       async load(page, scope, life) {
         const order = await bridge.request<RentalOrder>(orderPath(page.params.orderId), scope, life);
         const row = order.serviceSnapshots?.find(item => item.occurrenceId === id(page.params.occurrenceId));
-        if (!row) throw new ClientError("unavailable");
+        if (!row || scope.locationId && row.serviceLocationId !== scope.locationId) throw new ClientError("unavailable");
         return { title: row.serviceName, description: order.orderNo, emptyText: "暂无服务资料",
           items: [{ id: row.occurrenceId!, title: row.serviceName, status: row.executionStatus, detail: row.scheduledStartAt }] };
       }, actions: [{ id: actionId, label: text("开始服务", "Start service"),
         async prepare(page, _values, scope, life) {
           const orderId = id(page.params.orderId), occurrenceId = id(page.params.occurrenceId);
           const order = await bridge.request<RentalOrder>(orderPath(orderId), scope, life);
-          if (!order.serviceSnapshots?.some(row => row.occurrenceId === occurrenceId)) throw new ClientError("unavailable");
+          if (!order.serviceSnapshots?.some(row => row.occurrenceId === occurrenceId && (!scope.locationId || row.serviceLocationId === scope.locationId))) throw new ClientError("unavailable");
           const ref = reference(options, routeId, actionId, JSON.stringify([orderId, occurrenceId]));
           return { reference: ref, execute: once(ref, async executeLife => {
             await bridge.request(`${orderPath(orderId)}/services/${encodeURIComponent(occurrenceId)}/execution`, scope, executeLife,

@@ -74,6 +74,7 @@ function isStaffBusinessRouteAllowed(method: string, path: string) {
   if (path === "/rental/v1/orders") return verb === "GET" || verb === "POST";
   if (path === "/rental/v1/contribution-access") return verb === "GET";
   if (path === "/rental/v1/contribution-page-access") return verb === "GET";
+  if (path === "/rental/v1/contribution-locations") return verb === "GET";
   if (/^\/rental\/v1\/orders\/[^/]+\/services\/[^/]+\/execution-receipt$/u.test(path)) return verb === "GET";
   if (/^\/rental\/v1\/orders\/[^/]+\/services\/[^/]+\/execution$/u.test(path)) return verb === "POST";
   if (path === "/rental/v1/quotes") return verb === "POST";

@@ -380,7 +380,7 @@ export const RENTAL_HTTP_REVIEWED_ACCESS: readonly RentalHttpAccessDeclaration[]
     core.dispositions, core.workOrders, core.workOrderAssignees, core.workOrderHistory, core.workbenchTodos,
     core.orders, core.order, core.orderDocumentVersions, core.orderDocumentVersion, core.allocationCandidates,
     core.listInternalOrderNotes, core.extensions, core.changes, core.exchangeServiceOptions, core.templates,
-    core.contributionAccess, core.contributionPageAccess, core.inspections, core.getServiceExecutionReceipt], "buffered-read",
+    core.contributionAccess, core.contributionPageAccess, core.contributionLocations, core.inspections, core.getServiceExecutionReceipt], "buffered-read",
     "http-core handlers -> original configuration snapshots, factStore find/query/list, membership/address projections, reports aggregate, allocation candidates, document snapshot reads and idempotent.readReceipt; state/cache projection only, no factContext initialization or persist/append/render"),
   ...reviewed(RentalBusinessController, [business.pricingPlans, business.priceVersions, business.priceVersion,
     business.legacyPriceVersions, business.listPriceAdjustments, business.listSpacePriceAdjustments,

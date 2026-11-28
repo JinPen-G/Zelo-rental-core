@@ -8,6 +8,10 @@ import { CATEGORY_PREPARATION_PREVIEW_SCHEMA, CATEGORY_PREPARATION_BATCH_READ_SC
 
 import { stringSchema, numberSchema, booleanSchema, objectSchema, rentalCategoryCodeSchema, ref, arrayOf, objectOf, queryParam, backlogOperation, clientOperation, type HttpMethod, type SchemaObject, type ContractOperation } from "./http-openapi-contract";
 
+const clientLocationParameter = { name: "x-rental-location-id", in: "header" as const, required: false,
+  description: "仅员工客户端可选：真实受权履约地点。只收窄原租户、空间、地点及数据权限，不授予访问权。",
+  schema: { type: "string", minLength: 1, maxLength: 191, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$" } };
+
 function enterpriseWorkflowOperations(): ContractOperation[] {
   const clientRoutes: Array<[HttpMethod, string, string, string?]> = [
     ["post", "order-delegations/issue", "issueEnterpriseOrderDelegation", "IssueEnterpriseOrderDelegation"],
@@ -390,8 +394,11 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   backlogOperation("get", "/api/staff/v1/auth/me", "Auth", "getCurrentStaffUser", "Get the authenticated staff account", [], true, undefined, "AuthUser"),
   backlogOperation("get", "/api/staff/v1/auth/session-context", "Auth", "getStaffSessionContext", "Refresh staff identity, workspace, location scope and permissions", [], true, undefined, "SessionContextResponse"),
   backlogOperation("get", "/api/staff/v1/auth/contribution-context", "Auth", "getStaffContributionContext", "读取原员工会话的最小主体、范围和权限修订；不授予业务权限", [], true, undefined, "RentalClientContributionContext"),
-  backlogOperation("get", "/api/rental/v1/contribution-access", "RentalCore", "getRentalContributionAccess", "复核普通 Core 和当前订单操作权限；不执行业务", ["rental-os:order:operate"], true, undefined, "GenericObject"),
-  backlogOperation("get", "/api/rental/v1/contribution-page-access", "RentalCore", "getRentalContributionPageAccess", "普通页面只读准入：当前 Core、订单查看及原地点/dataScope；不借用写权限或历史恢复", ["rental-os:order:view"], true, undefined, "GenericObject"),
+  { ...backlogOperation("get", "/api/rental/v1/contribution-access", "RentalCore", "getRentalContributionAccess", "复核普通 Core 和当前订单操作权限；不执行业务", ["rental-os:order:operate"], true, undefined, "GenericObject"), parameters: [clientLocationParameter] },
+  { ...backlogOperation("get", "/api/rental/v1/contribution-page-access", "RentalCore", "getRentalContributionPageAccess", "普通页面只读准入：当前 Core、订单查看及原地点/dataScope；不借用写权限或历史恢复", ["rental-os:order:view"], true, undefined, "GenericObject"), parameters: [clientLocationParameter] },
+  { method: "get", path: "/api/staff/v1/rental/v1/contribution-locations", tag: "RentalCore", operationId: "getRentalContributionLocations",
+    summary: "读取当前员工受权空间内启用的履约地点名称，经营空间不等于门店", permissions: ["rental-os:order:view"], authRequired: true,
+    responseSchema: arrayOf(objectOf({ id: stringSchema, name: stringSchema }, ["id", "name"], false)) },
   backlogOperation("post", "/api/staff/v1/auth/change-password", "Auth", "changeStaffPassword", "Change a staff password and revoke other sessions", [], true, "ChangePasswordRequest", "LoginResponse"),
   backlogOperation("post", "/api/staff/v1/auth/switch-workspace", "Auth", "switchStaffWorkspace", "Switch the current staff workspace", [], true, "SwitchWorkspaceRequest", "LoginResponse"),
   backlogOperation("post", "/api/staff/v1/uploads/sessions", "Files", "createStaffUploadSession", "Create a staff-scoped upload session bound to an order or work order", ["rental-os:order:pickup", "rental-os:order:return", "rental-os:order:offline-payment", "rental-core:maintenance:manage"], true, "CreateFileUploadSessionRequest", "FileUploadSessionSummary"),
@@ -736,6 +743,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
     method: "get", path: "/api/rental/v1/orders", tag: "RentalCore", operationId: "listRentalCoreOrders",
     summary: "List Rental Core orders (server-side filters and sorting before pagination; paged envelope when page/pageSize given)", permissions: ["rental-os:order:view"], responseSchema: "RentalOrderListResponse",
     parameters: [
+      clientLocationParameter,
       queryParam("page", { type: "integer", minimum: 1, maximum: 1000000 }),
       queryParam("pageSize", { type: "integer", minimum: 1, maximum: 200 }),
       queryParam("status", { type: "string", enum: ["draft", "reserved", "pickup_overdue", "ready_for_pickup", "renting", "return_inspection", "settling", "completed", "cancelled", "no_show"] }),
@@ -765,7 +773,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   },
   {
     method: "get", path: "/api/rental/v1/orders/{id}", tag: "RentalCore", operationId: "getRentalCoreOrder",
-    summary: "Get Rental Core order", permissions: ["rental-os:order:view"], responseSchema: "RentalOrder"
+    summary: "Get Rental Core order", permissions: ["rental-os:order:view"], responseSchema: "RentalOrder", parameters: [clientLocationParameter]
   },
   {
     method: "get", path: "/api/rental/v1/orders/{id}/carrier-shipment/events", tag: "RentalCore", operationId: "listRentalCarrierShipmentEvents",
@@ -890,7 +898,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   {
     method: "post", path: "/api/rental/v1/orders/{id}/services/{occurrenceId}/execution", tag: "RentalCore", operationId: "updateRentalServiceOccurrenceExecution",
     summary: "记录原服务实际履约。complete 每段使用稳定 Idempotency-Key，重试返回原发生项收据和当前受权订单", permissions: ["rental-os:order:operate"], requestSchema: "UpdateRentalServiceOccurrenceRequest", responseSchema: "RentalServiceExecutionResult", successStatus: 201,
-    parameters: [{ name: "Idempotency-Key", in: "header", required: false, description: "complete 必须携带。每个新段使用独立稳定键，重试保留原请求和原键。", schema: { type: "string", minLength: 1, maxLength: 191 } }],
+    parameters: [clientLocationParameter, { name: "Idempotency-Key", in: "header", required: false, description: "complete 必须携带。每个新段使用独立稳定键，重试保留原请求和原键。", schema: { type: "string", minLength: 1, maxLength: 191 } }],
     errorResponses: {
       "400": {
         description: "原 DTO、操作键或履约输入无效。serviceExecutionNotCommitted 仅由执行器前的 complete 参数校验给出。",
@@ -908,7 +916,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   {
     method: "get", path: "/api/rental/v1/orders/{id}/services/{occurrenceId}/execution-receipt", tag: "RentalCore", operationId: "getRentalServiceExecutionReceipt",
     summary: "按 Idempotency-Key 读取原服务收据，committed 返回原段及当前受权订单，unknown 保留原操作等待核对", permissions: ["rental-os:order:view"], responseSchema: "RentalServiceExecutionReceipt",
-    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 191 } }],
+    parameters: [clientLocationParameter, { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 191 } }],
     errorResponses: {
       "400": { description: "读取原服务收据的 Idempotency-Key 缺失或无效。", schema: "RentalHttpErrorResponse" },
       "403": { description: "当前主体缺少原订单查看权限，或订单超出当前租户和经营空间范围。", schema: "RentalHttpErrorResponse" },

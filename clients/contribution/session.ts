@@ -47,21 +47,33 @@ export function createRentalContributionSession(audience: ClientAudience, option
     return options.transport.request<RentalClientContributionContext>({ path: `${prefix}/auth/contribution-context`,
       method: "GET", authorization: `Bearer ${credentials.accessToken}`, lifetime: life });
   }
-  function projection(value: RentalClientContributionContext): ClientSession & { status: "authenticated" } {
+  function projection(value: RentalClientContributionContext, location?: { id: string; name: string }): ClientSession & { status: "authenticated" } {
     if (!value || value.audience !== audience || [value.tenantId, value.subjectId, value.workspaceId,
       value.sessionRevision, value.authorizationRevision].some(item => typeof item !== "string" || !item)) throw new ClientError("unavailable");
     return Object.freeze({ status: "authenticated", displayName: value.displayName, tenantName: value.tenantName,
-      workspaceName: value.workspaceName, scope: Object.freeze({ principal: Object.freeze({ audience,
+      workspaceName: value.workspaceName, locationName: location?.name, scope: Object.freeze({ principal: Object.freeze({ audience,
         tenantId: value.tenantId, subjectId: value.subjectId }), workspaceId: value.workspaceId,
+        locationId: location?.id,
         sessionRevision: `${epoch}:${value.sessionRevision}`, authorizationRevision: value.authorizationRevision }) });
   }
-  async function adopt(life: ClientLifetime, work: (current: RentalClientCredentials | undefined) => Promise<RentalClientCredentials>) {
+  async function locationFor(credentials: RentalClientCredentials, locationId: string, life: ClientLifetime) {
+    const choices = await options.transport.request<{ id: string; name: string }[]>({ path: `${prefix}/rental/v1/contribution-locations`,
+      method: "GET", authorization: `Bearer ${credentials.accessToken}`, lifetime: life });
+    const location = choices.find(row => row.id === locationId && typeof row.name === "string" && row.name);
+    if (!location) throw new ClientError("denied");
+    return { id: location.id, name: location.name };
+  }
+  async function adopt(life: ClientLifetime, work: (current: RentalClientCredentials | undefined) => Promise<RentalClientCredentials>,
+    selection?: { workspaceId: string; locationId: string }) {
     const attempt = ++epoch, previous = capture();
     publish({ status: "loading" });
     try {
       const candidate = await work(previous); assertAttempt(attempt, life);
       if (!candidate.accessToken || !candidate.refreshToken) throw new ClientError("unavailable");
-      const value = projection(await context(candidate, life)); assertAttempt(attempt, life);
+      const observed = await context(candidate, life); assertAttempt(attempt, life);
+      if (selection && observed.workspaceId !== selection.workspaceId) throw new ClientError("stale");
+      const location = selection ? await locationFor(candidate, selection.locationId, life) : undefined;
+      const value = projection(observed, location); assertAttempt(attempt, life);
       options.credentials.write(candidate); publish(value);
     } catch (error) {
       assertAttempt(attempt, life);
@@ -81,7 +93,9 @@ export function createRentalContributionSession(audience: ClientAudience, option
     try {
       const result = await options.transport.request<T>({ path: `${prefix}${path}`, method: input.body === undefined ? "GET" : "POST",
         authorization: `Bearer ${credentials.accessToken}`, body: input.body,
-        headers: input.operationKey ? { "Idempotency-Key": input.operationKey } : undefined, lifetime: life });
+        headers: { ...(input.operationKey ? { "Idempotency-Key": input.operationKey } : {}),
+          ...(audience === "staff" && scope.locationId && path.startsWith("/rental/v1/") && path !== "/rental/v1/contribution-locations"
+            ? { "x-rental-location-id": scope.locationId } : {}) }, lifetime: life });
       assertAttempt(attempt, life); assertOwner(scope, life);
       if (capture()?.accessToken !== credentials.accessToken) throw new ClientError("stale");
       return result;
@@ -92,7 +106,11 @@ export function createRentalContributionSession(audience: ClientAudience, option
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     loginFields: [{ name: "account", label: { "zh-CN": audience === "client" ? "手机号" : "员工账号", "en-US": "Account" }, kind: "text", autocomplete: "username" },
       { name: "password", label: { "zh-CN": "密码", "en-US": "Password" }, kind: "password", autocomplete: "current-password" }],
-    refresh(life) { return adopt(life, async current => { if (!current) throw new ClientError("anonymous"); return current; }); },
+    refresh(life) {
+      const selected = state.status === "authenticated" && state.scope.workspaceId && state.scope.locationId
+        ? { workspaceId: state.scope.workspaceId, locationId: state.scope.locationId } : undefined;
+      return adopt(life, async current => { if (!current) throw new ClientError("anonymous"); return current; }, selected);
+    },
     signIn(fields, life) {
       const account = fields.account?.trim(), password = fields.password;
       if (!account || !password || !options.tenantCode.trim()) return Promise.reject(new ClientError("unavailable"));
@@ -110,19 +128,30 @@ export function createRentalContributionSession(audience: ClientAudience, option
     },
     async scopeChoices(life) {
       if (state.status !== "authenticated") throw new ClientError("anonymous");
+      const scope = state.scope;
       const value = await request<{ workspaces?: { workspaceCode?: string; workspaceName?: string; id?: string; name?: string }[] }>(
-        audience === "client" ? "/auth/me" : "/auth/session-context", state.scope, life);
-      return (value.workspaces ?? []).flatMap(row => {
+        audience === "client" ? "/auth/me" : "/auth/session-context", scope, life);
+      const workspaces = (value.workspaces ?? []).flatMap(row => {
         const id = audience === "client" ? row.workspaceCode : row.id, label = audience === "client" ? row.workspaceName : row.name;
-        return id && label ? [{ id, label }] : [];
+        return id && label ? [{ id: audience === "client" ? id : `workspace:${id}`, label: audience === "client" ? label : `经营空间：${label}` }] : [];
       });
+      if (audience === "client") return workspaces;
+      const locations = await request<{ id: string; name: string }[]>("/rental/v1/contribution-locations", scope, life);
+      return [...workspaces, ...locations.map(row => ({ id: `location:${row.id}`, label: `门店：${row.name}` }))];
     },
     selectScope(id, life) {
       if (state.status !== "authenticated" || !id?.trim()) return Promise.reject(new ClientError("anonymous"));
+      if (audience === "staff" && id.startsWith("location:")) {
+        const workspaceId = state.scope.workspaceId;
+        if (!workspaceId || !id.slice(9)) return Promise.reject(new ClientError("denied"));
+        return adopt(life, async previous => { if (!previous) throw new ClientError("anonymous"); return previous; },
+          { workspaceId, locationId: id.slice(9) });
+      }
+      if (audience === "staff" && !id.startsWith("workspace:")) return Promise.reject(new ClientError("denied"));
       return adopt(life, async previous => {
         if (!previous) throw new ClientError("anonymous");
         const result = await options.transport.request<RentalClientCredentials>({ path: `${prefix}/auth/switch-workspace`, method: "POST",
-          authorization: `Bearer ${previous.accessToken}`, body: audience === "client" ? { workspaceCode: id } : { workspaceId: id }, lifetime: life });
+          authorization: `Bearer ${previous.accessToken}`, body: audience === "client" ? { workspaceCode: id } : { workspaceId: id.slice(10) }, lifetime: life });
         return { accessToken: result.accessToken, refreshToken: result.refreshToken || previous.refreshToken };
       });
     }
@@ -136,7 +165,15 @@ export function createRentalContributionSession(audience: ClientAudience, option
     assertOwner(input.scope, life);
     try {
       const observed = await request<RentalClientContributionContext>("/auth/contribution-context", input.scope, life);
-      const current = projection(observed);
+      const credentials = capture();
+      // 原收据不经普通目录准入，停用 Core 后仍由原历史读口复核地点和对象。
+      const location = audience === "staff" && input.scope.locationId && credentials
+        ? input.purpose === "original_receipt"
+          ? { id: input.scope.locationId, name: state.status === "authenticated" ? state.locationName ?? "" : "" }
+          : await locationFor(credentials, input.scope.locationId, life)
+        : undefined;
+      assertOwner(input.scope, life);
+      const current = projection(observed, location);
       if (clientScopeKey(current.scope) !== clientScopeKey(input.scope)) { publish(current); throw new ClientError("stale"); }
       // 普通页面只核读权但必须经过当前 Core 准入。原收据保留独立历史权限，
       // 停用页面不能封死未知操作恢复，历史读取也不能反过来授权普通页面或动作。
@@ -146,7 +183,7 @@ export function createRentalContributionSession(audience: ClientAudience, option
       if (input.purpose !== "original_receipt" && result?.allowed !== true) return { status: "unavailable" };
       return { status: "allowed" };
     } catch (error) {
-      life.assertCurrent();
+      assertOwner(input.scope, life);
       if (error instanceof ClientError && error.code === "stale") throw error;
       if (error instanceof RentalClientHttpError && [401, 403, 404].includes(error.status)) return { status: "denied" };
       return { status: "unavailable" };
