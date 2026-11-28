@@ -25,6 +25,7 @@ import { ExchangeInspectionPreparationPanel } from "./ExchangeInspectionPreparat
 import { ApprovedEnterpriseExchangePanel } from "./ApprovedEnterpriseExchangePanel";
 import { OrderAllocationPanel } from "./OrderAllocationPanel";
 import { OrderQuickActionNotice } from "./OrderQuickActionNotice";
+import { OrderExtensionPreparationNotice } from "./OrderExtensionPreparationNotice";
 import { OrderDocumentsPanel } from "./OrderDocumentsPanel";
 import { TableRefreshProvider } from "@rental-os/platform-admin/ui";
 import { CarrierShipmentPanel } from "./CarrierShipmentPanel";
@@ -511,7 +512,8 @@ function RentalOrderDetailContent() {
     },
     onError: () => message.error(t("操作失败，请检查当前余额、动作顺序和订单范围"))
   });
-  const refreshExtensions = async () => { await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["rental-core", "order", id, "extensions"] })]); };
+  const refreshExtensions = async () => { await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["rental-core", "order", id, "extensions"] }),
+    queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-schedule"] })]); };
   const refreshChanges = async () => { await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["rental-core", "order", id, "changes"] }), queryClient.invalidateQueries({ queryKey: ["rental-core", "order", id, "funding"] })]); };
   /**
    * 费用裁定。落账口径由服务端决定，这里只提交结论：
@@ -545,6 +547,10 @@ function RentalOrderDetailContent() {
   const extensionPreviewGeneration = useRef(0);
   useEffect(() => () => { extensionPreviewGeneration.current += 1; }, []);
   const invalidateExtensionPreview = () => { extensionPreviewGeneration.current += 1; setExtensionPreview(undefined); };
+  useEffect(() => {
+    // 原订单事实更新后，保留输入但重新试算；旧请求不能回填已变化的租期。
+    extensionPreviewGeneration.current += 1; setExtensionPreview(undefined);
+  }, [order.data?.effectiveEndAt, order.data?.endAt, order.data?.status, order.data?.fulfillmentMode]);
   const previewExtension = useMutation({
     mutationFn: async (values: { newEndAt: Dayjs }) => {
       const generation = ++extensionPreviewGeneration.current;
@@ -555,7 +561,7 @@ function RentalOrderDetailContent() {
     onSuccess: ({ data, generation, newEndAt }) => {
       if (generation === extensionPreviewGeneration.current && extensionForm.getFieldValue("newEndAt")?.toISOString() === newEndAt) setExtensionPreview(data);
     },
-    onError: () => message.error(t("试算失败：请检查新归还时间、后续占用及缓冲、原订单价格与优惠快照"))
+    onError: async () => { invalidateExtensionPreview(); await refreshExtensions(); message.error(t("试算失败：请检查新归还时间、后续占用及缓冲、原订单价格与优惠快照")); }
   });
   const applyExtension = useMutation({
     mutationFn: (values: { newEndAt: Dayjs; memo?: string }) => {
@@ -569,12 +575,12 @@ function RentalOrderDetailContent() {
       await refreshExtensions();
       message.success(t(data.extension.status !== "effective" ? "续租申请已创建，补差价后生效" : data.extension.pricingSnapshot?.refundReview ? "续租已生效，负差额待退款审核" : data.extension.payableAmount === 0 ? "续租已生效，无需补款" : "续租已生效，差额记入月结"));
     },
-    onError: () => message.error(t("续租失败：请检查订单状态、后续库存占用与规则上限"))
+    onError: async () => { invalidateExtensionPreview(); await refreshExtensions(); message.error(t("续租失败：请检查订单状态、后续库存占用与规则上限")); }
   });
   const payExtension = useMutation({
     mutationFn: (extensionId: string) => rentalCoreApi.payOrderExtension(id, extensionId),
     onSuccess: async () => { await refreshExtensions(); message.success(t("补款已确认，租期与占用已延长")); },
-    onError: () => message.error(t("补款确认失败：请检查续租记录状态与订单当前归还时间"))
+    onError: async () => { await refreshExtensions(); message.error(t("补款确认失败：请检查续租记录状态与订单当前归还时间")); }
   });
   const reviewExtensionRefund = useMutation({
     mutationFn: (values: { decision: "approved" | "rejected"; reason: string }) => rentalCoreApi.reviewExtensionRefund(id, extensionRefundReview!.id, values),
@@ -1113,6 +1119,15 @@ function RentalOrderDetailContent() {
     action={servicePendingReference && <ActionButton label={t("读取原服务收据")} pending={recoverService.isPending} disabled={executeService.isPending}
       onAction={() => recoverService.mutateAsync({ reference: servicePendingReference, epoch: serviceEpoch })} />} />}
   <OrderQuickActionNotice orderId={id} ready={!order.isFetching && !order.isError} />
+  <OrderExtensionPreparationNotice order={detail} ready={!order.isFetching && !order.isError}
+    canPrepare={canExtend && !extensionOpen && !extensionEditor.busy} onPrepare={proposal => {
+      if (!inspectionIsCurrent() || !canExtend || extensionOpen || extensionEditor.busy || order.isFetching || order.isError
+        || detail.id !== proposal.orderId || detail.status !== proposal.status || detail.fulfillmentMode !== proposal.fulfillmentMode
+        || Date.parse(detail.effectiveEndAt ?? detail.endAt) !== Date.parse(proposal.originalEndAt)) return false;
+      extensionForm.resetFields(); invalidateExtensionPreview();
+      extensionForm.setFieldsValue({ newEndAt: dayjs(proposal.newEndAt) }); setExtensionOpen(true);
+      return true;
+    }} />
   <div className={detailStyles.actions} id="rental-order-operations" tabIndex={-1}>
         {canOperate && detail.status === RentalCoreOrderStatus.Draft && detail.reservations.some((row) => row.status === "soft" && row.expiresAt && Date.parse(row.expiresAt) < Date.now()) && <Button danger loading={expirePending.isPending} onClick={() => modal.confirm({ title: t("处理待支付超时？"), content: t("系统会取消该订单，并释放库存预占、服务容量和优惠券占用。"), okText: t("确认处理"), cancelText: t("暂不处理"), okButtonProps: { danger: true }, onOk: () => expirePending.mutateAsync() })}>{t("处理待支付超时")}</Button>}
         <CorePageActions slot="content:confirm" />

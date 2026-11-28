@@ -25,12 +25,14 @@ import {
   SearchField, Segmented, Select, Table, Tabs, useModalDismissal, type DataTableRowAction
 } from "@rental-os/platform-admin/ui";
 import { ClipboardCheck, Columns3, FileText, History, List, Play, UserRoundPen, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useServerFormSync } from "@rental-os/platform-admin/forms";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import type { RentalWorkOrderPageContext } from "./page-context";
 import { rentalWorkOrderLocation } from "./pages";
+import { rentalAssetLocation, RENTAL_CATALOG_PAGES } from "../catalog/pages";
 import { UNASSIGNED_WORK_ORDER } from "./workOrderBoardPolicy";
+import { createManualWorkOrderRecovery } from "./manual-creation";
 import styles from "./WorkOrderBoard.module.css";
 
 const WORK_ORDER_TYPE_LABELS: Record<RentalWorkOrderType, string> = {
@@ -68,7 +70,7 @@ function dateCell(value: string | undefined, locale: "zh-CN" | "en-US") {
 }
 
 export function MaintenanceWorkOrdersPage({
-  api: rentalCoreApi, permissions, scopeKey: boardScope, currentScopeKey, openOrder
+  api: rentalCoreApi, permissions, scopeKey: boardScope, currentScopeKey, operationScopeKey, openOrder
 }: RentalWorkOrderPageContext) {
   const { message } = App.useApp();
   const { locale, t } = useLocale();
@@ -83,8 +85,42 @@ export function MaintenanceWorkOrdersPage({
   const [boardAssignment, setBoardAssignment] = useState<{ workOrderId: string; assigneeId?: string }>();
   const { workOrderId } = useParams<{ workOrderId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  // The route only narrows already authorized facts; it never supplies an
+  // asset candidate or permission for the independent creation command.
+  const assetFilter = searchParams.get("assetId") ?? undefined;
+  const clearAssetFilter = () => setSearchParams(previous => {
+    const next = new URLSearchParams(previous); next.delete("assetId"); return next;
+  }, { replace: true });
   const detailTab = searchParams.get("tab") === "history" ? "history" : "detail";
   const [createForm] = Form.useForm<CreateRentalWorkOrderRequest>();
+  const [createSource, setCreateSource] = useState<"return" | "asset">("return");
+  const createOperationId = useRef("");
+  const activePage = useRef(true), liveScope = useRef(boardScope);
+  liveScope.current = boardScope;
+  useLayoutEffect(() => {
+    activePage.current = true;
+    return () => { activePage.current = false; };
+  }, []);
+  const [, updateRecovery] = useState(0);
+  const manualRecovery = useMemo(() => {
+    let storage: Storage | undefined, locks: LockManager | undefined;
+    try { storage = window.localStorage; locks = navigator.locks; } catch { /* 表单须在保存引用前失败。 */ }
+    const current = () => activePage.current && Boolean(boardScope)
+      && liveScope.current === boardScope && currentScopeKey() === boardScope;
+    return createManualWorkOrderRecovery({ scopeKey: operationScopeKey, storage, locks, api: rentalCoreApi,
+      assertCurrent: () => { if (!current()) throw new DOMException("当前工单会话已变化", "AbortError"); },
+      changed: () => { if (current()) updateRecovery(value => value + 1); }
+    });
+  }, [boardScope, currentScopeKey, operationScopeKey, rentalCoreApi]);
+  const manualState = manualRecovery.read();
+  const manualBlocked = manualState.blocked || manualState.unavailable || Boolean(manualState.pending);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === null || event.key === manualRecovery.key) updateRecovery(value => value + 1);
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, [manualRecovery]);
   const [assignForm] = Form.useForm<{ assigneeId?: string }>();
   const [submitForm] = Form.useForm<SubmitFormValues>();
   const [reviewForm] = Form.useForm<ReviewRentalWorkOrderRequest>();
@@ -93,11 +129,35 @@ export function MaintenanceWorkOrdersPage({
   const [writeOffTarget, setWriteOffTarget] = useState<RentalStockDisposition>();
   const dialogSequence = useRef(0);
   function navigateWorkOrder(workOrderId?: string, history = false) {
+    if (currentScopeKey() !== boardScope) return;
     const target = rentalWorkOrderLocation(workOrderId);
     const page = host.pages.get(corePageKey(target.coreId, target.pageId));
     if (!page || !host.canAccess(target.coreId, page.definition.permissions)) throw new Error(t("当前页面不可用"));
     const path = resolveCorePageLocation(host.pages, target);
-    host.navigate(history ? `${path}?tab=history` : path);
+    const query = new URLSearchParams(assetFilter !== undefined ? { assetId: assetFilter } : {});
+    if (history) query.set("tab", "history");
+    host.navigate(query.size ? `${path}?${query}` : path);
+  }
+  const scheduleTarget = { coreId: "rental", pageId: RENTAL_CATALOG_PAGES.schedule.id };
+  const schedulePage = host.pages.get(corePageKey(scheduleTarget.coreId, scheduleTarget.pageId));
+  const canViewSchedule = Boolean(schedulePage && host.canAccess("rental", schedulePage.definition.permissions));
+  const assetDetailPage = host.pages.get(corePageKey("rental", RENTAL_CATALOG_PAGES.assetDetail.id));
+  const canViewAssetDetail = Boolean(assetDetailPage && host.canAccess("rental", assetDetailPage.definition.permissions));
+  const controlsTarget = { coreId: "rental", pageId: RENTAL_CATALOG_PAGES.controls.id };
+  const controlsPage = host.pages.get(corePageKey("rental", controlsTarget.pageId));
+  const canViewControls = Boolean(controlsPage && host.canAccess("rental", controlsPage.definition.permissions));
+  function openAssetControl(controlId: string, assetId: string) {
+    if (!activePage.current || currentScopeKey() !== boardScope || !controlsPage || !host.canAccess("rental", controlsPage.definition.permissions)) return;
+    host.navigate(`${resolveCorePageLocation(host.pages, controlsTarget)}?${new URLSearchParams({ assetId, controlId })}`);
+  }
+  function openAssetDetail(assetId: string) {
+    if (currentScopeKey() !== boardScope || !assetDetailPage || !host.canAccess("rental", assetDetailPage.definition.permissions)) return;
+    host.navigate(resolveCorePageLocation(host.pages, rentalAssetLocation(assetId)));
+  }
+  function openAssetSchedule(assetId: string) {
+    if (currentScopeKey() !== boardScope || !canViewSchedule || !schedulePage
+      || !host.canAccess("rental", schedulePage.definition.permissions)) return;
+    host.navigate(`${resolveCorePageLocation(host.pages, scheduleTarget)}?${new URLSearchParams({ assetId })}`);
   }
   const [statusFilter, setStatusFilter] = useState<string>();
   const [typeFilter, setTypeFilter] = useState<RentalWorkOrderType>();
@@ -125,14 +185,22 @@ export function MaintenanceWorkOrdersPage({
   const dispositions = useQuery({ queryKey: ["rental-core", "stock-dispositions", boardScope], queryFn: ({ signal }) => rentalCoreApi.stockDispositions(undefined, { signal }) });
   const workOrders = useQuery({ queryKey: ["rental-core", "work-orders", boardScope], queryFn: ({ signal }) => rentalCoreApi.workOrders(undefined, { signal }) });
   const activeWorkOrder = workOrderId ? workOrders.data?.find(row => row.id === workOrderId) : actionWorkOrder;
+  const independentWorkOrder = Boolean(activeWorkOrder?.assetId && !activeWorkOrder.orderId && !activeWorkOrder.dispositionId && !activeWorkOrder.assetControl);
   const validationTarget = useRef("");
   validationTarget.current = JSON.stringify([
-    boardScope, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible
+    boardScope, assetFilter, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible,
+    createSource, createForm.getFieldValue("assetId"), createForm.getFieldValue("dispositionId")
   ]);
   const selectedDispositionId = Form.useWatch("dispositionId", createForm);
   const selectedDisposition = (dispositions.data ?? []).find((row) => row.id === selectedDispositionId);
+  const selectedAssetId = Form.useWatch("assetId", createForm);
+  const assets = useQuery({ queryKey: ["rental-core", "work-order-assets", boardScope],
+    queryFn: ({ signal }) => rentalCoreApi.assets({ signal }), enabled: dialog === "create" && createSource === "asset" });
+  const creatableAssets = assets.isError ? [] : (assets.data ?? []).filter(row => ["available", "maintenance"].includes(row.status));
+  const selectedAsset = creatableAssets.find(row => row.id === selectedAssetId);
+  const createReady = createSource === "asset" ? Boolean(selectedAsset) && !assets.isFetching && !assets.isError : Boolean(selectedDisposition) && !dispositions.isError;
   const assigneeLocationId = dialog === "create"
-    ? selectedDisposition?.locationId
+    ? createSource === "asset" ? selectedAsset?.locationId : selectedDisposition?.locationId
     : dialog === "assign"
       ? activeWorkOrder?.locationId
       : undefined;
@@ -154,13 +222,23 @@ export function MaintenanceWorkOrdersPage({
       queryClient.invalidateQueries({ queryKey: ["rental-core", "stock-dispositions"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "work-orders"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "stocks"] }),
-      queryClient.invalidateQueries({ queryKey: ["rental-core", "assets"] })
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "assets"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "work-order-assets"] }),
+      // 工单流转与库存恢复会改变详情和原履历；这些查询有独立键，不能只刷新列表。
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "work-order-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-detail"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-status-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-work-orders"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-schedule"] })
     ]);
   };
 
   const run = useMutation({
-    mutationFn: async (input: { kind: "create"; data: CreateRentalWorkOrderRequest } | { kind: "assign"; id: string; data: { assigneeId?: string } } | { kind: "start"; id: string } | { kind: "submit"; id: string; data: SubmitRentalWorkOrderRequest } | { kind: "review"; id: string; data: ReviewRentalWorkOrderRequest } | { kind: "cancel"; id: string; data: CancelRentalWorkOrderRequest } | { kind: "restore"; id: string } | { kind: "writeoff"; id: string; reason: string }) => {
-      if (input.kind === "create") return rentalCoreApi.createWorkOrder(input.data);
+    retry: false,
+    mutationFn: async (input: { kind: "create"; data: CreateRentalWorkOrderRequest; scope: string } | { kind: "assign"; id: string; data: { assigneeId?: string } } | { kind: "start"; id: string } | { kind: "submit"; id: string; data: SubmitRentalWorkOrderRequest } | { kind: "review"; id: string; data: ReviewRentalWorkOrderRequest } | { kind: "cancel"; id: string; data: CancelRentalWorkOrderRequest } | { kind: "restore"; id: string } | { kind: "writeoff"; id: string; reason: string }) => {
+      if (input.kind === "create" && (input.scope !== boardScope || currentScopeKey() !== input.scope))
+        throw new DOMException("当前工单表单已失效", "AbortError");
+      if (input.kind === "create") return input.data.assetId ? manualRecovery.create(input.data) : rentalCoreApi.createWorkOrder(input.data);
       if (input.kind === "assign") return rentalCoreApi.assignWorkOrder(input.id, input.data);
       if (input.kind === "start") return rentalCoreApi.startWorkOrder(input.id);
       if (input.kind === "submit") return rentalCoreApi.submitWorkOrder(input.id, input.data);
@@ -169,19 +247,61 @@ export function MaintenanceWorkOrdersPage({
       if (input.kind === "writeoff") return rentalCoreApi.writeOffStockDisposition(input.id, input.reason);
       return rentalCoreApi.restoreStockDisposition(input.id);
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, input) => {
+      if (input.kind === "create" && input.scope !== boardScope) return;
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
       await refresh();
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
       if (dialog) actionDialog.dismiss();
       else clearAction();
        message.success(t("操作已完成"));
     },
-    onError: (error: Error) => message.error(error.message || t("操作失败，请刷新后重试"))
+    onError: async (error: Error, input) => {
+      if (input.kind === "create" && input.scope !== boardScope) return;
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
+      // 冲突或未知应答只触发原事实重读；保留当前输入及独立创建的原操作引用。
+      await refresh();
+      if (activePage.current && liveScope.current === boardScope && currentScopeKey() === boardScope)
+        message.error(error.message ? t(error.message) : t("操作失败，请刷新后重试"));
+    }
   });
+
+  const recoverCreation = useMutation({
+    retry: false,
+    mutationFn: async (input: { scope: string; recovery: typeof manualRecovery }) => {
+      const receipt = await input.recovery.recover();
+      if (receipt.status === "unknown") throw new Error("尚未查到养护创建收据，请稍后继续核对");
+      return receipt;
+    },
+    onSuccess: async (receipt, input) => {
+      if (input.scope !== boardScope) return;
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
+      await refresh();
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
+      if (dialog) actionDialog.dismiss();
+      navigateWorkOrder(receipt.workOrderId);
+    },
+    onError: (error: Error, input) => {
+      if (input.scope !== boardScope) return;
+      if (activePage.current && liveScope.current === boardScope && currentScopeKey() === boardScope)
+        message.error(error.message ? t(error.message) : t("养护创建结果尚未确认，请核对原操作"));
+    }
+  });
+  const recoveryNotice = manualState.pending ? <Alert type="warning" showIcon
+    title={t("有一笔养护创建待核对")}
+    description={t("原操作已保留，核对完成后才能再次独立创建养护。")}
+    action={<ActionButton disabled={run.isPending || recoverCreation.isPending || manualState.blocked || manualState.unavailable}
+      label={t("核对创建结果")} onAction={() => recoverCreation.mutateAsync({ scope: boardScope, recovery: manualRecovery })} />} />
+    : manualState.blocked || manualState.unavailable ? <Alert type="warning" showIcon
+      title={t("当前浏览器无法安全保存养护操作，请恢复浏览器存储后重试")} /> : null;
 
   const createEditor = useCoreForm({
     form: createForm, permissions: [{ resource: "maintenance", action: "manage" }],
-    disabled: dialog !== "create" || run.isPending || !selectedDisposition || dispositions.isError || assignmentCandidates.isError,
-    onSave: data => run.mutateAsync({ kind: "create", data })
+    disabled: dialog !== "create" || run.isPending || !createReady || assignmentCandidates.isError
+      || createSource === "asset" && (manualBlocked || recoverCreation.isPending),
+    onSave: data => run.mutateAsync({ kind: "create", scope: boardScope, data: createSource === "asset"
+      ? { type: data.type, assetId: data.assetId, assigneeId: data.assigneeId, reason: data.reason, operationId: createOperationId.current }
+      : { type: data.type, dispositionId: data.dispositionId, assigneeId: data.assigneeId, reason: data.reason } })
   });
   const assignEditor = useCoreForm({
     form: assignForm, permissions: [{ resource: "maintenance", action: "manage" }],
@@ -242,10 +362,15 @@ export function MaintenanceWorkOrdersPage({
       navigateWorkOrder(workOrder.id, kind === "history");
       return;
     }
-    if (run.isPending || dialog) return;
+    if (currentScopeKey() !== boardScope || run.isPending || recoverCreation.isPending || dialog) return;
     dialogSequence.current += 1;
     resetActionForm(kind);
-    if (kind === "create") createForm.setFieldsValue({ type: "repair", dispositionId: workOrderDispositions[0]?.id });
+    if (kind === "create") {
+      setCreateSource(assetFilter !== undefined ? "asset" : "return");
+      createOperationId.current = crypto.randomUUID();
+      createForm.setFieldsValue({ type: "repair", ...(assetFilter !== undefined
+        ? { assetId: assetFilter } : { dispositionId: workOrderDispositions[0]?.id }) });
+    }
     setActiveWorkOrder(workOrder);
     setBoardAssignment(undefined);
     setDialog(kind);
@@ -280,6 +405,7 @@ export function MaintenanceWorkOrdersPage({
     }
   }, `${dialog}:${activeWorkOrder?.id}`);
   const filteredWorkOrders = (workOrders.data ?? []).filter((row) => {
+    if (assetFilter !== undefined && row.assetId !== assetFilter) return false;
     if (statusFilter && row.status !== statusFilter) return false;
     if (typeFilter && row.type !== typeFilter) return false;
     if (assigneeFilter && (row.assigneeId ?? UNASSIGNED_WORK_ORDER) !== assigneeFilter) return false;
@@ -287,9 +413,10 @@ export function MaintenanceWorkOrdersPage({
     if (keyword && ![row.workNo, row.reason, row.assigneeName, row.itemGroupId, row.locationId, row.assetId, row.orderId, row.dispositionId].some((value) => value?.toLowerCase().includes(keyword))) return false;
     return true;
   });
-  useEffect(clearAction, [workOrderId, boardScope]);
-  const clearFilters = () => { setStatusFilter(undefined); setTypeFilter(undefined); setAssigneeFilter(undefined); setResourceFilter(""); };
-  const hasFilters = Boolean(resourceFilter.trim() || statusFilter || typeFilter || assigneeFilter);
+  const filteredDispositions = (dispositions.data ?? []).filter(row => assetFilter === undefined || row.assetId === assetFilter);
+  useEffect(clearAction, [workOrderId, boardScope, assetFilter]);
+  const clearFilters = () => { setStatusFilter(undefined); setTypeFilter(undefined); setAssigneeFilter(undefined); setResourceFilter(""); if (assetFilter !== undefined) clearAssetFilter(); };
+  const hasFilters = Boolean(resourceFilter.trim() || statusFilter || typeFilter || assigneeFilter || assetFilter !== undefined);
   const modalProps = {
     confirmLoading: saving, onCancel: actionDialog.dismiss, afterClose: actionDialog.afterClose, destroyOnHidden: true,
     closable: !saving, keyboard: !saving, maskClosable: !saving, cancelButtonProps: { disabled: saving },
@@ -320,7 +447,7 @@ export function MaintenanceWorkOrdersPage({
   if (canManage && mainView === "work") listActions.push({
     id: "create", kind: "open", label: t("新建工单"), emphasis: "primary", icon: <PlusOutlined />,
     permissions: [{ resource: "maintenance", action: "manage" }],
-    disabled: run.isPending || Boolean(dialog) || dispositions.isLoading || dispositions.isError,
+    disabled: run.isPending || recoverCreation.isPending || Boolean(dialog),
     open: () => openDialog("create")
   });
   const detailActions: CoreAdminPageAction<Record<string, unknown>>[] = [];
@@ -349,13 +476,16 @@ export function MaintenanceWorkOrdersPage({
       permissions: [{ resource: "maintenance", action: "manage" }], open: () => openDialog("cancel", activeWorkOrder)
     });
   }
-  detailActions.push({ id: "back", kind: "navigate", slot: "navigation", label: t("返回列表"), icon: <ArrowLeftOutlined aria-hidden />, to: rentalWorkOrderLocation() });
+  detailActions.push({ id: "back", kind: "open", slot: "navigation", label: t("返回列表"), icon: <ArrowLeftOutlined aria-hidden />, open: () => navigateWorkOrder() });
 
   return <>
     {!workOrderId && <>
     <CorePage description={t("异常隔离须完成养护并通过验收后才能恢复库存。")} actions={listActions}>
+      {manualState.pending && dialog !== "create" && recoveryNotice}
+      {assetFilter !== undefined && <Alert type="info" showIcon title={t("当前仅查看所选资产的养护记录")}
+        action={<Button disabled={saving || Boolean(dialog)} onClick={clearAssetFilter}>{t("查看全部资产")}</Button>} />}
       <div className={styles.viewBar}>
-      <Tabs aria-label={t("工单与归还处置")} activeKey={mainView} onChange={setMainView} items={[{key:"work",label:<>{t("养护工单")} {workOrders.data && <AnimatedNumber value={workOrders.data.length}/>}</>},{key:"dispositions",label:<>{t("归还处置")} {dispositions.data && <AnimatedNumber value={dispositions.data.length}/>}</>}]}/>
+      <Tabs aria-label={t("工单与归还处置")} activeKey={mainView} onChange={setMainView} items={[{key:"work",label:<>{t("养护工单")} {workOrders.data && <AnimatedNumber value={filteredWorkOrders.length}/>}</>},{key:"dispositions",label:<>{t("归还处置")} {dispositions.data && <AnimatedNumber value={filteredDispositions.length}/>}</>}]}/>
       <Space><CorePageActions slot="content:work-order-view" />{mainView === "work" && <Segmented iconOnly aria-label={t("工单视图")} value={workView} onChange={value=>setWorkView(String(value))} options={[
         { value:"board", label:<span title={t("任务看板")} aria-label={t("任务看板")}><Columns3 size={16} aria-hidden /></span> },
         { value:"list", label:<span title={t("列表")} aria-label={t("列表")}><List size={16} aria-hidden /></span> },
@@ -364,7 +494,7 @@ export function MaintenanceWorkOrdersPage({
     </CorePage>
       <ContentTransition value={`${mainView}:${workView}`}>
       <div hidden={mainView!=="dispositions"}><QueryState loading={dispositions.isLoading} error={dispositions.error} onRetry={() => dispositions.refetch({ throwOnError: true })}><ListSection>
-        <Table<RentalStockDisposition> rowKey="id" onRefresh={() => dispositions.refetch()} loading={dispositions.isLoading} refreshing={dispositions.isFetching} dataSource={dispositions.data ?? []} pagination={{ pageSize: 8 }} scroll={{ x: 1050 }} locale={{ emptyText: <Empty scene="empty" compact description={t("暂无归还处置记录")} /> }} columns={[
+        <Table<RentalStockDisposition> rowKey="id" onRefresh={() => dispositions.refetch()} loading={dispositions.isLoading} refreshing={dispositions.isFetching} dataSource={filteredDispositions} pagination={{ pageSize: 8 }} scroll={{ x: 1050 }} locale={{ emptyText: <Empty scene="empty" compact description={t("暂无归还处置记录")} /> }} columns={[
           { title: t("状态"), width: 110, render: (_, row) => { const status = DISPOSITION_STATUS_LABELS[row.status] ?? { label: row.status, color: "default" }; return <Tag color={status.color}>{t(status.label)}</Tag>; } },
           { title: t("商品/资产"), render: (_, row) => <DataTableText primary={row.itemGroupId} secondary={row.assetId && `${t("资产")}：${row.assetId}`} /> },
           { title: t("数量"), dataIndex: "quantity", width: 80, align: "right" },
@@ -438,18 +568,36 @@ export function MaintenanceWorkOrdersPage({
         { key: "updated", label: "更新时间", value: dateTime(activeWorkOrder.updatedAt, locale) }
       ] : undefined}
       >
-        {!activeWorkOrder ? <Alert type="warning" showIcon title={t("未找到养护工单")} /> : <Tabs aria-label={t("工单详情")} activeKey={detailTab} onChange={key => setSearchParams(key === "history" ? { tab: key } : {})} items={[
+        {!activeWorkOrder ? <Alert type="warning" showIcon title={t("未找到养护工单")} /> : <Tabs aria-label={t("工单详情")} activeKey={detailTab} onChange={key => setSearchParams(previous => {
+          const next = new URLSearchParams(previous); if (key === "history") next.set("tab", key); else next.delete("tab"); return next;
+        })} items={[
           { key: "detail", label: t("处理与验收"), children: <RecordDetailStack>
+            {activeWorkOrder.assetControl && <Alert type="info" showIcon title={t("人工管控关联工单")}
+              description={t("未来管控从开始时点办理。验收完成后仍须解除原管控，预计结束不会自动恢复可租；其他限制继续保留。")}
+              action={canViewControls && activeWorkOrder.assetId ? <Button onClick={() => openAssetControl(activeWorkOrder.assetControl!.id, activeWorkOrder.assetId!)}>{t("查看原管控")}</Button> : undefined} />}
+            {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
+              description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
             <RecordFacts items={[
+              { key: "source", label: t("工单来源"), value: activeWorkOrder.assetControl ? t("人工管控关联工单") : activeWorkOrder.dispositionId ? t("归还处置") : independentWorkOrder ? t("独立资产养护") : t("来源未完整登记") },
+              ...(activeWorkOrder.assetControl ? [{ key: "control-start", label: t("管控开始时间"), value: dateTime(activeWorkOrder.assetControl.startAt, locale) }] : []),
               { key: "reason", label: "处理原因", value: activeWorkOrder.reason || "—", wide: true },
               { key: "result", label: "处理结果", value: activeWorkOrder.result || "—", wide: true },
               { key: "review", label: "验收", value: activeWorkOrder.reviewReason || "—" },
               { key: "reviewer", label: "验收人", value: activeWorkOrder.reviewedBy || "—" }
             ]} />
+            <ListSection title={t("处理时点")}><RecordFacts items={[
+              { key: "created", label: t("创建时间"), value: dateTime(activeWorkOrder.createdAt, locale) },
+              { key: "started", label: t("开始处理时间"), value: activeWorkOrder.startedAt ? dateTime(activeWorkOrder.startedAt, locale) : t("时间未记录") },
+              { key: "submitted", label: t("提交验收时间"), value: activeWorkOrder.submittedAt ? dateTime(activeWorkOrder.submittedAt, locale) : t("时间未记录") },
+              { key: "reviewed", label: t("最近结论时间"), value: activeWorkOrder.reviewedAt ? dateTime(activeWorkOrder.reviewedAt, locale) : t("时间未记录") }
+            ]} /></ListSection>
             <ListSection title={t("关联资源")}><RecordFacts items={[
               { key: "group", label: "商品", value: activeWorkOrder.itemGroupId },
               { key: "location", label: "履约地点", value: activeWorkOrder.locationId },
-              { key: "asset", label: "资产", value: activeWorkOrder.assetId || "—" },
+              { key: "asset", label: "资产", value: activeWorkOrder.assetId && (canViewAssetDetail || canViewSchedule)
+                ? <Space wrap>{canViewAssetDetail && <Button type="link" onClick={() => openAssetDetail(activeWorkOrder.assetId!)}>{t("资产详情")}</Button>}
+                  {canViewSchedule && <Button type="link" onClick={() => openAssetSchedule(activeWorkOrder.assetId!)}>{t("查看排班")}</Button>}</Space>
+                : activeWorkOrder.assetId || "—" },
               { key: "order", label: "来源订单", value: activeWorkOrder.orderId && canViewOrders ? <Button type="link" onClick={() => openOrder(activeWorkOrder.orderId!)}>{activeWorkOrder.orderId}</Button> : activeWorkOrder.orderId || "—" }
             ]} /></ListSection>
             <RecordDisclosure key={activeWorkOrder.id} title={t("追溯资料")}><RecordFacts items={[
@@ -460,16 +608,24 @@ export function MaintenanceWorkOrdersPage({
           { key: "history", label: t("工单历史"), children: <QueryState loading={history.isLoading} error={history.error} onRetry={() => history.refetch({ throwOnError: true })}><ListSection><Table rowKey="id" size="small" loading={history.isLoading} refreshing={history.isFetching} onRefresh={() => history.refetch()} dataSource={history.data ?? []} pagination={false} locale={{ emptyText: t("暂无操作记录") }} columns={[{ title: t("时间"), dataIndex: "createdAt", width: 180, render: (value: string) => dateTime(value, locale) }, { title: t("动作"), dataIndex: "action", render: (value) => value.replace("rental.work_order.", "") }, { title: t("操作人"), dataIndex: "operator", width: 110 }, { title: t("说明"), dataIndex: "detail" }]} /></ListSection></QueryState> }
         ]} />}
     </RecordDetailLayout></QueryState>}
-    <Modal {...modalProps} title={t("新建养护工单")} open={dialog === "create" && actionDialog.visible} okText={t("新建工单")} okButtonProps={{ disabled: !selectedDisposition || dispositions.isError || assignmentCandidates.isError }} onConfirm={() => confirmEditor(createForm, createEditor.submit)}>
-      {!workOrderDispositions.length && !dispositions.isError && <Alert type="info" showIcon title={t("暂无待处理的归还处置")} />}
-      <QueryState loading={dispositions.isLoading} error={dispositions.error} onRetry={() => dispositions.refetch({ throwOnError: true })}>
+    <Modal {...modalProps} title={t("新建养护工单")} open={dialog === "create" && actionDialog.visible} okText={t("新建工单")} okButtonProps={{ disabled: !createReady || assignmentCandidates.isError || createSource === "asset" && (manualBlocked || recoverCreation.isPending) }} onConfirm={() => confirmEditor(createForm, createEditor.submit)}>
+      <Segmented value={createSource} disabled={saving} options={[{ value: "return", label: t("归还处置") }, { value: "asset", label: t("独立资产养护") }]} onChange={value => {
+        setCreateSource(value as "return" | "asset");
+        createForm.setFieldsValue({ dispositionId: undefined, assetId: undefined, assigneeId: undefined });
+      }} />
+      {createSource === "asset" && recoveryNotice}
+      {createSource === "asset" && selectedAssetId && assets.isSuccess && !assets.isFetching && !selectedAsset && <Alert type="warning" showIcon
+        title={t("所选资产当前不可用于独立养护，请重新选择")} />}
+      {createSource === "return" && !workOrderDispositions.length && !dispositions.isError && <Alert type="info" showIcon title={t("暂无待处理的归还处置")} />}
+      <QueryState loading={createSource === "asset" ? assets.isLoading : dispositions.isLoading} error={createSource === "asset" ? assets.error : dispositions.error} onRetry={() => createSource === "asset" ? assets.refetch({ throwOnError: true }) : dispositions.refetch({ throwOnError: true })}>
       <Form form={createForm} layout="vertical" disabled={saving} {...createEditor.formProps}>
-        <Form.Item name="dispositionId" label={t("归还处置")} rules={[{ required: true, message: t("请选择归还处置") }]}><Select options={workOrderDispositions.map((row) => ({ value: row.id, label: `${row.itemGroupId} · ${row.blockReason || (row.status === "buffered" ? t("周转清洁") : t("异常隔离"))} · ${row.quantity} ${t("件")}` }))} placeholder={t("选择待处理的归还处置")} /></Form.Item>
+        {createSource === "return" ? <Form.Item name="dispositionId" label={t("归还处置")} rules={[{ required: true, message: t("请选择归还处置") }]}><Select options={workOrderDispositions.map((row) => ({ value: row.id, label: `${row.itemGroupId} · ${row.blockReason || (row.status === "buffered" ? t("周转清洁") : t("异常隔离"))} · ${row.quantity} ${t("件")}` }))} placeholder={t("选择待处理的归还处置")} /></Form.Item>
+          : <Form.Item name="assetId" label={t("养护资产")} rules={[{ required: true, message: t("请选择养护资产") }]}><Select showSearch options={creatableAssets.map(row => ({ value: row.id, label: `${row.assetNo} · ${row.itemGroupName} · ${row.locationName}` }))} onChange={() => createForm.setFieldValue("assigneeId", undefined)} /></Form.Item>}
         <Form.Item name="type" label={t("工单类型")} rules={[{ required: true }]}><Select options={Object.entries(WORK_ORDER_TYPE_LABELS).map(([value, label]) => ({ value, label: t(label) }))} /></Form.Item>
         <QueryState loading={assignmentCandidates.isLoading} error={assignmentCandidates.error} onRetry={() => assignmentCandidates.refetch({ throwOnError: true })}>
-          <Form.Item name="assigneeId" label={t("处理人")}><Select allowClear disabled={run.isPending || !selectedDisposition || assignmentCandidates.isFetching} options={assignmentCandidates.data?.map((item) => ({ value: item.id, label: `${item.displayName} · ${item.account}` }))} placeholder={t("可稍后派工")} /></Form.Item>
+          <Form.Item name="assigneeId" label={t("处理人")}><Select allowClear disabled={run.isPending || !createReady || assignmentCandidates.isFetching} options={assignmentCandidates.data?.map((item) => ({ value: item.id, label: `${item.displayName} · ${item.account}` }))} placeholder={t("可稍后派工")} /></Form.Item>
         </QueryState>
-        <Form.Item name="reason" label={t("处理要求")}><Input.TextArea rows={3} placeholder={t("可补充清洁、维修或缺件处理要求")} /></Form.Item>
+        <Form.Item name="reason" label={t("处理要求")} rules={[{ required: createSource === "asset", whitespace: true, message: t("请填写处理要求") }, { max: 500 }]}><Input.TextArea rows={3} maxLength={500} placeholder={t("可补充清洁、维修或缺件处理要求")} /></Form.Item>
       </Form>
       </QueryState>
     </Modal>
@@ -497,7 +653,11 @@ export function MaintenanceWorkOrdersPage({
     <Modal {...modalProps} title={`${t("验收工单")}：${activeWorkOrder?.workNo ?? ""}`} open={dialog === "review" && actionDialog.visible} okText={t("确认验收")} onConfirm={() => confirmEditor(reviewForm, reviewEditor.submit)}>
       <Descriptions size="small" column={1} style={{ marginBottom: 16 }} items={[{ key: "reason", label: t("处理原因"), children: activeWorkOrder?.reason }, { key: "result", label: t("处理结果"), children: activeWorkOrder?.result || t("尚未提交") }]} />
       <Form form={reviewForm} layout="vertical" disabled={saving} {...reviewEditor.formProps}>
-        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t("通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
+        {activeWorkOrder?.assetControl && <Alert type="info" showIcon title={t("人工管控关联工单")}
+          description={t("验收完成后仍须解除原管控，其他限制继续保留。")} />}
+        {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
+          description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
+        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t(independentWorkOrder || activeWorkOrder?.assetControl ? "通过验收" : "通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
         <Form.Item name="reason" label={t("验收说明")} rules={[{ required: true, message: t("请填写验收说明") }]}><Input.TextArea rows={3} placeholder={t("填写通过或驳回的依据")} /></Form.Item>
       </Form>
     </Modal>

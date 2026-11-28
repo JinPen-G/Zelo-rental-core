@@ -31,6 +31,7 @@ import type { RentalAdminContexts } from "./index";
 import {
   createRentalOrderPageContext,
   rentalOrderSessionIdentity,
+  rentalOrderSessionScope,
   type RentalOrderPageContext,
   type RentalOrderReferenceJournal,
 } from "./orders/page-context";
@@ -258,7 +259,8 @@ export function createRentalAdminHost(options: RentalAdminHostOptions): RentalAd
         assertCurrent();
         return result;
       };
-      const catalog = createRentalCatalogPageContext({ ...workspace, requestImage: options.requestImage });
+      const catalog = createRentalCatalogPageContext({ ...workspace, requestImage: options.requestImage,
+        operationScopeKey: scopeKey ? rentalOrderSessionScope(workspaceSession) : undefined });
       const tenant = { runtime, session, getSession: getTenantSession, queryScope: state.queryScope };
       const business = { ...tenant, session: workspaceSession, getSession: getWorkspaceSession };
       return {
@@ -274,6 +276,7 @@ export function createRentalAdminHost(options: RentalAdminHostOptions): RentalAd
           api: createRentalWorkOrderApi(scopedRequest),
           scopeKey,
           currentScopeKey,
+          operationScopeKey: scopeKey ? rentalOrderSessionScope(workspaceSession) : undefined,
           permissions: state.workOrderPermissions,
         },
         capability: createRentalCapabilityPageContext({ ...workspace, refreshSession: options.refreshSession }),

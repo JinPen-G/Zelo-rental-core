@@ -19,6 +19,8 @@ import { selectDamageWaiver } from "./damage-waiver";
 import { inspectionClosureError } from "./inspection-customer-response";
 import { readFrozenInspectionTemplates, snapshotInspectionTemplate } from "./inspection-template-snapshot";
 import { hasRentalBusinessTenantFence } from "./mysql-business-fence";
+import type { CreateRentalAssetControlRequest, EmergencyRentalAssetControlRequest, ExtendRentalAssetControlRequest,
+  RentalAssetControlCommand, SaveRentalAssetControlTypeRequest } from "./asset-controls";
 import type { RentalBusinessContext as BusinessContext } from "./configuration-basis";
 import { capabilityRequirementRoots, resolveCapabilityRequirements } from "./capability-conditions";
 import { validateQuotedCapabilityRequirements } from "./mysql-quote-capabilities";
@@ -134,6 +136,8 @@ import {
   type UpdateRentalServiceOccurrenceRequest
 } from "./contracts";
 import { getRequestWorkspaceId, getRequestIdentity, getRequestStaffLocationIds } from "@rental-os/platform-server/request-identity";
+import { parseRentalAssetScheduleQuery } from "./asset-schedule-query";
+import type { RentalAssetSchedule } from "./asset-schedule";
 import { claimCreatedRentalWorkspaceConfiguration } from "./mysql-workspace-scope";
 import { ACTIVE_ASSIGNMENTS, allocationComplete } from "./allocation-policy";
 import { RentalStateRepository } from "./mysql-state";
@@ -1788,6 +1792,29 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
     return this.factStore.listAssets(tenantId);
   }
 
+  async readAssetSchedule(tenantId: string, value: unknown): Promise<RentalAssetSchedule> {
+    const query = parseRentalAssetScheduleQuery(value), identity = getRequestIdentity();
+    if (!identity?.userId || !identity.workspaceId || identity.tenantId !== tenantId || identity.isSaasAdmin || identity.audience === "client")
+      throw new ForbiddenException("排班读取缺少当前租户及经营空间");
+    const permitted = (code: string) => Boolean(identity.isPlatformAdmin || identity.permissions?.includes("*") || identity.permissions?.includes(code));
+    if (!permitted("rental-core:asset:view") && !permitted("rental-core:asset:manage")) throw new ForbiddenException("没有资产排班查看权限");
+    if (!this.configStore.readReadinessConfiguration || !this.factStore.readAssetSchedule) throw new ServiceUnavailableException("持久排班读取不可用");
+    const binding = requestFingerprint(identity), workspaceId = identity.workspaceId;
+    const before = await this.configStore.readReadinessConfiguration(tenantId, workspaceId);
+    if (before.tenantId !== tenantId || before.workspaceId !== workspaceId || !before.businessSettings)
+      throw new ConflictException("排班经营时区配置缺失");
+    const timeZone = before.businessSettings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE;
+    if (!isValidTimeZone(timeZone)) throw new ConflictException("排班经营时区无效");
+    const result = await this.factStore.readAssetSchedule(tenantId, workspaceId, query,
+      { readOrders: permitted("rental-os:order:view"), readWorkOrders: permitted("rental-core:maintenance:view") });
+    const after = await this.configStore.readReadinessConfiguration(tenantId, workspaceId);
+    if (after.tenantId !== tenantId || after.workspaceId !== workspaceId || !after.businessSettings
+      || (after.businessSettings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE) !== timeZone)
+      throw new ConflictException("排班读取期间经营时区变化，请重新读取");
+    if (requestFingerprint(getRequestIdentity()) !== binding) throw new ForbiddenException("排班读取期间授权范围变化");
+    return { ...result, timeZone };
+  }
+
   async listAssetStatusHistory(tenantId: string, assetId: string) {
     await this.factContext(tenantId);
     return this.factStore.listAssetStatusHistory(tenantId, assetId);
@@ -1871,6 +1898,71 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
     return this.factStore.listWorkOrderAssignees(tenantId, locationId);
   }
 
+  assetControlTypes(tenantId: string) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.assetControlTypes) throw new ServiceUnavailableException("人工管控持久读取未装配");
+    return this.factStore.assetControlTypes(tenantId);
+  }
+  async assetControlOptions(tenantId: string): Promise<import("./asset-controls").RentalAssetControlOptions> {
+    const workspaceId = this.workspaceOf(tenantId), identity = requestFingerprint(getRequestIdentity());
+    await this.assetControlTypes(tenantId);
+    if (!this.configStore.readReadinessConfiguration) throw new ServiceUnavailableException("管控营业时区读取未装配");
+    const configuration = await this.configStore.readReadinessConfiguration(tenantId, workspaceId);
+    const timeZone = configuration.businessSettings?.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE;
+    if (!configuration.businessSettings || configuration.tenantId !== tenantId || configuration.workspaceId !== workspaceId || !isValidTimeZone(timeZone))
+      throw new ConflictException("管控经营时区配置缺失或无效");
+    const assets = (await this.factStore.listAssets(tenantId)).map(({ id, assetNo, itemGroupName, locationId, locationName, status }) =>
+      ({ id, assetNo, itemGroupName, locationId, locationName, status }));
+    if (requestFingerprint(getRequestIdentity()) !== identity) throw new ForbiddenException("管控选项读取期间身份变化");
+    await this.assetControlTypes(tenantId);
+    return { timeZone, assets };
+  }
+  async assetControlAssignees(tenantId: string, locationId: string) {
+    const identity = requestFingerprint(getRequestIdentity());
+    await this.assetControlTypes(tenantId);
+    const result = await this.factStore.listWorkOrderAssignees(tenantId, locationId);
+    if (requestFingerprint(getRequestIdentity()) !== identity) throw new ForbiddenException("管控处理人读取期间身份变化");
+    await this.assetControlTypes(tenantId); return result;
+  }
+  saveAssetControlType(tenantId: string, input: SaveRentalAssetControlTypeRequest, tx: TTransaction) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.saveAssetControlType || !tx) throw new ServiceUnavailableException("人工管控原事务未装配");
+    return this.factStore.saveAssetControlType(tenantId, input, tx);
+  }
+  listAssetControls(tenantId: string, assetId?: string) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.listAssetControls) throw new ServiceUnavailableException("人工管控持久读取未装配");
+    return this.factStore.listAssetControls(tenantId, assetId);
+  }
+  assetControlHistory(tenantId: string, id: string) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.assetControlHistory) throw new ServiceUnavailableException("人工管控履历读取未装配");
+    return this.factStore.assetControlHistory(tenantId, id);
+  }
+  assetControlConflicts(tenantId: string, id: string) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.assetControlConflicts) throw new ServiceUnavailableException("人工管控冲突读取未装配");
+    return this.factStore.assetControlConflicts(tenantId, id);
+  }
+  createAssetControl(tenantId: string, input: CreateRentalAssetControlRequest | EmergencyRentalAssetControlRequest, emergency: boolean, tx: TTransaction) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.createAssetControl || !tx) throw new ServiceUnavailableException("人工管控原事务未装配");
+    return this.factStore.createAssetControl(tenantId, input, emergency, tx);
+  }
+  changeAssetControl(tenantId: string, id: string, action: "extend" | "cancel" | "release", input: RentalAssetControlCommand | ExtendRentalAssetControlRequest, tx: TTransaction) {
+    this.workspaceOf(tenantId);
+    if (!this.factStore.changeAssetControl || !tx) throw new ServiceUnavailableException("人工管控原事务未装配");
+    return this.factStore.changeAssetControl(tenantId, id, action, input, tx);
+  }
+
+  async listWorkOrderAssets(tenantId: string): Promise<import("./contracts").RentalWorkOrderAsset[]> {
+    this.workspaceOf(tenantId);
+    return (await this.factStore.listAssets(tenantId))
+      .filter(row => [RentalAssetStatus.Available, RentalAssetStatus.Maintenance].includes(row.status))
+      .map(({ id, assetNo, itemGroupName, locationId, locationName, status, updatedAt }) =>
+        ({ id, assetNo, itemGroupName, locationId, locationName, status, updatedAt }));
+  }
+
   async listWorkOrderHistory(tenantId: string, workOrderId: string): Promise<RentalWorkOrderHistoryEntry[]> {
     this.workspaceOf(tenantId);
     const row = (await this.factStore.listWorkOrders(tenantId)).find((item) => item.id === workOrderId);
@@ -1885,10 +1977,28 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
     return assignee;
   }
 
-  async createWorkOrder(tenantId: string, input: CreateRentalWorkOrderRequest, operator: string) {
+  async createWorkOrder(tenantId: string, input: CreateRentalWorkOrderRequest, operator: string, tx?: TTransaction) {
     input = structuredClone(input);
     this.workspaceOf(tenantId);
-    const dispositions = await this.factStore.listStockDispositions(tenantId);
+    if (Boolean(input.dispositionId) === Boolean(input.assetId)) throw new BadRequestException("必须选择一项归还处置或一辆独立资产");
+    if (!["cleaning", "restock", "calibration", "repair"].includes(input.type)) throw new BadRequestException("养护工单类型无效");
+    if (input.assetId) {
+      if (!tx || !input.operationId?.trim() || !input.reason?.trim()) throw new BadRequestException("独立养护须提供原操作号、原因并在原幂等事务中创建");
+      const asset = (await this.factStore.listAssets(tenantId, tx)).find(row => row.id === input.assetId);
+      if (!asset) throw new NotFoundException("资产不存在或不在当前账号的经营空间与数据范围内");
+      const timestamp = now();
+      // 独立来源的创建者记录可信账号 id，供原 own 数据范围与创建审计使用。
+      const creator = getRequestIdentity()?.userId;
+      if (!creator) throw new ForbiddenException("独立养护缺少当前操作账号");
+      return this.factStore.upsertWorkOrder({
+        id: id("work"), tenantId, workspaceId: this.resolveWorkspaceId(tenantId),
+        workNo: `WO${timestamp.replace(/\D/g, "").slice(0, 14)}${randomUUID().slice(0, 4).toUpperCase()}`,
+        type: input.type, status: "pending", assetId: asset.id, itemGroupId: asset.itemGroupId,
+        locationId: asset.locationId, quantity: 1, assigneeId: input.assigneeId,
+        reason: input.reason.trim(), attachments: [], createdBy: creator, createdAt: timestamp, updatedAt: timestamp
+      }, tx);
+    }
+    const dispositions = await this.factStore.listStockDispositions(tenantId, undefined, tx);
     const disposition = dispositions.find((row) => row.id === input.dispositionId);
     if (!disposition) throw new NotFoundException("库存处置不存在或不属于当前经营空间");
     if (disposition.status === "restored" || disposition.status === "written_off") throw new ConflictException("已结束的库存处置不能再建养护工单");
@@ -1917,7 +2027,7 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    return this.factStore.upsertWorkOrder(workOrder);
+    return this.factStore.upsertWorkOrder(workOrder, tx);
   }
 
   async assignWorkOrder(tenantId: string, workOrderId: string, input: AssignRentalWorkOrderRequest) {
@@ -3061,17 +3171,21 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
         await this.factStore.lockAssetsForAllocation(tenantId, itemGroupId, serializedTargets.get(key)!, tx);
       }
     }
-    const [assets, used] = await Promise.all([
+    const [assets, used, availability] = await Promise.all([
       this.factStore.listAssets(tenantId, tx),
-      this.factStore.allocatedAssetIds(tenantId, tx)
+      this.factStore.allocatedAssetIds(tenantId, tx),
+      this.factStore.activeReservations(tenantId, tx)
     ]);
+    const allocationPeriod = bufferedRentalPeriod(order.startAt, order.effectiveEndAt ?? order.endAt, order.ruleSnapshot);
     const allocations: RentalAllocation[] = [];
     const assetChanges: AssetStatusChange[] = [];
     for (const reservation of order.reservations) {
       const group = this.group(state, reservation.itemGroupId);
       if (group.inventoryMode === RentalInventoryMode.Serialized) {
         const picked = assets
-          .filter((asset) => asset.itemGroupId === group.id && asset.locationId === reservation.locationId && asset.status === RentalAssetStatus.Available && !used.has(asset.id))
+          .filter((asset) => asset.itemGroupId === group.id && asset.locationId === reservation.locationId && asset.status === RentalAssetStatus.Available && !used.has(asset.id)
+            && !availability.some(row => row.source === "asset_control" && row.assetIds?.includes(asset.id)
+              && Date.parse(row.startAt) < Date.parse(allocationPeriod.endAt) && Date.parse(row.endAt) > Date.parse(allocationPeriod.startAt)))
           .slice(0, reservation.quantity);
         if (picked.length < reservation.quantity) throw new ConflictException(`${group.name} 可分配资产不足`);
         for (const asset of picked) {
@@ -6378,6 +6492,9 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
       if (!a.assetId) continue;
       const asset = assets.find((s) => s.id === a.assetId);
       if (!asset || ![RentalAssetStatus.Available, RentalAssetStatus.Reserved].includes(asset.status) || asset.locationId !== order.fulfillmentLocationId) throw new ConflictException("锁定资产尚未回库、正在维护或不在领取地点，请先改配或处理整备");
+      if (reservations.some(row => row.source === "asset_control" && row.assetIds?.includes(asset.id)
+        && Date.parse(row.startAt) < Date.parse(period.endAt) && Date.parse(row.endAt) > Date.parse(period.startAt)))
+        throw new ConflictException("锁定车辆存在未解除的人工管控，请先处理管控或经原订单流程改配");
       this.assertAssetDocumentsCoverPeriod(state, asset, rentalDueAt);
     }
     if (tx) await this.validateAllocationEquipment(tenantId, order, active, tx);

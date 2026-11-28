@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { CoreDataContractSchema, type CoreDataContract } from "@rental-os/core-contracts";
 import { corePrismaMigrationName } from "@rental-os/core-contracts/deployment";
 
-export const RENTAL_DATA_VERSION = "0.1.3";
+export const RENTAL_DATA_VERSION = "0.1.4";
 // 原绑定仍记录 0.1.0；新表就绪由物理版本和完整迁移链核定。
 export const RENTAL_DATA_READABLE = { minInclusive: "0.1.0", maxExclusive: "0.2.0" } as const;
 /** 与本版数据计划一起发行；宿主从同一固定包取模型，不回读作者工作区。 */
@@ -34,6 +34,11 @@ export const RENTAL_DATA_MIGRATIONS = [{
   file: "prisma/migrations/20261128020000_rental_marketing_pricing_policy/migration.sql",
   name: "20261128020000_rental_marketing_pricing_policy",
   sha256: "7f7cc6d767bff71d1740e3e61b3ba695b5c76d34a648a97138ab042b408c63f9"
+}, {
+  id: "rental.20261128030000-asset-controls",
+  file: "prisma/migrations/20261128030000_rental_asset_controls/migration.sql",
+  name: "20261128030000_rental_asset_controls",
+  sha256: "eb85dad0d527430a3fd5ab10c77ce065f2b1de0f4695493ffafde0e9e0e070d0"
 }] as const;
 
 export interface RentalMigrationArtifact {

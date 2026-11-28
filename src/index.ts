@@ -1,6 +1,8 @@
 /** Rental正式领域出口；提供真实合同、常量与纯缺省函数，不初始化服务或注册业务权限。 */
 export * from "./core-identity";
 export * from "./contracts";
+export * from "./asset-schedule";
+export * from "./asset-controls";
 export * from "./payment-contracts";
 export * from "./enterprise-booking";
 export * from "./workspace-names";

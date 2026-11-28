@@ -1,6 +1,6 @@
 # Rental 数据接入
 
-Rental 自己维护121个模型、5个枚举，以及由 raw SQL 仓储使用的6张换货工作流表、3张营销版本表和2张空间营销策略表。公共账号、角色、授权、配置与台账由底座维护，AI 模型属于可选 AI 模块。业务模型与原始迁移共同构成 Rental 的物理数据范围。[业务模型](schema.prisma) · [换货工作流迁移](migrations/20261125010000_rental_exchange_workflow/migration.sql) · [营销版本迁移](migrations/20261128010000_rental_marketing_rules/migration.sql) · [营销策略迁移](migrations/20261128020000_rental_marketing_pricing_policy/migration.sql)
+Rental 自己维护121个模型、5个枚举，以及由 raw SQL 仓储使用的6张换货工作流表、3张营销版本表、2张空间营销策略表和3张人工管控表。公共账号、角色、授权、配置与台账由底座维护，AI 模型属于可选 AI 模块。业务模型与原始迁移共同构成 Rental 的物理数据范围。[业务模型](schema.prisma) · [换货工作流迁移](migrations/20261125010000_rental_exchange_workflow/migration.sql) · [营销版本迁移](migrations/20261128010000_rental_marketing_rules/migration.sql) · [营销策略迁移](migrations/20261128020000_rental_marketing_pricing_policy/migration.sql) · [人工管控迁移](migrations/20261128030000_rental_asset_controls/migration.sql)
 
 ## 组合新宿主
 
@@ -61,3 +61,11 @@ Rental 数据版本、可读范围、迁移 ID、包内路径和原文摘要由�
 已有混合数据库继续使用原[组合迁移链](https://github.com/JinPen-G/Nativark/blob/63e20379278cb2292735e43ce2f9677530704e39/apps/api/prisma/migrations)及原收据。不能将新空库基线套用已有库，或把新计划的版本当作存量数据已经迁移。存量切换、备份、迁移与回退另按对应部署验证办理。
 
 普通业务、客户、企业、渠道、支付和检查的物理字段及业务外键沿原 schema 保留。无 AI 组合省略 AI 的反向关系，原组合 schema 继续保留可选 AI 的历史关联；启用 AI 的新组合还须接其正式数据贡献。
+
+## 人工管控开发数据
+
+本源码的人工管控追加[三表迁移](migrations/20261128030000_rental_asset_controls/migration.sql)，数据声明为 `0.1.4`：空间管控类型、冻结管控事实和逐修订事件。原 schema、初始迁移、换货迁移、发行Tag和根发现清单字节保持原样；三表由raw SQL仓储读写，不要求在原Prisma schema中复制JSON对象。原操作收据仍使用现有Rental幂等账，没有第二套执行账。
+
+类型修订和管控事件追加于同一次原事务，原工单可与控制记录同事务创建。未来生效只进入原库存占用区间，预计结束不参与释放算术；实际解除只终止本条。资产状态、其他工单、归还处置与订单不被管控解除改写。物理观察包含三表、约束、索引和原迁移摘要，缺表不能把空结果当成可租。
+
+当前组合保留初始、换货、营销版本、营销策略、人工管控五份迁移的原文及摘要，数据声明为`0.1.4`；不能只凭版本数字跳过其中任一份。早期单独车辆开发提交没有营销两份迁移，不能用其不完整计划替换已经采用营销数据的安装计划。现有库升级须固定这条完整链，再核原账、备份与迁移窗口；尚未执行任何数据库迁移。原版本物理观察可能拒绝新增表/账，回退不能只换旧程序或删除原迁移记录。

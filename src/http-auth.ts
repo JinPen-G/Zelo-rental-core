@@ -4,6 +4,7 @@ import { ForbiddenException, UnauthorizedException, type CanActivate, type Execu
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { SystemUserRow } from "@rental-os/platform-contracts";
 import { RentalCategoryCode, type RentalCapability } from "./contracts";
+import { ASSET_CONTROL_READ_CODES } from "./asset-controls";
 import type { RentalAuthService } from "./auth-service";
 import type { ClientAuthService } from "./mysql-client-auth";
 import type { ClientApiRateLimitService } from "./mysql-client-rate-limit";
@@ -847,7 +848,17 @@ function requiredPermissions(method: string, path: string) {
   if (path === "/rental/v1/item-groups" || path.startsWith("/rental/v1/item-groups/")) {
     return method === "GET" ? ["rental-core:catalog:view", "rental-core:catalog:manage", "rental-os:order:view", "rental-os:order:create"] : ["rental-core:catalog:manage"];
   }
+  if (path === "/rental/v1/asset-control-types") return method === "GET" ? [...ASSET_CONTROL_READ_CODES] : ["rental-core:asset:control:configure"];
+  if (path === "/rental/v1/asset-control-options" || path === "/rental/v1/asset-control-assignees") return [...ASSET_CONTROL_READ_CODES];
+  if (path.startsWith("/rental/v1/asset-control-operations/")) return [...ASSET_CONTROL_READ_CODES];
+  if (path === "/rental/v1/asset-controls" || path.startsWith("/rental/v1/asset-controls/")) {
+    if (method === "GET") return [...ASSET_CONTROL_READ_CODES];
+    return [path === "/rental/v1/asset-controls/emergency" ? "rental-core:asset:control:emergency" : "rental-core:asset:control:manage"];
+  }
   if (path === "/rental/v1/work-order-assignees") return ["rental-core:maintenance:view"];
+  if (path === "/rental/v1/work-order-creation-receipt") return ["rental-core:maintenance:view"];
+  if (path === "/rental/v1/asset-schedule") return ["rental-core:asset:view", "rental-core:asset:manage"];
+  if (path === "/rental/v1/work-order-assets") return ["rental-core:maintenance:manage"];
   if (path === "/rental/v1/work-orders" || path.startsWith("/rental/v1/work-orders/")) {
     if (method === "GET") return ["rental-core:maintenance:view"];
     if (/\/review$/u.test(path)) return ["rental-core:maintenance:review"];

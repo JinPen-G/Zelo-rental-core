@@ -51,8 +51,11 @@ export function allocationConflict(
       (r) => Date.parse(r.startAt) < end && Date.parse(r.endAt) > start,
     )
   )
-    return "租期或前后缓冲与其他订单冲突";
-  const previous = others
+    return others.some(r => r.status === "asset_control" && Date.parse(r.startAt) < end && Date.parse(r.endAt) > start)
+      ? "租期或前后缓冲与未解除的人工管控冲突" : "租期或前后缓冲与其他订单冲突";
+  // 管控没有交付/归还事实，只参与上面的区间冲突；地点衔接只能取原订单。
+  const assignments = others.filter(r => r.status !== "asset_control");
+  const previous = assignments
     .filter((r) => Date.parse(r.endAt) <= start)
     .sort((a, b) => Date.parse(b.endAt) - Date.parse(a.endAt))[0];
   if (
@@ -60,7 +63,7 @@ export function allocationConflict(
     order.fulfillmentLocationId
   )
     return "约定领取地点不可交付，须先处理调拨";
-  const next = others
+  const next = assignments
     .filter((r) => Date.parse(r.startAt) >= end)
     .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0];
   if (
@@ -77,7 +80,7 @@ export function allocationConflict(
     return "在租资产缺少可确认的前序归还排期";
   if (
     asset.status === RentalAssetStatus.Reserved &&
-    !others.length &&
+    !assignments.length &&
     !order.allocations.some(
       (a) => a.assetId === asset.id && ACTIVE_ASSIGNMENTS.includes(a.status),
     )

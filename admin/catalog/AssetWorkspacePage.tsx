@@ -1,13 +1,15 @@
 /** 资产、状态历史和数量库存沿原字段与服务端事实，当前会话拥有编辑状态。
  * 型号及地点附属资料按原权限读取，缺失独立呈现，写入仍要求当前完整引用事实。 */
 import { useLayoutEffect, useRef } from "react";
+import { corePageKey, resolveCorePageLocation, type CorePageLocation } from "@rental-os/core-contracts";
 import { CorePage, UnsavedChangesGuard, useCorePageHost } from "@rental-os/platform-admin/core";
 import {
   RentalCatalogPageProvider,
   useRentalCatalogPageContext,
   type RentalCatalogPageContext,
 } from "./page-context";
-import { RENTAL_CATALOG_CORE_ID } from "./pages";
+import { rentalAssetLocation, RENTAL_CATALOG_CORE_ID, RENTAL_CATALOG_PAGES } from "./pages";
+import { rentalWorkOrderLocation } from "../work-orders/pages";
 import { useOrderEditor } from "../orders/useOrderEditor";
 import { DataTableText, ListSection, SaveButton } from "@rental-os/platform-admin/ui";
 import { PlusOutlined } from "@rental-os/platform-admin/ui";
@@ -36,7 +38,7 @@ import {
   Select,
   Tabs,
 } from "@rental-os/platform-admin/ui";
-import { History, Pencil } from "lucide-react";
+import { CalendarDays, History, Pencil, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { resolveTenantNavigationLabels } from "./pages";
@@ -184,6 +186,19 @@ function AssetWorkspace() {
     enabled: Boolean(scope),
     queryFn: ({ signal }) => rentalCoreApi.assets({ signal }),
   });
+  const scheduleTarget = { coreId: RENTAL_CATALOG_CORE_ID, pageId: RENTAL_CATALOG_PAGES.schedule.id };
+  const maintenanceTarget = rentalWorkOrderLocation();
+  const canOpenRelated = (target: CorePageLocation) => {
+    const page = host.pages.get(corePageKey(target.coreId, target.pageId));
+    return Boolean(page && host.canAccess(target.coreId, page.definition.permissions));
+  };
+  const openRelated = (asset: RentalAsset, target: CorePageLocation) => {
+    if (!isCurrentScope() || assets.isError || !assets.data?.some(row => row.id === asset.id) || !canOpenRelated(target)) return;
+    // Only the registered route is navigable. The asset key is a locator;
+    // the destination still reads its own currently authorized facts.
+    const path = resolveCorePageLocation(host.pages, target);
+    host.navigate(target.pageId === RENTAL_CATALOG_PAGES.assetDetail.id ? path : `${path}?${new URLSearchParams({ assetId: asset.id })}`);
+  };
   const statusHistory = useQuery({
     queryKey: ["rental-core", "asset-status-history", statusHistoryAsset?.id, scope],
     queryFn: ({ signal }) => rentalCoreApi.assetStatusHistory(statusHistoryAsset!.id, { signal }),
@@ -492,6 +507,9 @@ function AssetWorkspace() {
                 canView,
                 edit: openAssetEditor,
                 history: setStatusHistoryAsset,
+                detail: canOpenRelated(rentalAssetLocation("asset")) ? row => openRelated(row, rentalAssetLocation(row.id)) : undefined,
+                schedule: canOpenRelated(scheduleTarget) ? row => openRelated(row, scheduleTarget) : undefined,
+                maintenance: canOpenRelated(maintenanceTarget) ? row => openRelated(row, maintenanceTarget) : undefined,
                 fields: assetFields,
                 summaryFields: summaryAssetFields,
                 serialLabel: serialNoField ? t(serialNoField.label) : undefined,
@@ -591,11 +609,11 @@ function AssetWorkspace() {
                               }
                             : undefined
                         }
-                        details={() => setStatusHistoryAsset(row)}
-                        detailLabel={t("状态历史")}
+                        details={() => canOpenRelated(rentalAssetLocation(row.id)) ? openRelated(row, rentalAssetLocation(row.id)) : setStatusHistoryAsset(row)}
+                        detailLabel={t(canOpenRelated(rentalAssetLocation(row.id)) ? "查看详情" : "状态历史")}
                         menuLabel={`${row.assetNo} · ${t("更多操作")}`}
-                        actions={
-                          canManage
+                        actions={[
+                          ...(canManage || canOpenRelated(rentalAssetLocation(row.id))
                             ? [
                                 {
                                   id: "history",
@@ -604,8 +622,12 @@ function AssetWorkspace() {
                                   onSelect: () => setStatusHistoryAsset(row),
                                 },
                               ]
-                            : []
-                        }
+                            : []),
+                          ...(canOpenRelated(scheduleTarget) ? [{ id: "schedule", label: t("查看排班"), icon: CalendarDays,
+                            onSelect: () => openRelated(row, scheduleTarget) }] : []),
+                          ...(canOpenRelated(maintenanceTarget) ? [{ id: "maintenance", label: t("养护工单"), icon: Wrench,
+                            onSelect: () => openRelated(row, maintenanceTarget) }] : []),
+                        ]}
                       />
                     ) : (
                       "-"

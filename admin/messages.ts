@@ -6,9 +6,20 @@ import { rentalOperationsMessages } from './operations/messages';
 import { rentalChannelsMessages } from './channels/messages';
 import { rentalSetupMessages } from './setup/messages';
 import { rentalPaymentReconciliationMessages } from './payment-reconciliation/messages';
+import { rentalScheduleMessages } from './catalog/schedule-messages';
 
 const ENGLISH = {
   "下单方案读取失败，请重试；原选择不会自动更换。": "Unable to load booking plans. Retry; your original selection is retained.",
+  "有一笔养护创建待核对": "A maintenance creation needs verification",
+  "原操作已保留，核对完成后才能再次独立创建养护。": "The original operation is saved. Verify its result before creating another independent maintenance order.",
+  "核对创建结果": "Check creation result",
+  "尚未查到养护创建收据，请稍后继续核对": "No creation receipt was found yet. Check the original operation again later.",
+  "当前浏览器无法安全保存养护操作，请恢复浏览器存储后重试": "This browser cannot safely retain maintenance operations. Restore browser storage and try again.",
+  "另一页面正在核对或提交养护操作，请稍后再试": "Another page is submitting or checking maintenance. Try again later.",
+  "请先核对已有的养护创建结果": "Check the existing maintenance creation result first.",
+  "独立养护缺少资产或原操作号": "Independent maintenance requires an asset and its original operation ID.",
+  "养护创建结果尚未确认，请核对原操作": "Maintenance creation is unconfirmed. Check the original operation.",
+  "原养护操作引用无法读取，请检查浏览器存储": "The original maintenance reference cannot be read. Check browser storage.",
   "请选择至少一个经营空间": "Select at least one workspace",
   "邀请正在处理中": "Invitations are being processed",
   "原邀请已结束，请查看邀请记录": "The original invitation has ended. Check invitation records.",
@@ -3309,6 +3320,15 @@ const ENGLISH = {
   "验收": "Review",
   "历史": "History",
   "新建养护工单": "New work order",
+  "独立资产养护": "Independent asset maintenance",
+  "独立养护的库存恢复": "Inventory restoration after independent maintenance",
+  "验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。": "Approval rechecks current inventory. Other active work orders, return holds, order allocations and restrictions from other sources remain. A completed work order does not confirm rental availability.",
+  "工单来源": "Work order source", "来源未完整登记": "Source not fully recorded",
+  "处理时点": "Processing timestamps", "开始处理时间": "Processing started", "提交验收时间": "Submitted for review",
+  "时间未记录": "Time not recorded", "最近结论时间": "Latest decision recorded", "通过验收": "Approve review",
+  "养护资产": "Asset for maintenance",
+  "请选择养护资产": "Select an asset for maintenance",
+  "请填写处理要求": "Enter the maintenance requirements",
   "请选择归还处置": "Select a return disposition",
   "周转清洁": "Buffer cleaning",
   "选择待处理的归还处置": "Select a return disposition to process",
@@ -3984,6 +4004,11 @@ const ENGLISH = {
   "三组圆角独立调整；留空沿用统一圆角，圆形与胶囊控件保留原形态。": "Adjust each group separately. Leave blank to use the shared radius. Circles and pills keep their shape.",
   "第一行是默认计价单位。": "The first row sets the default billing unit.",
   "已预占或维修隔离的库存不可直接扣减。": "Reserved or quarantined stock cannot be deducted directly.",
+  "人工管控关联工单": "Work order linked to an asset control",
+  "未来管控从开始时点办理。验收完成后仍须解除原管控，预计结束不会自动恢复可租；其他限制继续保留。": "Future controls can be processed from their start time. After acceptance, release the original control explicitly. The planned end does not restore availability; other restrictions remain.",
+  "验收完成后仍须解除原管控，其他限制继续保留。": "After acceptance, release the original control explicitly. Other restrictions remain.",
+  "查看原管控": "View original control",
+  "管控开始时间": "Control starts",
 };
 
 export const rentalAdminMessages: AdminMessages = {
@@ -3994,4 +4019,5 @@ export const rentalAdminMessages: AdminMessages = {
   ...rentalChannelsMessages,
   ...rentalSetupMessages,
   ...rentalPaymentReconciliationMessages,
+  ...rentalScheduleMessages,
 };
