@@ -812,6 +812,8 @@ function requiredPermissions(method: string, path: string) {
   if (path === "/rental/v1/marketing-pricing-policy" || path.startsWith("/rental/v1/marketing-pricing-policy/")) {
     return method === "GET" ? [...RENTAL_MARKETING_READ_PERMISSIONS] : [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
   }
+  // 试算复用原报价对象范围；业务服务还要求当前营销读取权，不能单凭营销权读客户资格。
+  if (path === "/rental/v1/marketing-plans/preview") return ["rental-os:order:operate", "rental-os:order:create"];
   if (path === "/rental/v1/marketing-plans" || path.startsWith("/rental/v1/marketing-plans/")) {
     if (method === "GET") return [...RENTAL_MARKETING_READ_PERMISSIONS];
     if (/\/(publish|pause|end)$/u.test(path)) return [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
@@ -1584,7 +1586,7 @@ class RentalApiAuthGuard implements CanActivate {
       throw new ForbiddenException("受限地点范围账号不能新建履约地点；请由租户管理员授权或创建");
     }
 
-    if (ownScope && ["/rental/v1/quotes", "/rental/v1/orders"].includes(path) && request.method.toUpperCase() === "POST") {
+    if (ownScope && ["/rental/v1/quotes", "/rental/v1/marketing-plans/preview", "/rental/v1/orders"].includes(path) && request.method.toUpperCase() === "POST") {
       await this.assertOwnBookingCustomers(body, user, workspaceId, scope);
     }
 
@@ -1592,7 +1594,7 @@ class RentalApiAuthGuard implements CanActivate {
     if (path === "/rental/v1/orders" && request.method.toUpperCase() === "POST") {
       if (locationRestricted && typeof body.fulfillmentLocationId !== "string") throw new ForbiddenException("当前账号创建订单必须指定已授权的履约地点");
       ensureLocations([body.fulfillmentLocationId, ...(body.returnLocationId ? [body.returnLocationId] : [])]);
-    } else if (path === "/rental/v1/quotes" && request.method.toUpperCase() === "POST") {
+    } else if (["/rental/v1/quotes", "/rental/v1/marketing-plans/preview"].includes(path) && request.method.toUpperCase() === "POST") {
       if (locationRestricted && typeof body.fulfillmentLocationId !== "string") throw new ForbiddenException("当前账号报价必须指定已授权的履约地点");
       ensureLocations([body.fulfillmentLocationId, ...(body.returnLocationId ? [body.returnLocationId] : [])]);
     } else if (orderMatch && orderMatch[1] !== "expire-pending" && orderMatch[1] !== "reconcile-pickup-overdue") {

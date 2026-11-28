@@ -41,6 +41,7 @@ import {
   membershipBenefitScopeMatches,
   defaultRentalNoShowRule,
   type GrantRentalRewardRequest,
+  type RentalMarketingQuotePreview,
   type ImportRentalCalendarRequest,
   type RentalCalendarBusinessStatus,
   type RentalBusinessHours,
@@ -170,7 +171,8 @@ import { assertMarketingPricingPolicy } from "./mysql-marketing-pricing-policy";
 import { originalMarketingPlan, isSingleRuleEvaluation } from "./marketing-quote-history";
 import type { RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest, RentalMarketingPricingLine } from "./contracts";
 import { assertMarketingAuthority, type RentalMarketingAction } from "./marketing-plan";
-import type { SaveRentalMarketingPlanDraftRequest, ChangeRentalMarketingPlanStatusRequest } from "./contracts";
+import type { SaveRentalMarketingPlanDraftRequest, ChangeRentalMarketingPlanStatusRequest, RentalMarketingScheduleQuery } from "./contracts";
+import { buildMarketingSchedule, marketingScheduleRange } from "./marketing-schedule";
 import { resolveQuoteServices, resolveExchangeServices } from "./service-catalog";
 import { applyPricingGroupSecurityRateOverrides, computeSecurityAmounts, type SecurityLineInput, type RentalPricingSecurityRateOverride, validateSecurityRateCoverage, validateSecurityRules } from "./security-deposit";
 import { hasOriginalRentalCurrency, roundMoney } from "./money";
@@ -2191,6 +2193,18 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const scope = this.marketingScope(tenantId, context, "read");
     if (!this.configStore.listMarketingPlans) throw new ServiceUnavailableException("营销方案持久读取不可用");
     return this.configStore.listMarketingPlans(scope);
+  }
+
+  async marketingSchedule(tenantId: string, context: BusinessContext, input: RentalMarketingScheduleQuery) {
+    const scope = this.marketingScope(tenantId, context, "read"), identity = requestFingerprint(getRequestIdentity());
+    const query = structuredClone(input), timeZone = context.settings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE;
+    const range = marketingScheduleRange(query, timeZone);
+    await this.refreshWorkspaceContext(tenantId, context);
+    const calendars = structuredClone(this.calendarsForDateRange(tenantId, context, range.startAt, range.endAt));
+    const plans = await this.listMarketingPlans(tenantId, context);
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (identity !== requestFingerprint(getRequestIdentity())) throw new ConflictException("活动日程读取期间身份已变化");
+    return buildMarketingSchedule(scope, plans, query, timeZone, this.dayTypesForRange(calendars, range.startAt, range.endAt, timeZone));
   }
 
   async readMarketingPricingPolicy(tenantId: string) {
@@ -5861,6 +5875,35 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
 
   async createQuote(tenantId: string, context: BusinessContext, input: RentalQuoteRequest, preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
     original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
+    return this.quoteFromCurrentConfiguration(tenantId, context, input, "commit", preResolvedDeliveryAddress, original, beforePersist);
+  }
+
+  /** 正式报价同一计算链的只读投影。不得产生可下单报价、补初始化配置、维护容量或写能力审计。 */
+  async previewMarketingQuote(tenantId: string, context: BusinessContext, input: RentalQuoteRequest): Promise<RentalMarketingQuotePreview> {
+    const scope = this.marketingScope(tenantId, context, "read"), identity = requestFingerprint(getRequestIdentity());
+    const assertCurrent = () => {
+      assertMarketingAuthority(getRequestIdentity(), scope, "read");
+      const current = getRequestIdentity();
+      if (identity !== requestFingerprint(current) || !(current?.isPlatformAdmin
+        || ["rental-os:order:operate", "rental-os:order:create"].some(code => hasEffectivePermission(current?.permissions ?? [], code))))
+        throw new ForbiddenException("营销试算需要当前空间原报价权限");
+    };
+    assertCurrent();
+    const quote = await this.quoteFromCurrentConfiguration(tenantId, context, input, "preview");
+    assertCurrent();
+    const marketing = quote.pricingContext?.marketing;
+    return { kind: "rental_marketing_quote_preview", tenantId, workspaceId: scope.workspaceId, calculatedAt: quote.createdAt,
+      pricingPolicy: marketing?.policy ?? "legacy", policyRevision: marketing?.policyRevision,
+      timeZone: quote.pricingContext!.timeZone, currency: quote.currency!, rentalAmount: quote.rentalAmount,
+      discountAmount: quote.discountAmount, couponAmount: quote.couponAmount, serviceAmount: quote.serviceAmount,
+      fulfillmentAmount: quote.fulfillmentAmount, payableAmount: quote.payableAmount, marketing,
+      evaluations: quote.discountEvaluations, couponEvaluation: quote.couponEvaluation, chargeLines: quote.chargeLines,
+      admission: "not_checked" };
+  }
+
+  private async quoteFromCurrentConfiguration(tenantId: string, context: BusinessContext, input: RentalQuoteRequest,
+    mode: "commit" | "preview", preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
+    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
     // Capture one caller intent before the first configuration/identity wait.
     // Later caller edits cannot change the original key, customer, quantities,
     // frozen source or calculation context of this quote.
@@ -5890,11 +5933,11 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       }
     }
     const persisted = await quoteConfigurationContext.run({ owner: this, tenantId, workspaceId, state }, () =>
-      this.createQuoteFromConfiguration(tenantId, context, input, sourceSnapshot, preResolvedDeliveryAddress, original, beforePersist));
+      this.createQuoteFromConfiguration(tenantId, context, input, sourceSnapshot, preResolvedDeliveryAddress, original, beforePersist, mode));
     // The calculation copy never becomes the current configuration cache.
     // A later refresh may have replaced it while this quote awaited persistence.
     const current = this.states.get(workspaceId);
-    if (current?.categoryCode === persisted.categoryCode && !current.quotes.some(row => row.id === persisted.id)) {
+    if (mode === "commit" && current?.categoryCode === persisted.categoryCode && !current.quotes.some(row => row.id === persisted.id)) {
       current.quotes.unshift(persisted);
     }
     return persisted;
@@ -5902,7 +5945,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
 
   private async createQuoteFromConfiguration(tenantId: string, context: BusinessContext, input: RentalQuoteRequest,
     sourceSnapshot: ReturnType<typeof currentQuoteSource>, preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
-    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
+    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>, mode: "commit" | "preview" = "commit") {
     let categoryVersionId: string | undefined;
     let categoryAdoptionRevision: number | undefined;
     if (this.categoryResolver) {
@@ -5930,6 +5973,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     // 再等一个无关的保存动作来触发持久化。MySQL 路径在报价前补落计划与首版，
     // 仍由 resolveSpaceRates 对所有后续报价执行不可变版本校验。
     if (this.prisma && (process.env.PLATFORM_DATA_SOURCE ?? "mysql").toLowerCase() === "mysql" && !state.configPersisted) {
+      if (mode === "preview") throw new ConflictException("经营配置尚未发布，试算不能初始化价格或配置");
       await this.persistBusinessConfig(tenantId, state);
       state.configPersisted = true;
       // Preserve the original lazy-save marker only for the same configuration;
@@ -6153,7 +6197,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const serviceSnapshots = serviceResolution.snapshots;
     // 报价只做可用性检查，不写预留。权威预留发生在下单事务中；否则客户只是试算
     // 就会长期占住操作员、安装工位或指定配送时段。
-    await this.serviceCapacities?.assertAvailableForQuote(tenantId, serviceSnapshots);
+    // 原正式报价包含到期容量维护；试算只比较价格，不能借只读入口释放既有预留。
+    if (mode === "commit") await this.serviceCapacities?.assertAvailableForQuote(tenantId, serviceSnapshots);
     const pendingServiceLines: RentalQuoteSnapshotV1["chargeLines"] = serviceSnapshots.map((snapshot) => ({
       code: `service:${snapshot.serviceCode}`,
       name: snapshot.serviceName,
@@ -6716,10 +6761,11 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     };
     // Review P1-5：判定结果必须写进报价并返回，否则「需转接环」这类风险虽被发现，
     // 用户却无从知道要确认什么，下单侧也只能凭空重构一遍判断。
-    quote.capabilityDecisions = await this.runQuoteHook(tenantId, context, quote);
+    if (mode === "commit") quote.capabilityDecisions = await this.runQuoteHook(tenantId, context, quote);
     const expectedBinding = categoryVersionId && categoryAdoptionRevision !== undefined
       ? { categoryVersionId, adoptionRevision: categoryAdoptionRevision } : undefined;
     if (!isDeepStrictEqual(sourceSnapshot, currentQuoteSource(tenantId))) throw new ConflictException('报价期间创建身份或空间已变化');
+    if (mode === "preview") return quote;
     let persisted = quote;
     if (original) {
       if (!this.factStore.saveQuoteForOriginalOperation) throw new ServiceUnavailableException('报价原操作持久化不可用');

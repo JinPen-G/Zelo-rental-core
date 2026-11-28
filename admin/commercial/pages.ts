@@ -54,6 +54,11 @@ export const RENTAL_COMMERCIAL_PAGES = {
     title: { default: "旧优惠方案", translations: { "en-US": "Legacy discounts" } },
     permissions: rentalPagePermissions("legacy-discounts"),
   },
+  marketingCalendar: {
+    id: "marketing-calendar", path: "/discounts/calendar", parent: "discounts",
+    title: { default: "营销活动日历", translations: { "en-US": "Marketing schedule" } },
+    permissions: rentalPagePermissions("marketing-calendar"),
+  },
   coupons: {
     id: "coupons",
     path: "/coupons",

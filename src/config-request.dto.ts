@@ -674,6 +674,13 @@ export class ReadRentalMarketingOperationDto {
   @IsIn(["save_draft", "publish", "pause", "end"]) action!: "save_draft" | "publish" | "pause" | "end";
 }
 
+export class RentalMarketingScheduleQueryDto {
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/u) from!: string;
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/u) to!: string;
+  @IsOptional() @IsIn(["draft", "enabled", "paused", "ended"]) status?: "draft" | "enabled" | "paused" | "ended";
+  @IsOptional() @IsIn(DAY_TYPES) dayType?: RentalDayType;
+}
+
 export class SaveRentalDiscountPlanDto implements SaveRentalDiscountPlanRequest {
   @IsOptional()
   @IsString()

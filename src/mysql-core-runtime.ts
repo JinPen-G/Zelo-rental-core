@@ -548,7 +548,7 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
    * 先读取当前持久配置，缺档案或经营设置时拒绝，避免业务访问重新初始化空间。
    * 明确的内存/演示宿主才沿原路径补落配置与样本；同一空间的并发读取共用一次初始化。
    */
-  private async factContext(tenantId: string) {
+  private async factContext(tenantId: string, readOnly = false) {
     const committed = await this.refreshCommittedWorkspace(tenantId);
     if (committed && !committed.effectiveProfile) throw new ConflictException("经营空间档案尚未持久化，不能通过业务访问重新初始化");
     if (committed && !committed.businessSettings) throw new ConflictException("经营设置尚未持久化，不能通过业务访问重新初始化空间");
@@ -562,6 +562,7 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
         inspectionTemplates: committed.inspectionTemplates, sampleAssets: [], sampleStockBalances: [],
         sampleFactsEnsured: true, configPersisted: true } satisfies TenantRentalState);
     }
+    if (readOnly) throw new ServiceUnavailableException("只读试算缺少已持久化的完整空间配置");
     const workspaceId = this.workspaceOf(tenantId);
     const state = this.state(tenantId);
     let initialization = this.initializationByWorkspace.get(workspaceId);
@@ -5705,8 +5706,18 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
    * 定价分组不会各自看到同一份库存后同时承诺。报价快照保留 pricingGroupId，订单
    * 再把当时成员范围固化，后续修改分组不影响已成立订单。
    */
+  /** 只读试算只能走已配置的权威读取器，不能落入旧示例事实/配置初始化。 */
+  async resolvePricingGroupQuotePreview(tenantId: string, input: RentalQuoteRequest): Promise<RentalQuoteRequest> {
+    if (!this.configStore.loadWorkspaceSnapshot) throw new ServiceUnavailableException("营销试算缺少持久配置读取器");
+    return this.resolvePricingGroupQuoteInput(tenantId, structuredClone(input), true);
+  }
+
   async resolvePricingGroupQuoteRequest(tenantId: string, input: RentalQuoteRequest): Promise<RentalQuoteRequest> {
-    const state = await this.factContext(tenantId);
+    return this.resolvePricingGroupQuoteInput(tenantId, input, false);
+  }
+
+  private async resolvePricingGroupQuoteInput(tenantId: string, input: RentalQuoteRequest, readOnly: boolean): Promise<RentalQuoteRequest> {
+    const state = await this.factContext(tenantId, readOnly);
     const snapshot = await this.loadInventorySnapshot(tenantId);
     type ResolvedLine = RentalQuoteRequest["lines"][number] & { itemGroupId: string };
     const resolved: Array<ResolvedLine | undefined> = new Array(input.lines.length);

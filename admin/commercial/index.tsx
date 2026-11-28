@@ -5,6 +5,7 @@ import { PricingGroupPage } from "./PricingGroupPage";
 import { RentalCommercialPage } from "./RentalCommercialPage";
 import { CouponPage } from "./CouponPage";
 import { RentalMarketingPage } from "./RentalMarketingPage";
+import { MarketingCalendarPage } from "./MarketingCalendarPage";
 import type { RentalCommercialPageContext } from "./page-context";
 import { RENTAL_COMMERCIAL_CORE_ID, RENTAL_COMMERCIAL_PAGES } from "./pages";
 
@@ -29,6 +30,7 @@ export function createRentalCommercialAdminContribution(
     <RentalCommercialPage {...usePageContext()} section="discounts" />
   );
   const Discounts: CoreRouteComponent = () => <RentalMarketingPage {...usePageContext()} />;
+  const Calendar: CoreRouteComponent = () => <MarketingCalendarPage {...usePageContext()} />;
   const Coupons: CoreRouteComponent = () => <CouponPage {...usePageContext()} />;
   const Services: CoreRouteComponent = () => (
     <RentalCommercialPage {...usePageContext()} section="services" />
@@ -44,6 +46,7 @@ export function createRentalCommercialAdminContribution(
       { ...RENTAL_COMMERCIAL_PAGES.discounts, component: Discounts },
       { ...RENTAL_COMMERCIAL_PAGES.marketingPlanDetail, component: Discounts },
       { ...RENTAL_COMMERCIAL_PAGES.legacyDiscounts, component: LegacyDiscounts },
+      { ...RENTAL_COMMERCIAL_PAGES.marketingCalendar, component: Calendar },
       { ...RENTAL_COMMERCIAL_PAGES.coupons, component: Coupons },
       { ...RENTAL_COMMERCIAL_PAGES.services, component: Services },
     ],

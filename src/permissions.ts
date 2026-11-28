@@ -138,6 +138,8 @@ export const RENTAL_PAGE_ACCESS = {
   "marketing-plan-detail": page("marketing-plan-detail", "营销方案详情", "workspace", ["rental-os:marketing:view", "rental-os:marketing:edit",
     "rental-os:marketing:publish", "rental-os:marketing:manage", "rental-os:price:manage"]),
   "legacy-discounts": workspace("rental-os:price:manage", "旧优惠方案"),
+  "marketing-calendar": page("marketing-calendar", "营销活动日历", "workspace", ["rental-os:marketing:view", "rental-os:marketing:edit",
+    "rental-os:marketing:publish", "rental-os:marketing:manage", "rental-os:price:manage"]),
   coupons: workspace("rental-os:price:manage", "优惠券"),
   services: page("services", "增值服务页面", "workspace", ["rental-os:price:manage"]),
   governance: { ...page("governance", "品类与业务规则页面", "workspace", [

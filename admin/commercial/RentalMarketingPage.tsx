@@ -15,6 +15,7 @@ import { RentalCommercialPageProvider, useRentalCommercialWorkspaceAccess, type 
 import { MarketingPlanEditor, marketingActionLabels, marketingStatusLabels, marketingCustomerLabels, marketingDayLabels, type MarketingDraftValues } from "./MarketingPlanEditor";
 import { useMarketingOperation, type MarketingAction } from "./marketing-operation";
 import { useOrderEditor } from "../orders/useOrderEditor";
+import { MarketingQuotePreview } from "./MarketingQuotePreview";
 
 const editPermissions = [{ resource: "marketing", action: "edit" }, { resource: "marketing", action: "manage" }, { resource: "price", action: "manage" }];
 const publishPermissions = [{ resource: "marketing", action: "publish" }];
@@ -168,6 +169,7 @@ function MarketingWorkspace() {
     await refresh();
   });
   const pageActions: CoreAdminPageAction<Record<string, unknown>>[] = [
+    { id: "marketing-calendar", kind: "navigate", label: { default: "活动日历" }, slot: "tools", to: { coreId: "rental", pageId: "marketing-calendar" } },
     ...(canEdit ? [{ id: "edit-marketing", kind: "open" as const, label: { default: selected ? "编辑草稿" : "新建营销方案" }, emphasis: "primary" as const,
       disabled: operation.blocked || plans.isError || !plans.data || Boolean(planId && !selected) || selected?.status === "ended",
       open: () => openEditor(selected) }] : []),
@@ -190,6 +192,7 @@ function MarketingWorkspace() {
     {planId ? selected ? <Tabs items={[
       { key: "published", label: t("已发布版本"), children: selected.published ? <MarketingVersion version={selected.published} /> : <Alert type="info" title={t("尚未发布，草稿不参与报价")} /> },
       ...(selected.draft ? [{ key: "draft", label: t("当前草稿"), children: <MarketingVersion version={selected.draft} /> }] : []),
+      { key: "preview", label: t("金额试算"), children: <MarketingQuotePreview plans={plans.data ?? []} planId={planId} /> },
       { key: "history", label: t("版本与操作记录"), children: <QueryState loading={history.isPending} error={history.error} onRetry={refresh}>
         {!history.isError && <Table rowKey="id" dataSource={history.data?.events ?? []} pagination={false} columns={[
           { title: t("修订"), dataIndex: "revision" }, { title: t("动作"), dataIndex: "action", render: (value: MarketingAction) => t(value === "save_draft" ? "保存草稿" : actionLabels[value]) },

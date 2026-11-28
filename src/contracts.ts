@@ -3555,6 +3555,46 @@ export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
 
 export type RentalMarketingPlanStatus = "draft" | "enabled" | "paused" | "ended";
 
+export interface RentalMarketingScheduleQuery {
+  /** 经营空间营业日期，包含首尾日期，最多93天。 */
+  from: string;
+  to: string;
+  status?: RentalMarketingPlanStatus;
+  dayType?: RentalDayType;
+}
+export interface RentalMarketingSchedule {
+  tenantId: string;
+  workspaceId: string;
+  timeZone: string;
+  from: string;
+  to: string;
+  rows: Array<{
+    id: string;
+    date: string;
+    dayType: RentalDayType;
+    planId: string;
+    planName: string;
+    planCode: string;
+    planStatus: RentalMarketingPlanStatus;
+    planVersion: string;
+    revision: number;
+    ruleId: string;
+    ruleName: string;
+    ruleVersion: string;
+    ruleStatus: "enabled" | "disabled";
+    /** 当前正式模型以发布状态控制活动，effectiveFrom/effectiveTo约束用租开始时点。 */
+    versionKind: "draft" | "published";
+    publishedAt?: string;
+    orderTimeWindow: "not_configured";
+    rentalStartFrom: string;
+    rentalStartTo?: string;
+    visibleFrom: string;
+    visibleTo: string;
+    /** 仅该营业日的条件观察；不能代替整个租期及客群/商品的正式营销命中。 */
+    dayCondition: "allowed" | "excluded";
+  }>;
+}
+
 /** 草稿与对客生效正文分开保存；编辑草稿不会改变 published 的原版本。 */
 export interface RentalMarketingPlan {
   id: string;
@@ -4641,6 +4681,30 @@ export interface SendRentalNotificationRequest {
   templateId: string;
   recipient: string;
   variables: Record<string, unknown>;
+}
+
+/** 同源金额试算结果，不是报价凭据，不能用于下单或资源占用。 */
+export interface RentalMarketingQuotePreview {
+  kind: "rental_marketing_quote_preview";
+  tenantId: string;
+  workspaceId: string;
+  calculatedAt: string;
+  pricingPolicy: "legacy" | "single_rule_v1";
+  policyRevision?: number;
+  timeZone: string;
+  currency: RentalCurrency;
+  rentalAmount: number;
+  discountAmount: number;
+  couponAmount: number;
+  serviceAmount: number;
+  fulfillmentAmount: number;
+  payableAmount: number;
+  marketing?: NonNullable<RentalQuoteSnapshotV1["pricingContext"]>["marketing"];
+  evaluations: Array<RentalQuoteDiscountEvaluation | RentalMarketingQuoteDiscountEvaluation>;
+  couponEvaluation?: RentalQuoteSnapshotV1["couponEvaluation"];
+  chargeLines: RentalQuoteSnapshotV1["chargeLines"];
+  /** 不执行能力准入Hook、服务容量维护或任何资源预留；正式报价/下单仍复核。 */
+  admission: "not_checked";
 }
 
 export interface RentalQuoteRequest {

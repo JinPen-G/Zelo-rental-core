@@ -34,6 +34,7 @@ import {
   ChangeRentalMarketingPlanStatusDto,
   ReadRentalMarketingOperationDto,
   ChangeRentalMarketingPricingPolicyDto,
+  RentalMarketingScheduleQueryDto,
   SaveRentalNotificationTemplateDto,
   SaveRentalPricingPlanDto,
   SaveRentalRuleVersionDto,
@@ -163,6 +164,16 @@ export class RentalBusinessController {
   @Get("discount-plans") async discountPlans(@Req() req: AuthenticatedRequest) { return this.business.listDiscountPlans(req.user.tenantId, (await this.context(req.user.tenantId))); }
   @Get("marketing-plans") async marketingPlans(@Req() req: AuthenticatedRequest) {
     return this.business.listMarketingPlans(req.user.tenantId, await this.context(req.user.tenantId));
+  }
+  @Post("marketing-plans/preview") @HttpCode(200)
+  async previewMarketingQuote(@Req() req: AuthenticatedRequest, @Body() body: RentalQuoteDto) {
+    // 先拒绝缺少持久读口的旧宿主，不能让普通上下文的兼容初始化先于只读准入。
+    const resolved = await this.core.resolvePricingGroupQuotePreview(req.user.tenantId, body);
+    const context = await this.context(req.user.tenantId);
+    return this.business.previewMarketingQuote(req.user.tenantId, context, resolved);
+  }
+  @Get("marketing-plans/schedule") async marketingSchedule(@Req() req: AuthenticatedRequest, @Query() query: RentalMarketingScheduleQueryDto) {
+    return this.business.marketingSchedule(req.user.tenantId, await this.context(req.user.tenantId), query);
   }
   @Get("marketing-pricing-policy") marketingPricingPolicy(@Req() req: AuthenticatedRequest) {
     return this.business.readMarketingPricingPolicy(req.user.tenantId);

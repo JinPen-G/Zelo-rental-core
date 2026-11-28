@@ -6,7 +6,11 @@
 
 客户端提供营销草稿/发布/历史、原操作收据，以及`marketingPricingPolicy`、`changeMarketingPricingPolicy`和`marketingPricingPolicyOperation`。策略切换需当前发布权、原修订、稳定操作号及原因；未知应答只核原收据。服务端新报价已按空间策略执行基础价→单规则营销→优惠券，原未切换空间继续旧模式，实际宿主验证单独核定。配置表及策略表必须按[数据说明](../../prisma/README.md#迁移与历史)就绪。
 
-[营销页面](RentalMarketingPage.tsx)复用CorePage、公共表格/筛选/详情、UIArc抽屉及原Form驱动；列表、草稿、发布/暂停/结束与历史分开。读取接受营销读取/编辑/发布、原营销或价格管理权限，编辑沿原营销编辑权，发布和策略切换另需`marketing/publish`；服务端仍是唯一授权。旧`/discounts/legacy`保留原`price/manage`页面，默认关闭演示数据。活动日历和同源模拟在后续切片接入，当前页面尚不具备这两项能力。
+[营销页面](RentalMarketingPage.tsx)复用CorePage、公共表格/筛选/详情、UIArc抽屉及原Form驱动；列表、草稿、发布/暂停/结束与历史分开。读取接受营销读取/编辑/发布、原营销或价格管理权限，编辑沿原营销编辑权，发布和策略切换另需`marketing/publish`；服务端仍是唯一授权。旧`/discounts/legacy`保留原`price/manage`页面，默认关闭演示数据。
+
+[金额试算](MarketingQuotePreview.tsx)在方案详情中消费`POST /api/rental/v1/marketing-plans/preview`，输入商品、完整租期、原受权客户/企业员工身份、履约地点及可选优惠券，展示原候选条件、计算基数、公式与金额。服务端共用正式报价计算，但不保存报价、预留资源、初始化配置、维护容量或执行能力准入Hook；返回`rental_marketing_quote_preview`及`admission=not_checked`，没有可用于下单的报价ID。当前营销读取权与原报价权须同时满足，客户和地点继续经过原Guard。正式报价仍复核库存、容量、能力和配置。
+
+[活动日历](MarketingCalendarPage.tsx)使用现有公共DatePicker、Table、筛选及详情组件，按营业日期范围和时间分组浏览真实规则区间；不依赖新的日历库或公共组件。`GET /api/rental/v1/marketing-plans/schedule`接受`from/to`营业日期、可选`status/dayType`，最多93天/10,000条，按原营业时区处理跨日和夏令时。服务端投影发布状态、原版本、用租开始范围和当日日类型条件，页面不推算整段租期是否命中。当前模型没有独立下单时间窗，页面明确显示未配置；已发布正文与未发布草稿分开标识。区间跳回原方案详情，时间修改仍走原编辑与发布。
 
 [原操作恢复](marketing-operation.ts)要求宿主提供已验证的`operationScope={tenantId,workspaceId,actorUserId}`。标准Rental宿主已接；其他宿主缺少该身份、持久存储或Web Locks时禁止配置写入。浏览器只保存原操作号、动作、对象及预期修订，不保存草稿正文或凭据。成功原收据清除引用；应答未知保留引用并禁止换键，用户可在当前读取权限下核对。服务端仅对原事务回调确定回滚的业务拒绝标记`rental_marketing_write_rejected`及原操作号，页面才能保留输入并解除该次意图；普通409、提交失败和回放拒绝均不作此判断。
 
@@ -23,6 +27,7 @@
 | 价格版本列表 | /pricing/versions | /rental/pricing/versions |
 | 价格版本详情 | /pricing/versions/:sequence | /rental/pricing/versions/:sequence |
 | 营销方案 | /discounts | /rental/discounts |
+| 活动日历 | /discounts/calendar | — |
 | 营销方案详情 | /discounts/plans/:planId | 无旧路径 |
 | 旧优惠方案 | /discounts/legacy | 无旧路径 |
 | 优惠券 | /coupons | /rental/coupons |

@@ -129,7 +129,7 @@ export function MarketingPlanEditor({ open, plan, references, disabled, onSave, 
     extra={<SaveButton label={t("保存草稿")} form={form} disabled={disabled} pending={editor.busy} onSave={editor.submit} />}>
     <UnsavedChangesGuard dirty={editor.dirty} />
     <Form form={form} name="rental-marketing-draft" layout="vertical" initialValues={initial} disabled={disabled || editor.busy} {...editor.formProps}>
-      <FormSection title={t("方案公共条件")} description={t("规则在公共范围内细分；只选择营销后整单租金最低的一条。")}> 
+      <FormSection title={t("方案公共条件")} description={t("规则在公共范围内细分；只选择营销后整单租金最低的一条。")}>
         <Form.Item name="pricingPolicy" hidden><Input /></Form.Item><Form.Item name="appliesTo" hidden><Input /></Form.Item>
         <Row gutter={16}>
           <Col xs={24} md={12}><Form.Item name="code" label={t("方案编码")} rules={[{ required: true, whitespace: true, max: 191 }]}><Input disabled={Boolean(plan) || disabled || editor.busy} /></Form.Item></Col>
