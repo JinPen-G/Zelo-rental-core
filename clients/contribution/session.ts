@@ -43,6 +43,21 @@ export function createRentalContributionSession(audience: ClientAudience, option
     life.assertCurrent();
     if (attempt !== epoch) throw new ClientError("stale");
   }
+  function rejectCurrentUnauthorized(error: unknown, credentials: RentalClientCredentials | undefined,
+    attempt: number, life: ClientLifetime, scope?: ClientScope) {
+    if (!(error instanceof RentalClientHttpError) || error.status !== 401) return;
+    assertAttempt(attempt, life);
+    if (scope) assertOwner(scope, life);
+    const current = capture();
+    if (current?.accessToken !== credentials?.accessToken || current?.refreshToken !== credentials?.refreshToken)
+      throw new ClientError("stale");
+    // 只注销本次仍持有的原身份。旧请求、已取消页面或另一令牌的 401 均不能清新会话。
+    // 不操作原业务引用，不刷新令牌或重放请求；通知同步清除各端旧展示。
+    ++epoch;
+    try { options.credentials.clear(); }
+    finally { publish({ status: "anonymous" }); }
+    throw new ClientError("anonymous");
+  }
   async function context(credentials: RentalClientCredentials, life: ClientLifetime) {
     return options.transport.request<RentalClientContributionContext>({ path: `${prefix}/auth/contribution-context`,
       method: "GET", authorization: `Bearer ${credentials.accessToken}`, lifetime: life });
@@ -76,6 +91,7 @@ export function createRentalContributionSession(audience: ClientAudience, option
       const value = projection(observed, location); assertAttempt(attempt, life);
       options.credentials.write(candidate); publish(value);
     } catch (error) {
+      rejectCurrentUnauthorized(error, previous, attempt, life);
       assertAttempt(attempt, life);
       options.credentials.clear(); publish({ status: "unavailable" });
       throw error instanceof ClientError ? error : new ClientError("unavailable");
@@ -99,7 +115,10 @@ export function createRentalContributionSession(audience: ClientAudience, option
       assertAttempt(attempt, life); assertOwner(scope, life);
       if (capture()?.accessToken !== credentials.accessToken) throw new ClientError("stale");
       return result;
-    } catch (error) { assertAttempt(attempt, life); assertOwner(scope, life); throw error; }
+    } catch (error) {
+      rejectCurrentUnauthorized(error, credentials, attempt, life, scope);
+      assertAttempt(attempt, life); assertOwner(scope, life); throw error;
+    }
   }
   const session: ClientSessionPort = {
     getSnapshot: () => state,
@@ -163,6 +182,7 @@ export function createRentalContributionSession(audience: ClientAudience, option
       || !["page", "action", "original_receipt"].includes(input.purpose)
       || input.scope.principal.audience !== audience) return { status: "denied" };
     assertOwner(input.scope, life);
+    const credentialsAtStart = capture(), attempt = epoch;
     try {
       const observed = await request<RentalClientContributionContext>("/auth/contribution-context", input.scope, life);
       const credentials = capture();
@@ -183,9 +203,11 @@ export function createRentalContributionSession(audience: ClientAudience, option
       if (input.purpose !== "original_receipt" && result?.allowed !== true) return { status: "unavailable" };
       return { status: "allowed" };
     } catch (error) {
+      // request 已发布注销时，不能再用旧 scope 检查把它吞成普通权限拒绝。
+      if (error instanceof ClientError && ["stale", "anonymous"].includes(error.code)) throw error;
+      rejectCurrentUnauthorized(error, credentialsAtStart, attempt, life, input.scope);
       assertOwner(input.scope, life);
-      if (error instanceof ClientError && error.code === "stale") throw error;
-      if (error instanceof RentalClientHttpError && [401, 403, 404].includes(error.status)) return { status: "denied" };
+      if (error instanceof RentalClientHttpError && [403, 404].includes(error.status)) return { status: "denied" };
       return { status: "unavailable" };
     }
   } };
