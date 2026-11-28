@@ -32,7 +32,7 @@ node scripts/package-rental-host.cjs --development --repo <Zelo目录> --reposit
 
 公共运行身份沿包管理原配置 `CORE_PACKAGE_STORAGE_ROOT` 和 `CORE_PLATFORM_PACKAGE_REFERENCE` 读取受管归档索引。索引须指向同一完整锁的底座归档；底座六包入口、原 `rental-host.context.json`、准备回执与完整 v2 部署锁必须相符。缺归档或运行依据时标记 `runtime_identity_unverified`，不能把锁声明当实际运行结果。普通无 AI 与 legacy 宿主不挂载此路由，v1 包管理继续拒绝完整 v2 组合。
 
-本候选使用包含完整 v2 读口与 SDK 同源映射修复的固定 Zelo `6d46f4943f7a0538f04e7ee2d908827d8345a666`。开发组合不具备正式发版或服务器迁移许可。
+本候选使用包含完整 v2 读口与 SDK 同源映射修复的固定 Zelo `5a6bbbf7593414a122a060018cb1abd87f1c20bf`。开发组合不具备正式发版或服务器迁移许可。
 
 ## 显式选装 MCP（仅新装开发）
 
