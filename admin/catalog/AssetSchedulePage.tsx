@@ -256,7 +256,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           {entry.kind === "asset_hold" && <Alert type="info" showIcon title={t("当前库存限制的起止区间未登记；计划结束不能证明已恢复可租。")}/>}
           {entry.kind === "work_order" && <p className={styles.help}>{t("工单条带表示处理过程，实际库存限制须结合当前资产状态及原验收结果。")}</p>}
           {entry.bufferBasis === "legacy_missing" && <p className={styles.help}>{t("历史规则缺失，缓冲沿原库存兼容口径。")}</p>}
-          {entry.source === "order" ? renderOrderActions(entry, selected.asset) : selectableSource(entry) && <Button onClick={() => openSource(entry)}>{t("查看工单")}</Button>}
+          {entry.source === "order" ? renderOrderActions(entry, selected.asset) : selectableSource(entry) && <Button onClick={() => openSource(entry)}>{t(entry.source === "asset_control" ? "管控详情" : "查看工单")}</Button>}
           {entry.source === "restricted" && <p className={styles.help}>{t("来源读取受限")}</p>}
         </div>)}
       </div>}

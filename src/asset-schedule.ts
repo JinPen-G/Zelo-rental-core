@@ -27,6 +27,7 @@ export interface RentalAssetScheduleEntry {
   /** 仅在原订单可读时提供同一快照的事实，供原页面定位与核对准备依据；不代表动作已获准执行。 */
   order?: { status: RentalCoreOrderStatus; fulfillmentMode: RentalFulfillmentMode; effectiveEndAt?: string };
   status?: string;
+  /** 原工单及其管控条带仅在同一资产的原工单可读时提供负责人。 */
   assigneeName?: string;
   workOrderType?: RentalWorkOrderType;
   /** 历史规则缺失时仅沿原库存的零缓冲兼容口径，不填充当前规则。 */

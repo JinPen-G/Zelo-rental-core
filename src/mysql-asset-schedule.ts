@@ -80,12 +80,19 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleIds = visible.map(row => row.id);
   const controls = await readAssetControls(client, tenantId, workspaceId, assets.map(row => row.id));
+  const visibleControls = controls.filter(control => visibleIds.includes(control.assetId) && control.status !== "cancelled"
+    && Date.parse(control.startAt) < to && (!control.endedAt || Date.parse(control.endedAt) > from));
+  const controlWorkOrderIds = [...new Set(visibleControls.flatMap(control => control.workOrderId ? [control.workOrderId] : []))];
   const orderIds = [...new Set(reservations.map(row => row.orderId))];
   const [orders, workOrders, allocations] = await Promise.all([
     scope.readOrders && orderIds.length ? client.rentalOrder.findMany({ where: { AND: [{ tenantId, workspaceId, id: { in: orderIds } }, scope.orders] },
       select: { id: true, status: true, fulfillmentMode: true, endAt: true, effectiveEndAt: true }, take: FACT_LIMIT + 1 }) : [],
     scope.readWorkOrders && visibleIds.length ? client.rentalWorkOrder.findMany({ where: { AND: [{ tenantId, workspaceId, assetId: { in: visibleIds },
-      status: { not: "cancelled" }, createdAt: { lt: new Date(to) }, OR: [{ status: { not: "completed" } }, { reviewedAt: null }, { reviewedAt: { gt: new Date(from) } }] }, scope.workOrders] },
+      status: { not: "cancelled" }, OR: [
+        { createdAt: { lt: new Date(to) }, OR: [{ status: { not: "completed" } }, { reviewedAt: null }, { reviewedAt: { gt: new Date(from) } }] },
+        // 验收不自动解除管控。仍显示的管控可读取原工单负责人，但继续受同一工单权限/对象范围约束。
+        ...(controlWorkOrderIds.length ? [{ id: { in: controlWorkOrderIds } }] : [])
+      ] }, scope.workOrders] },
       select: { id: true, assetId: true, workNo: true, type: true, status: true, assigneeName: true, createdAt: true, reviewedAt: true },
       orderBy: { id: "asc" }, take: FACT_LIMIT + 1 }) : [],
     orderIds.length ? client.rentalAllocation.findMany({ where: { order: { tenantId, workspaceId, id: { in: orderIds } },
@@ -130,10 +137,12 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
       if (fact.entry.endAt && Date.parse(fact.period.endAt) > Date.parse(fact.entry.endAt)) entries.push({ ...fact.entry,
         id: `${fact.entry.id}-turnaround`, kind: "turnaround", startAt: fact.entry.endAt, endAt: fact.period.endAt, overdue: false });
     }
-    for (const control of controls.filter(control => control.assetId === asset.id && control.status !== "cancelled")) {
+    for (const control of visibleControls.filter(control => control.assetId === asset.id)) {
+      const workOrder = workOrders.find(work => work.id === control.workOrderId && work.assetId === asset.id);
       entries.push({ id: `control-${control.id}`, kind: "manual_control", source: "asset_control", sourceId: control.id,
         sourceNo: control.policy.name, startAt: control.startAt, endAt: control.endedAt ?? null, plannedEndAt: control.plannedEndAt,
-        status: control.status, overdue: control.status === "active" && Boolean(control.plannedEndAt && Date.parse(control.plannedEndAt) < now.getTime()) });
+        status: control.status, assigneeName: workOrder?.assigneeName ?? undefined,
+        overdue: control.status === "active" && Boolean(control.plannedEndAt && Date.parse(control.plannedEndAt) < now.getTime()) });
     }
     for (const work of workOrders.filter(work => work.assetId === asset.id && !controls.some(control => control.workOrderId === work.id))) {
       const workOrderType = RENTAL_WORK_ORDER_TYPES.find(type => type === work.type);
