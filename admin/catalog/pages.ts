@@ -1,6 +1,6 @@
 /** 商品目录和资产工作区共用原导航身份、品类术语与权限声明。 */
 import { rentalLegacyPermission, rentalPagePermissions } from "@rental-os/rental-core/permissions";
-import type { CorePageDescriptor } from "@rental-os/core-contracts";
+import type { CorePageDescriptor, CorePageLocation } from "@rental-os/core-contracts";
 import { RENTAL_WORK_ORDER_PAGES } from "../work-orders/pages";
 export { resolveTenantNavigationLabels, applyTenantNavigationLabels } from "./navigation-terminology";
 export const RENTAL_CATALOG_CORE_ID = "rental";
@@ -36,4 +36,17 @@ export const RENTAL_CATALOG_PAGES = {
     permissions: rentalPagePermissions("asset-schedule"),
     menu: { group: RENTAL_WORK_ORDER_PAGES.workOrders.menu.group, order: RENTAL_WORK_ORDER_PAGES.workOrders.menu.order - 5 },
   },
+  assetDetail: {
+    id: "asset-detail",
+    path: "/assets/:assetId",
+    title: { default: "资产详情", translations: { "en-US": "Asset details" } },
+    parent: "assets",
+    permissions: rentalPagePermissions("asset-detail"),
+  },
 } satisfies Record<string, CorePageDescriptor>;
+
+export function rentalAssetLocation(assetId?: string): CorePageLocation {
+  return assetId
+    ? { coreId: RENTAL_CATALOG_CORE_ID, pageId: RENTAL_CATALOG_PAGES.assetDetail.id, params: { assetId } }
+    : { coreId: RENTAL_CATALOG_CORE_ID, pageId: RENTAL_CATALOG_PAGES.assets.id };
+}

@@ -8,7 +8,7 @@ import {
   useRentalCatalogPageContext,
   type RentalCatalogPageContext,
 } from "./page-context";
-import { RENTAL_CATALOG_CORE_ID, RENTAL_CATALOG_PAGES } from "./pages";
+import { rentalAssetLocation, RENTAL_CATALOG_CORE_ID, RENTAL_CATALOG_PAGES } from "./pages";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import { useOrderEditor } from "../orders/useOrderEditor";
 import { DataTableText, ListSection, SaveButton } from "@rental-os/platform-admin/ui";
@@ -196,7 +196,8 @@ function AssetWorkspace() {
     if (!isCurrentScope() || assets.isError || !assets.data?.some(row => row.id === asset.id) || !canOpenRelated(target)) return;
     // Only the registered route is navigable. The asset key is a locator;
     // the destination still reads its own currently authorized facts.
-    host.navigate(`${resolveCorePageLocation(host.pages, target)}?${new URLSearchParams({ assetId: asset.id })}`);
+    const path = resolveCorePageLocation(host.pages, target);
+    host.navigate(target.pageId === RENTAL_CATALOG_PAGES.assetDetail.id ? path : `${path}?${new URLSearchParams({ assetId: asset.id })}`);
   };
   const statusHistory = useQuery({
     queryKey: ["rental-core", "asset-status-history", statusHistoryAsset?.id, scope],
@@ -506,6 +507,7 @@ function AssetWorkspace() {
                 canView,
                 edit: openAssetEditor,
                 history: setStatusHistoryAsset,
+                detail: canOpenRelated(rentalAssetLocation("asset")) ? row => openRelated(row, rentalAssetLocation(row.id)) : undefined,
                 schedule: canOpenRelated(scheduleTarget) ? row => openRelated(row, scheduleTarget) : undefined,
                 maintenance: canOpenRelated(maintenanceTarget) ? row => openRelated(row, maintenanceTarget) : undefined,
                 fields: assetFields,
@@ -607,11 +609,11 @@ function AssetWorkspace() {
                               }
                             : undefined
                         }
-                        details={() => setStatusHistoryAsset(row)}
-                        detailLabel={t("状态历史")}
+                        details={() => canOpenRelated(rentalAssetLocation(row.id)) ? openRelated(row, rentalAssetLocation(row.id)) : setStatusHistoryAsset(row)}
+                        detailLabel={t(canOpenRelated(rentalAssetLocation(row.id)) ? "查看详情" : "状态历史")}
                         menuLabel={`${row.assetNo} · ${t("更多操作")}`}
                         actions={[
-                          ...(canManage
+                          ...(canManage || canOpenRelated(rentalAssetLocation(row.id))
                             ? [
                                 {
                                   id: "history",

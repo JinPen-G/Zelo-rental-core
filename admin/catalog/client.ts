@@ -63,6 +63,7 @@ export function createRentalCatalogApi(
     stockBalances: (options?: ReadOptions) =>
       request<RentalStockBalance[]>("/rental/v1/stock-balances", options),
     stockDispositions: workOrders.stockDispositions,
+    workOrders: workOrders.workOrders,
     stockLedger: (
       params?: {
         itemGroupId?: string;

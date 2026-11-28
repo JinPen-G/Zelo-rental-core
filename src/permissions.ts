@@ -127,6 +127,7 @@ export const RENTAL_PAGE_ACCESS = {
   "item-groups": workspace("rental-core:catalog:view", "商品目录"),
   assets: workspace("rental-core:asset:view", "资产与库存"),
   "asset-schedule": workspace("rental-core:asset:view", "资产排班"),
+  "asset-detail": workspace("rental-core:asset:view", "资产详情"),
   "pricing-groups": workspace("rental-os:price:manage", "定价分组"),
   pricing: workspace("rental-os:price:manage", "价格管理"),
   "pricing-versions": workspace("rental-os:price:manage", "价格版本"),

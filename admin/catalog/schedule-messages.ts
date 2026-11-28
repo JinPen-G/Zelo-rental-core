@@ -1,5 +1,14 @@
 /** 排班文案并入原 LocaleProvider，不创建独立语言状态。 */
 export const rentalScheduleMessages = {
+  "资产详情": "Asset details", "当前资产页面已失效": "This asset page is no longer current",
+  "资产读取受限": "Asset access is restricted", "未找到当前范围内的资产": "No asset was found in the current scope",
+  "该资产当前存在库存限制": "This asset currently has an inventory restriction",
+  "工单完成或计划时间到达不等于恢复可租，请以原验收和库存结果为准。": "A completed work order or planned end does not confirm rental availability. Check the original review and inventory result.",
+  "养护记录读取受限": "Maintenance history access is restricted",
+  "暂无已登记的状态历史": "No recorded status history",
+  "状态变化": "Status change",
+  "显示最近200条原状态记录；记录缺失不代表过去没有限制。": "Showing the latest 200 original status records. Missing records do not establish that the asset had no restrictions.",
+  "当前范围内没有该资产的养护工单": "No work orders for this asset are visible in the current scope",
   "资产排班": "Asset schedule", "车辆或资产编号": "Vehicle or asset number", "资产排班时间轴": "Asset schedule timeline",
   "已分配预约": "Assigned reservation", "租用中": "In use", "交付准备": "Pickup preparation", "归还周转": "Return turnaround",
   "当前库存限制": "Current inventory hold", "时间未定": "Time not recorded", "结束未定": "End not confirmed", "逾期未还": "Overdue return",

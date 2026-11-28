@@ -30,7 +30,7 @@ import { useServerFormSync } from "@rental-os/platform-admin/forms";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import type { RentalWorkOrderPageContext } from "./page-context";
 import { rentalWorkOrderLocation } from "./pages";
-import { RENTAL_CATALOG_PAGES } from "../catalog/pages";
+import { rentalAssetLocation, RENTAL_CATALOG_PAGES } from "../catalog/pages";
 import { UNASSIGNED_WORK_ORDER } from "./workOrderBoardPolicy";
 import { createManualWorkOrderRecovery } from "./manual-creation";
 import styles from "./WorkOrderBoard.module.css";
@@ -141,6 +141,12 @@ export function MaintenanceWorkOrdersPage({
   const scheduleTarget = { coreId: "rental", pageId: RENTAL_CATALOG_PAGES.schedule.id };
   const schedulePage = host.pages.get(corePageKey(scheduleTarget.coreId, scheduleTarget.pageId));
   const canViewSchedule = Boolean(schedulePage && host.canAccess("rental", schedulePage.definition.permissions));
+  const assetDetailPage = host.pages.get(corePageKey("rental", RENTAL_CATALOG_PAGES.assetDetail.id));
+  const canViewAssetDetail = Boolean(assetDetailPage && host.canAccess("rental", assetDetailPage.definition.permissions));
+  function openAssetDetail(assetId: string) {
+    if (currentScopeKey() !== boardScope || !assetDetailPage || !host.canAccess("rental", assetDetailPage.definition.permissions)) return;
+    host.navigate(resolveCorePageLocation(host.pages, rentalAssetLocation(assetId)));
+  }
   function openAssetSchedule(assetId: string) {
     if (currentScopeKey() !== boardScope || !canViewSchedule || !schedulePage
       || !host.canAccess("rental", schedulePage.definition.permissions)) return;
@@ -559,8 +565,10 @@ export function MaintenanceWorkOrdersPage({
             <ListSection title={t("关联资源")}><RecordFacts items={[
               { key: "group", label: "商品", value: activeWorkOrder.itemGroupId },
               { key: "location", label: "履约地点", value: activeWorkOrder.locationId },
-              { key: "asset", label: "资产", value: activeWorkOrder.assetId && canViewSchedule
-                ? <Button type="link" onClick={() => openAssetSchedule(activeWorkOrder.assetId!)}>{t("查看排班")}</Button> : activeWorkOrder.assetId || "—" },
+              { key: "asset", label: "资产", value: activeWorkOrder.assetId && (canViewAssetDetail || canViewSchedule)
+                ? <Space wrap>{canViewAssetDetail && <Button type="link" onClick={() => openAssetDetail(activeWorkOrder.assetId!)}>{t("资产详情")}</Button>}
+                  {canViewSchedule && <Button type="link" onClick={() => openAssetSchedule(activeWorkOrder.assetId!)}>{t("查看排班")}</Button>}</Space>
+                : activeWorkOrder.assetId || "—" },
               { key: "order", label: "来源订单", value: activeWorkOrder.orderId && canViewOrders ? <Button type="link" onClick={() => openOrder(activeWorkOrder.orderId!)}>{activeWorkOrder.orderId}</Button> : activeWorkOrder.orderId || "—" }
             ]} /></ListSection>
             <RecordDisclosure key={activeWorkOrder.id} title={t("追溯资料")}><RecordFacts items={[

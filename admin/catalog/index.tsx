@@ -4,6 +4,7 @@ import type { CoreRouteComponent } from "@rental-os/platform-admin/core";
 import { CatalogPage } from "./CatalogPage";
 import { AssetWorkspacePage } from "./AssetWorkspacePage";
 import { AssetSchedulePage } from "./AssetSchedulePage";
+import { AssetDetailPage } from "./AssetDetailPage";
 import type { RentalCatalogPageContext } from "./page-context";
 import { RENTAL_CATALOG_CORE_ID, RENTAL_CATALOG_PAGES } from "./pages";
 export * from "./client";
@@ -12,6 +13,7 @@ export * from "./pages";
 export * from "./listCapabilities";
 export { CatalogPage } from "./CatalogPage";
 export { AssetWorkspacePage } from "./AssetWorkspacePage";
+export { AssetDetailPage } from "./AssetDetailPage";
 export { ItemGroupPhoto } from "./ItemGroupPhoto";
 export { StockOperationsPanel } from "./StockOperationsPanel";
 export { CatalogCardMedia } from "./CatalogCardMedia";
@@ -25,6 +27,7 @@ export function createRentalCatalogAdminContribution(
   const Catalog: CoreRouteComponent = () => <CatalogPage {...usePageContext()} />;
   const Assets: CoreRouteComponent = () => <AssetWorkspacePage {...usePageContext()} />;
   const Schedule: CoreRouteComponent = () => <AssetSchedulePage {...usePageContext()} />;
+  const Detail: CoreRouteComponent = () => <AssetDetailPage {...usePageContext()} />;
   return {
     coreId: RENTAL_CATALOG_CORE_ID,
     implementationVersion,
@@ -32,6 +35,7 @@ export function createRentalCatalogAdminContribution(
       { ...RENTAL_CATALOG_PAGES.catalog, component: Catalog },
       { ...RENTAL_CATALOG_PAGES.assets, component: Assets },
       { ...RENTAL_CATALOG_PAGES.schedule, component: Schedule },
+      { ...RENTAL_CATALOG_PAGES.assetDetail, component: Detail },
     ],
   };
 }

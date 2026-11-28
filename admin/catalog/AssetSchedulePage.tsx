@@ -13,6 +13,7 @@ import { businessDateKey } from "@rental-os/rental-core/business-day";
 import { rentalOrderLocation } from "../orders/pages";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import type { RentalCatalogPageContext } from "./page-context";
+import { rentalAssetLocation } from "./pages";
 import { scheduleLanes, scheduleWindow, shiftScheduleDate, type ScheduleZoom } from "./asset-schedule-view";
 import styles from "./AssetSchedulePage.module.css";
 
@@ -156,6 +157,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
       {selected && <div className={styles.workspace}>
         {selected.asset && <RecordFacts items={[{ key: "model", label: t("型号"), value: selected.asset.itemGroupName }, { key: "location", label: t("地点"), value: selected.asset.locationName },
           { key: "status", label: t("资产状态"), value: t(statusLabels[selected.asset.status]) }]} />}
+        {selected.asset && canOpen(rentalAssetLocation(selected.asset.id)) && <Button
+          onClick={() => navigate(rentalAssetLocation(selected.asset!.id), { resource: "asset", action: "view" })}>{t("资产详情")}</Button>}
         {selected.asset && canOpen(rentalWorkOrderLocation()) && <Button
           onClick={() => navigate(rentalWorkOrderLocation(), { resource: "maintenance", action: "view" }, selected.asset!.id)}>
           {t("该资产的养护工单")}

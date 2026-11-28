@@ -22,6 +22,10 @@
 
 图片、资产状态历史和库存流水查询传递取消信号，缓存键绑定当前会话与经营空间。照片组件将对象 URL 绑定生成它的查询身份和原字节，身份或字节切换的首帧撤下旧图，并在替换和卸载时释放。订单等旧消费者通过同一照片薄适配接入当前宿主。[照片组件](<ItemGroupPhoto.tsx>) · [旧照片入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/catalog/ItemGroupPhoto.tsx>)
 
+[资产详情](AssetDetailPage.tsx)登记为 `asset-detail`（`/assets/:assetId`），父级和原权限沿资产页。通过原受权资产列表定位当前对象，使用原状态历史及另经 `maintenance:view` 核定的工单读取；没有授予新业务权限或新服务端路由。当前对象不存在、读失败或范围变化时撤下旧详情，未获养护权限不请求或展示其缓存。查询及刷新在原请求工厂之外复验当前页面存续和权限，历史显示原记录时间及其偏移，不套浏览器时区；状态历史沿服务端最近200条上限，缺记录不解释为过去没有限制。
+
+详情沿公共 `RecordDetailLayout`、`RecordFacts`、Tabs和Table组织当前状态、状态历史与养护记录；原资产列表/卡片、甘特抽屉及工单详情互相定位同一资产。导航目标由当前注册表解析，卡片先退出预览再进入详情。库存限制常显，工单完成或计划结束均不在页面推导恢复可租，处理和验收进入原养护页面；详情本身没有写入。真实浏览器主题、键盘、窄屏和原业务HTTP仍需分别验收。
+
 ## 列表与来源
 
 页面、卡片和列表预检从 `@rental-os/platform-admin/ui` 使用原图标、`ADMIN_TABLE_COLUMN_WIDTH`、卡片事实组件与 `ListPreflightError`。设置分区从 `/forms` 使用同一 `SettingsWorkspace`，字段、动作插槽和样式由原实现供给。[UI 出口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/components/ui/index.ts>) · [表单出口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/packages/platform-admin/src/forms.ts>)
