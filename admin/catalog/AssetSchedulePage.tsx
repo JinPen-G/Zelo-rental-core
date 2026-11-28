@@ -1,5 +1,5 @@
 /** Rental 原库存资源时间轴。UIArc 适配控件承载筛选、详情和导航；不在图上直接写订单日期。 */
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
@@ -13,10 +13,13 @@ import { businessDateKey } from "@rental-os/rental-core/business-day";
 import { rentalOrderLocation } from "../orders/pages";
 import { orderQuickActions, orderStatusLabels, type OrderQuickAction } from "../orders/orderQuickActions";
 import { RentalOrderRowActions } from "../orders/RentalOrderRowActions";
+import { retainOrderExtensionPreparation } from "../orders/orderExtensionPreparation";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import type { RentalCatalogPageContext } from "./page-context";
 import { rentalAssetLocation } from "./pages";
 import { scheduleLanes, scheduleWindow, shiftScheduleDate, type ScheduleZoom } from "./asset-schedule-view";
+import { ScheduleExtensionHandle } from "./ScheduleExtensionHandle";
+import { ScheduleExtensionPreparation } from "./ScheduleExtensionPreparation";
 import styles from "./AssetSchedulePage.module.css";
 
 const kindLabels: Record<RentalAssetScheduleEntry["kind"], string> = { reservation: "已分配预约", rental: "租用中", preparation: "交付准备",
@@ -44,6 +47,9 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   const query = useQuery({ queryKey: ["rental-core", "asset-schedule", scopeKey, params],
     queryFn: ({ signal }) => api.assetSchedule(params, { signal }), retry: false });
   const data = !query.isError && currentScopeKey() === scopeKey ? query.data : undefined;
+  const active = useRef(true), live = useRef({ data, host, fetching: query.isFetching });
+  live.current = { data, host, fetching: query.isFetching };
+  useLayoutEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => {
     if (data && (timeZone !== data.timeZone || !date)) {
       setTimeZone(data.timeZone); setDate(current => current ?? businessDateKey(data.observedAt, data.timeZone));
@@ -51,14 +57,18 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   }, [data, date, timeZone]);
   const [selection, setSelection] = useState<{ snapshot: RentalAssetSchedule; entry?: RentalAssetScheduleEntry; asset?: RentalAssetScheduleRow }>();
   const selected = selection?.snapshot === data ? selection : undefined;
+  const [preparation, setPreparation] = useState<{ snapshot: RentalAssetSchedule; entry: RentalAssetScheduleEntry; asset?: RentalAssetScheduleRow; newEndAt?: string }>();
+  useEffect(() => {
+    if (query.isFetching || preparation && preparation.snapshot !== data) setPreparation(undefined);
+  }, [data, query.isFetching, preparation]);
   const label = (entry: RentalAssetScheduleEntry) => `${t(entry.kind === "work_order" && entry.workOrderType ? workOrderLabels[entry.workOrderType]
     : ["reservation", "rental"].includes(entry.kind) && entry.order ? orderStatusLabels[entry.order.status] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
   const overlapLabel = (asset: RentalAssetScheduleRow) => t("{count} 段预占重叠", { count: asset.overlaps.length });
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
   const canOpen = (location: CorePageLocation) => {
-    const page = host.pages.get(corePageKey(location.coreId, location.pageId));
-    return Boolean(page && host.canAccess(location.coreId, page.definition.permissions));
+    const page = live.current.host.pages.get(corePageKey(location.coreId, location.pageId));
+    return Boolean(page && live.current.host.canAccess(location.coreId, page.definition.permissions));
   };
   const navigate = (location: CorePageLocation, permission: { resource: string; action: string }, selectedAssetId?: string, action?: OrderQuickAction) => {
     if (currentScopeKey() !== scopeKey || !host.canAccess("rental", [permission]) || !canOpen(location)) return;
@@ -76,21 +86,30 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(entry.sourceId && ((entry.source === "order" && host.canAccess("rental", [{ resource: "order", action: "view" }]))
     || (entry.source === "work_order" && host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
   const orderPermissions = () => ({
-    operate: host.canAccess("rental", [{ resource: "order", action: "operate" }]),
-    pickup: host.canAccess("rental", [{ resource: "order", action: "pickup" }]),
-    return: host.canAccess("rental", [{ resource: "order", action: "return" }]),
-    extend: host.canAccess("rental", [{ resource: "order", action: "extend" }]),
+    operate: live.current.host.canAccess("rental", [{ resource: "order", action: "operate" }]),
+    pickup: live.current.host.canAccess("rental", [{ resource: "order", action: "pickup" }]),
+    return: live.current.host.canAccess("rental", [{ resource: "order", action: "return" }]),
+    extend: live.current.host.canAccess("rental", [{ resource: "order", action: "extend" }]),
     settle: false, cancel: false
   });
-  const renderOrderActions = (entry: RentalAssetScheduleEntry) => {
+  const canPrepare = (entry: RentalAssetScheduleEntry, snapshot = data) => Boolean(active.current && snapshot && live.current.data === snapshot
+    && !live.current.fetching && currentScopeKey() === scopeKey && entry.source === "order" && entry.sourceId
+    && ["reservation", "rental"].includes(entry.kind) && entry.order?.effectiveEndAt && Number.isFinite(Date.parse(entry.order.effectiveEndAt))
+    && live.current.host.canAccess("rental", [{ resource: "order", action: "view" }]) && canOpen(rentalOrderLocation(entry.sourceId))
+    && orderQuickActions(entry.order, orderPermissions()).actions.includes("extend"));
+  const prepareExtension = (entry: RentalAssetScheduleEntry, asset?: RentalAssetScheduleRow, newEndAt?: string) => {
+    if (canPrepare(entry)) setPreparation({ snapshot: data!, entry, asset, newEndAt });
+  };
+  const prepared = preparation && preparation.snapshot === data && canPrepare(preparation.entry, preparation.snapshot) ? preparation : undefined;
+  const renderOrderActions = (entry: RentalAssetScheduleEntry, asset?: RentalAssetScheduleRow) => {
     if (entry.source !== "order" || !entry.sourceId || !selectableSource(entry) || !canOpen(rentalOrderLocation(entry.sourceId))) return null;
     if (!entry.order) return <Button onClick={() => openSource(entry)}>{t("进入订单处理")}</Button>;
-    return <RentalOrderRowActions order={{ id: entry.sourceId, orderNo: entry.sourceNo ?? entry.sourceId, ...entry.order }}
+    return <div className={styles.controls}><RentalOrderRowActions order={{ id: entry.sourceId, orderNo: entry.sourceNo ?? entry.sourceId, ...entry.order }}
       permissions={orderPermissions()} t={t} openOrder={(_id, action) => {
         if (!selectableSource(entry) || action && !orderQuickActions(entry.order!, orderPermissions()).actions.includes(action)) return;
         // 复用原动作判定和UIArc行操作，仅定位；改期的试算、付款及库存生效仍在原订单执行。
         navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "view" }, undefined, action);
-      }} />;
+      }} />{canPrepare(entry) && <Button onClick={() => prepareExtension(entry, asset)}>{t("准备续租时间")}</Button>}</div>;
   };
   const resetPage = (change: () => void) => { setPage(1); setSelection(undefined); change(); };
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
@@ -127,9 +146,9 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
       </div>
       <QueryState loading={query.isLoading || !query.error && (!date || !timeZone)} error={query.error} onRetry={() => query.refetch()} transitionKey={JSON.stringify(params)}>
         {data && <>
-          <p className={styles.help}>{t("显示当前有效库存事实；分配、改配与改期须进入原订单流程确认。")}</p>
+          <p className={styles.help}>{t("显示当前有效库存事实；可拖动订单末端准备续租，也可在条带详情填写时间，再进入原订单试算确认。")}</p>
           <ContentTransition value={view}>
-            {view === "gantt" ? <div className={styles.scroll} role="region" aria-label={t("资产排班时间轴")} tabIndex={0}>
+            {view === "gantt" ? <div className={styles.scroll} data-schedule-scroll role="region" aria-label={t("资产排班时间轴")} tabIndex={0}>
               <table className={styles.timeline} style={{ minWidth: 200 + (zoom === "month" ? range.ticks.length * 52 : 720) }}>
                 <thead><tr><th scope="col">{t("车辆或资产编号")}</th><th scope="col"><div className={styles.axis}>
                   {range.ticks.map(tick => <span key={tick} style={{ left: `${(Date.parse(tick) - Date.parse(range.startAt)) / (Date.parse(range.endAt) - Date.parse(range.startAt)) * 100}%` }}>
@@ -141,13 +160,18 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
                   return <tr key={asset.id}><th scope="row"><Button type="text" onClick={() => setSelection({ snapshot: data, asset })}>{asset.assetNo}</Button>
                     <span className={styles.metadata}>{asset.itemGroupName} · {asset.locationName}</span><span className={styles.metadata}>{t(statusLabels[asset.status])}</span>
                     {asset.overlaps.length > 0 && <span className={styles.metadata}><DataTableStatus tone="warning">{overlapLabel(asset)}</DataTableStatus></span>}</th>
-                    <td><div className={styles.track} style={{ minHeight: `${Math.max(1, ...bars.map(row => row.lane + 1)) * 40 + 16}px` }}>
-                      {bars.length ? bars.map(({ entry, lane, left, width }) => <button type="button" className={styles.bar} key={entry.id}
+                    <td><div className={styles.track} data-schedule-track style={{ minHeight: `${Math.max(1, ...bars.map(row => row.lane + 1)) * 40 + 16}px` }}>
+                      {bars.length ? bars.map(({ entry, lane, left, width }) => <span key={`${data.observedAt}:${entry.id}`}><button type="button" className={styles.bar}
                         data-kind={entry.kind} data-open={!entry.endAt} style={{ left: `${left}%`, width: `${width}%`, top: `${lane * 40 + 8}px` }}
                         aria-label={`${asset.assetNo} · ${label(entry)} · ${format(entry.startAt)} — ${format(entry.endAt)}`}
                         title={`${label(entry)} · ${format(entry.startAt)} — ${format(entry.endAt)}`} onClick={() => setSelection({ snapshot: data, asset, entry })}>
                         {label(entry)}{!entry.endAt ? ` · ${t("结束未定")}` : ""}
-                      </button>) : <span className={styles.noEvents}>{t("区间内无已登记条带")}</span>}
+                      </button>{canPrepare(entry) && entry.endAt === entry.order?.effectiveEndAt
+                        && Date.parse(entry.endAt) > Date.parse(data.startAt) && Date.parse(entry.endAt) < Date.parse(data.endAt) && <ScheduleExtensionHandle
+                          originalEndAt={entry.endAt} startAt={data.startAt} endAt={data.endAt} lane={lane}
+                          label={t("延长订单 {orderNo}：拖动末端或打开时间表单", { orderNo: entry.sourceNo ?? entry.sourceId! })}
+                          format={value => `${t("建议归还")} · ${format(value)} · ${data.timeZone}`}
+                          canPrepare={() => canPrepare(entry, data)} onPrepare={value => prepareExtension(entry, asset, value)} />}</span>) : <span className={styles.noEvents}>{t("区间内无已登记条带")}</span>}
                     </div></td></tr>;
                 })}</tbody>
               </table>
@@ -207,10 +231,20 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           {entry.kind === "asset_hold" && <Alert type="info" showIcon title={t("当前库存限制的起止区间未登记；计划结束不能证明已恢复可租。")}/>} 
           {entry.kind === "work_order" && <p className={styles.help}>{t("工单条带表示处理过程，实际库存限制须结合当前资产状态及原验收结果。")}</p>}
           {entry.bufferBasis === "legacy_missing" && <p className={styles.help}>{t("历史规则缺失，缓冲沿原库存兼容口径。")}</p>}
-          {entry.source === "order" ? renderOrderActions(entry) : selectableSource(entry) && <Button onClick={() => openSource(entry)}>{t("查看工单")}</Button>}
+          {entry.source === "order" ? renderOrderActions(entry, selected.asset) : selectableSource(entry) && <Button onClick={() => openSource(entry)}>{t("查看工单")}</Button>}
           {entry.source === "restricted" && <p className={styles.help}>{t("来源读取受限")}</p>}
         </div>)}
       </div>}
     </Drawer>
+    {prepared && <ScheduleExtensionPreparation key={`${prepared.entry.id}:${prepared.entry.order!.effectiveEndAt}`} orderNo={prepared.entry.sourceNo ?? prepared.entry.sourceId!}
+      assetNo={prepared.asset?.assetNo} originalEndAt={prepared.entry.order!.effectiveEndAt!} newEndAt={prepared.newEndAt} timeZone={prepared.snapshot.timeZone}
+      canPrepare={() => canPrepare(prepared.entry, prepared.snapshot)} onClose={() => setPreparation(undefined)} onContinue={newEndAt => {
+        if (!canPrepare(prepared.entry, prepared.snapshot)) return;
+        const entry = prepared.entry;
+        const reference = retainOrderExtensionPreparation({ orderId: entry.sourceId!, status: entry.order!.status, fulfillmentMode: entry.order!.fulfillmentMode,
+          originalEndAt: entry.order!.effectiveEndAt!, newEndAt, timeZone: prepared.snapshot.timeZone }, () => currentScopeKey() === scopeKey);
+        const path = resolveCorePageLocation(live.current.host.pages, rentalOrderLocation(entry.sourceId!));
+        live.current.host.navigate(`${path}?${new URLSearchParams({ action: "extend", extensionPreparation: reference })}`);
+      }} />}
   </CorePage>;
 }

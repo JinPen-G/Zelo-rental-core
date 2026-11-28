@@ -24,8 +24,8 @@ export interface RentalAssetScheduleEntry {
   source: "order" | "work_order" | "asset_status" | "restricted";
   sourceId?: string;
   sourceNo?: string;
-  /** 仅在原订单可读时提供同一快照的状态与履约方式，供原页面定位；不代表动作已获准执行。 */
-  order?: { status: RentalCoreOrderStatus; fulfillmentMode: RentalFulfillmentMode };
+  /** 仅在原订单可读时提供同一快照的事实，供原页面定位与核对准备依据；不代表动作已获准执行。 */
+  order?: { status: RentalCoreOrderStatus; fulfillmentMode: RentalFulfillmentMode; effectiveEndAt?: string };
   status?: string;
   assigneeName?: string;
   workOrderType?: RentalWorkOrderType;

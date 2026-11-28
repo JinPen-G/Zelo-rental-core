@@ -22,4 +22,8 @@
 .bar[data-kind="asset_hold"] { background: repeating-linear-gradient(135deg, var(--surface-muted), var(--surface-muted) 8px, var(--surface) 8px, var(--surface) 16px); }
 .noEvents { display: block; padding: var(--space-4); }
 .detail { display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-3); border-block-end: 1px solid var(--border); }
+.extensionHandle { position: absolute; transform: translateX(-50%); width: 32px; height: 32px; border: 1px solid var(--border); border-radius: var(--rental-ui-radius-button); background: var(--surface); color: var(--foreground); cursor: ew-resize; touch-action: none; z-index: 1; }
+.extensionHandle:active, .extensionHandle:focus-visible { outline: 2px solid var(--foreground); outline-offset: -2px; }
+.extensionPreview { position: absolute; height: 32px; border: 2px dashed var(--foreground); background: var(--surface-muted); box-sizing: border-box; pointer-events: none; z-index: 2; }
+.extensionTime { position: absolute; inset-inline-end: 0; bottom: 100%; background: var(--surface); color: var(--foreground); padding: var(--space-1); white-space: nowrap; border: 1px solid var(--border); font-size: var(--rental-typography-meta-size); }
 @media (max-width: 600px) { .timeline th:first-child { width: 150px; } .scroll { max-height: 55vh; } }

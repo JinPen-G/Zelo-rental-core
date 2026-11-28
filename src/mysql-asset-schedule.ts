@@ -80,7 +80,7 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
   const orderIds = [...new Set(reservations.map(row => row.orderId))];
   const [orders, workOrders, allocations] = await Promise.all([
     scope.readOrders && orderIds.length ? client.rentalOrder.findMany({ where: { AND: [{ tenantId, workspaceId, id: { in: orderIds } }, scope.orders] },
-      select: { id: true, status: true, fulfillmentMode: true }, take: FACT_LIMIT + 1 }) : [],
+      select: { id: true, status: true, fulfillmentMode: true, endAt: true, effectiveEndAt: true }, take: FACT_LIMIT + 1 }) : [],
     scope.readWorkOrders && visibleIds.length ? client.rentalWorkOrder.findMany({ where: { AND: [{ tenantId, workspaceId, assetId: { in: visibleIds },
       status: { not: "cancelled" }, createdAt: { lt: new Date(to) }, OR: [{ status: { not: "completed" } }, { reviewedAt: null }, { reviewedAt: { gt: new Date(from) } }] }, scope.workOrders] },
       select: { id: true, assetId: true, workNo: true, type: true, status: true, assigneeName: true, createdAt: true, reviewedAt: true },
@@ -94,7 +94,7 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
     const status = Object.values(RentalCoreOrderStatus).find(status => status === row.status.toLowerCase());
     const fulfillmentMode = RENTAL_FULFILLMENT_MODES.find(mode => mode === row.fulfillmentMode);
     if (!status || !fulfillmentMode) throw new ConflictException("排班订单状态或履约方式无法识别");
-    return [row.id, { status, fulfillmentMode }] as const;
+    return [row.id, { status, fulfillmentMode, effectiveEndAt: (row.effectiveEndAt ?? row.endAt).toISOString() }] as const;
   }));
   const facts = reservations.map((row, index) => {
     const quantity = Math.max(0, row.quantity - row.releasedQuantity);
