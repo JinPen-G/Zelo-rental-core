@@ -110,6 +110,10 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
 
   async write(scope: RentalMarketingScope, expectedBinding: CategoryWriteBinding, action: RentalMarketingAction,
     input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string): Promise<RentalMarketingPlan> {
+    // 锁等待前冻结请求，避免调用者在权限或配置读取期间改变待发布规则。
+    scope = structuredClone(scope);
+    expectedBinding = structuredClone(expectedBinding);
+    input = structuredClone(input);
     const actorUserId = assertMarketingAuthority(this.identity(), scope, action);
     const identity = requestFingerprint(this.identity());
     if (!expectedBinding?.categoryVersionId || !Number.isSafeInteger(expectedBinding.adoptionRevision))
@@ -156,6 +160,6 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
       assertMarketingAuthority(this.identity(), scope, action);
       if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销提交前身份已变化");
       return next;
-    });
+    }, { isolationLevel: "ReadCommitted" });
   }
 }

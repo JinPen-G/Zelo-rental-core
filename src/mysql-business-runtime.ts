@@ -2188,6 +2188,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
   }
 
   async saveMarketingPlanDraft(tenantId: string, context: BusinessContext, input: SaveRentalMarketingPlanDraftRequest) {
+    input = structuredClone(input);
     const scope = this.marketingScope(tenantId, context, "save_draft");
     const binding = await this.categoryConfigurationBinding(tenantId, context);
     if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销草稿持久化或品类依据不可用");
@@ -2196,6 +2197,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
 
   async changeMarketingPlanStatus(tenantId: string, context: BusinessContext, id: string,
     action: Exclude<RentalMarketingAction, "save_draft">, input: ChangeRentalMarketingPlanStatusRequest) {
+    input = structuredClone(input);
     const scope = this.marketingScope(tenantId, context, action);
     const binding = await this.categoryConfigurationBinding(tenantId, context);
     if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销发布持久化或品类依据不可用");

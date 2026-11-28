@@ -3644,15 +3644,6 @@ export type RentalDiscountSkipReason = (typeof RENTAL_DISCOUNT_SKIP_REASONS)[num
  * 比大小，而落选方案的实际减免是 0。只存后者就无法解释「它输给谁、差多少」。
  */
 export interface RentalQuoteDiscountEvaluation {
-  /** 新策略保留完整方案集合和选中规则；旧快照不补写这些字段。 */
-  pricingPolicy?: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
-  marketingPlanSnapshot?: RentalMarketingPlanVersion;
-  ruleSnapshot?: RentalMarketingRule;
-  ruleId?: string;
-  ruleVersion?: string;
-  /** 各候选共用的原租金总额与用券前候选租金，不以覆盖范围不同的小计比较。 */
-  comparisonRentalAmount?: number;
-  candidateRentalAmount?: number;
   /** 原优惠规则本体；续租重算不回读已修改的营销方案。旧快照可缺省。 */
   planSnapshot?: RentalDiscountPlan;
   planId: string;
@@ -3688,6 +3679,18 @@ export interface RentalQuoteDiscountEvaluation {
   maximumDiscount?: number;
   /** 是否被最大优惠金额截断。 */
   capped: boolean;
+}
+
+/** 新策略解释携带完整方案和规则；旧解释/AI投影保留原合同，不能补造这些依据。 */
+export interface RentalMarketingQuoteDiscountEvaluation extends RentalQuoteDiscountEvaluation {
+  pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  marketingPlanSnapshot: RentalMarketingPlanVersion;
+  ruleSnapshot: RentalMarketingRule;
+  ruleId: string;
+  ruleVersion: string;
+  /** 各候选共用的原租金总额与用券前候选租金，不以覆盖范围不同的小计比较。 */
+  comparisonRentalAmount: number;
+  candidateRentalAmount: number;
 }
 
 /**

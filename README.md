@@ -82,7 +82,11 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 新报价的[配置组合依据](src/quote-configuration.ts)由报价服务捕获，在原事实事务内复核经营设置、商品与履约配置、价格计划、优惠、服务、日历、规则及不可变价格版本。[仓储组合](src/application-repositories.ts)通过 `mysql-business-facts` 正式出口的 `createRentalQuoteConfigurationReader` 复用同一配置仓储和调用方事务；自行装配事实仓储的宿主也须提供此读口。缺依据或读口时新报价不可保存，已有报价和原操作收据沿原历史事实读取，不重新采用当前配置。
 
-[营销选择](src/discount-selection.ts)新增 `selectMarketingRule` 纯计算入口和 `single_rule_v1` 合同：在同一基础租金上评估方案公共条件及多条规则，只选择一条最低价结果，并保存完整方案/规则版本快照。当前仅支持单个完整租金行及原百分比、固定减免、满减动作；多行、固定租价或不可用资料明确拒绝。该入口尚未接入配置保存、HTTP、正式报价和后续动作，原 `selectDiscountPlans` 继续保留历史行为；不能将纯计算验证视为新营销策略已经启用。
+[营销选择](src/discount-selection.ts)新增 `selectMarketingRule` 纯计算入口和 `single_rule_v1` 合同：在同一基础租金上评估方案公共条件及多条规则，只选择一条最低价结果，并保存完整方案/规则版本快照。当前仅支持单个完整租金行及原百分比、固定减免、满减动作；多行、固定租价或不可用资料明确拒绝。新解释使用 `RentalMarketingQuoteDiscountEvaluation`，原 `RentalQuoteDiscountEvaluation` 及其历史/AI字段投影保持原合同。
+
+`/api/rental/v1/marketing-plans` 提供读取、新建草稿，以及 `/:id/draft` 保存、`/:id/publish` 发布、`/:id/pause` 暂停、`/:id/end` 结束和 `/:id/history` 历史读取。编辑使用 `rental-os:marketing:edit`（兼容原营销/价格管理权），发布动作另需 `rental-os:marketing:publish`；页面准入不代替服务端复核。草稿、不可变发布版本和审计在原品类/空间锁事务中按 `expectedRevision` 提交，编辑草稿不改当前发布正文。见[仓储](src/mysql-marketing-plans.ts)与[开发数据迁移](prisma/README.md#迁移与历史)。
+
+新方案尚未接入正式报价、优惠券、后续订单动作和管理页面；原 `selectDiscountPlans` 继续保留历史行为。新增版本表及 HTTP 存储入口不代表计价策略已经启用，部署仍须固定兼容版本并核定增量迁移。
 
 原客户预约来源通过服务器侧 `RentalOrderCreationParticipant` 参加同一次建单事务，在首个 Tenant 锁前取得来源会话权威，并在写入后复核原材料与自然期限；HTTP 请求不能提供参加者或批准。见[建单端口](src/order-confirmation-ports.ts)和[订单确认](src/mysql-order-confirmation.ts)。
 

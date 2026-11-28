@@ -2,6 +2,7 @@ import {
   RENTAL_SINGLE_MARKETING_RULE_POLICY,
   type RentalMarketingPlanVersion,
   type RentalMarketingRule,
+  type RentalMarketingQuoteDiscountEvaluation,
   type RentalDayType,
   type RentalDiscountPlan,
   type RentalDiscountTarget,
@@ -334,7 +335,7 @@ export class RentalMarketingSelectionError extends Error {
 export interface RentalMarketingSelection {
   pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
   selected?: { planId: string; planVersion: string; ruleId: string; ruleVersion: string };
-  evaluations: RentalQuoteDiscountEvaluation[];
+  evaluations: RentalMarketingQuoteDiscountEvaluation[];
   baseRentalAmount: number;
   marketingRentalAmount: number;
   discountByTarget: RentalDiscountBases;
@@ -362,7 +363,8 @@ const stableCompare = (left: string, right: string) => left < right ? -1 : left 
 
 /** 对受信仓储输入仍做结构检查：坏版本/未知动作不是一条正常的落选规则。 */
 export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
-  if (!plan || plan.pricingPolicy !== RENTAL_SINGLE_MARKETING_RULE_POLICY || plan.appliesTo !== "rental"
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)
+    || plan.pricingPolicy !== RENTAL_SINGLE_MARKETING_RULE_POLICY || plan.appliesTo !== "rental"
     || ![plan.id, plan.tenantId, plan.workspaceId, plan.categoryCode, plan.code, plan.name, plan.version].every(validText)
     || !["draft", "enabled", "disabled"].includes(plan.status)
     || !validAmount(plan.minimumSpend) || !Number.isSafeInteger(plan.priority) || plan.priority < 0
@@ -375,11 +377,14 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
   }
   for (const rule of plan.rules) {
     const condition = rule?.conditions, action = rule?.action;
-    if (!rule || ![rule.id, rule.version, rule.name].every(validText) || !["enabled", "disabled"].includes(rule.status)
-      || !Number.isSafeInteger(rule.priority) || rule.priority < 0 || !condition || Array.isArray(condition)
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)
+      || ![rule.id, rule.version, rule.name].every(validText) || !["enabled", "disabled"].includes(rule.status)
+      || !Number.isSafeInteger(rule.priority) || rule.priority < 0
+      || !condition || typeof condition !== "object" || Array.isArray(condition)
       || Object.keys(condition).some(key => !["minimumSpend", "customerScope", "applicableItemGroupIds",
         "applicablePricingGroupIds", "applicableDayTypes", "effectiveFrom", "effectiveTo"].includes(key))
-      || !action || !["percentage", "fixed_amount", "threshold_amount"].includes(action.type)
+      || !action || typeof action !== "object" || Array.isArray(action)
+      || !["percentage", "fixed_amount", "threshold_amount"].includes(action.type)
       || Object.keys(action).some(key => !["type", "value", "thresholdAmount", "maximumDiscount"].includes(key))
       || !validAmount(action.value) || action.value <= 0 || action.type === "percentage" && action.value > 100
       || action.maximumDiscount !== undefined && (!validAmount(action.maximumDiscount) || action.maximumDiscount <= 0)
