@@ -6,9 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { corePageKey, resolveCorePageLocation, type CorePageLocation } from "@rental-os/core-contracts";
 import { CorePage, QueryState, useCorePageHost } from "@rental-os/platform-admin/core";
 import { useLocale } from "@rental-os/platform-admin/locale";
-import { ActionButton, Alert, Button, CalendarOutlined, ContentTransition, DataTableText, DatePicker, Drawer, Empty, FileTextOutlined, LeftOutlined, RightOutlined,
+import { ActionButton, Alert, Button, CalendarOutlined, ContentTransition, DataTableStatus, DataTableText, DatePicker, Drawer, Empty, FileTextOutlined, LeftOutlined, RightOutlined,
   ListFilterBar, ListFilterItem, ListSection, Pagination, RecordFacts, SearchField, Segmented, Select, Table } from "@rental-os/platform-admin/ui";
-import { RentalAssetStatus, type RentalAssetSchedule, type RentalAssetScheduleEntry, type RentalAssetScheduleQuery, type RentalAssetScheduleRow } from "@rental-os/rental-core";
+import { RentalAssetStatus, type RentalAssetSchedule, type RentalAssetScheduleEntry, type RentalAssetScheduleQuery, type RentalAssetScheduleRow, type RentalWorkOrderType } from "@rental-os/rental-core";
 import { businessDateKey } from "@rental-os/rental-core/business-day";
 import { rentalOrderLocation } from "../orders/pages";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
@@ -18,6 +18,7 @@ import styles from "./AssetSchedulePage.module.css";
 
 const kindLabels: Record<RentalAssetScheduleEntry["kind"], string> = { reservation: "已分配预约", rental: "租用中", preparation: "交付准备",
   turnaround: "归还周转", work_order: "养护工单", asset_hold: "当前库存限制" };
+const workOrderLabels: Record<RentalWorkOrderType, string> = { cleaning: "清洁工单", restock: "补货/缺件工单", calibration: "校准工单", repair: "维修工单" };
 const statusLabels: Record<string, string> = { available: "可用", reserved: "已预占", rented: "租赁中", inspection: "检查中", maintenance: "维护中", disabled: "停用" };
 
 export function AssetSchedulePage(context: RentalCatalogPageContext) {
@@ -47,7 +48,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   }, [data, date, timeZone]);
   const [selection, setSelection] = useState<{ snapshot: RentalAssetSchedule; entry?: RentalAssetScheduleEntry; asset?: RentalAssetScheduleRow }>();
   const selected = selection?.snapshot === data ? selection : undefined;
-  const label = (entry: RentalAssetScheduleEntry) => `${t(kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
+  const label = (entry: RentalAssetScheduleEntry) => `${t(entry.kind === "work_order" && entry.workOrderType ? workOrderLabels[entry.workOrderType] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
+  const overlapLabel = (asset: RentalAssetScheduleRow) => t("{count} 段预占重叠", { count: asset.overlaps.length });
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
   const canOpen = (location: CorePageLocation) => {
@@ -113,7 +115,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
                 <tbody>{data.rows.map(asset => {
                   const bars = scheduleLanes(asset.entries, data.startAt, data.endAt);
                   return <tr key={asset.id}><th scope="row"><Button type="text" onClick={() => setSelection({ snapshot: data, asset })}>{asset.assetNo}</Button>
-                    <span className={styles.metadata}>{asset.itemGroupName} · {asset.locationName}</span><span className={styles.metadata}>{t(statusLabels[asset.status])}</span></th>
+                    <span className={styles.metadata}>{asset.itemGroupName} · {asset.locationName}</span><span className={styles.metadata}>{t(statusLabels[asset.status])}</span>
+                    {asset.overlaps.length > 0 && <span className={styles.metadata}><DataTableStatus tone="warning">{overlapLabel(asset)}</DataTableStatus></span>}</th>
                     <td><div className={styles.track} style={{ minHeight: `${Math.max(1, ...bars.map(row => row.lane + 1)) * 40 + 16}px` }}>
                       {bars.length ? bars.map(({ entry, lane, left, width }) => <button type="button" className={styles.bar} key={entry.id}
                         data-kind={entry.kind} data-open={!entry.endAt} style={{ left: `${left}%`, width: `${width}%`, top: `${lane * 40 + 8}px` }}
@@ -129,6 +132,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
               { title: t("车辆或资产编号"), dataIndex: "assetNo", render: (_: unknown, asset) => <DataTableText primary={asset.assetNo} secondary={`${asset.itemGroupName} · ${asset.locationName}`} /> },
               { title: t("资产状态"), dataIndex: "status", render: (value: string) => t(statusLabels[value]) },
               { title: t("排班记录"), render: (_: unknown, asset) => asset.entries.length },
+              { title: t("预占重叠"), render: (_: unknown, asset) => asset.overlaps.length > 0 ? <DataTableStatus tone="warning">{overlapLabel(asset)}</DataTableStatus> : "—" },
               { title: t("操作"), render: (_: unknown, asset) => <Button onClick={() => setSelection({ snapshot: data, asset })}>{t("查看")}</Button> }
             ]} />}
           </ContentTransition>
@@ -156,12 +160,23 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           onClick={() => navigate(rentalWorkOrderLocation(), { resource: "maintenance", action: "view" }, selected.asset!.id)}>
           {t("该资产的养护工单")}
         </Button>}
+        {selected.asset && selected.asset.overlaps.length > 0 && <ListSection title={t("预占重叠")}>
+          <Alert type="warning" showIcon title={t("同一资产存在同时生效的预占")}
+            description={t("重叠区间包含原准备及周转缓冲，限当前查询时段。请进入原订单处理；本提示不会改配或释放库存。")}/>
+          <Table rowKey="startAt" dataSource={selected.asset.overlaps} pagination={{ pageSize: 5 }} columns={[
+            { title: t("开始"), dataIndex: "startAt", render: (value: string) => format(value) },
+            { title: t("结束"), dataIndex: "endAt", render: (value: string) => format(value) },
+            { title: t("同时预占数"), dataIndex: "reservationCount" }
+          ]}/>
+          {selected.entry && <Button onClick={() => setSelection({ snapshot: selected.snapshot, asset: selected.asset })}>{t("查看该资产全部排班记录")}</Button>}
+        </ListSection>}
         {(selected.entry ? [selected.entry] : selected.asset?.entries ?? []).map(entry => <div key={entry.id} className={styles.detail}>
           <strong>{label(entry)}</strong>
           <RecordFacts items={[{ key: "start", label: t("开始"), value: format(entry.startAt) }, { key: "end", label: t("结束"), value: format(entry.endAt) },
             ...(entry.plannedEndAt ? [{ key: "plannedEnd", label: t("计划结束"), value: format(entry.plannedEndAt) }] : []),
             ...(entry.assigneeName ? [{ key: "assignee", label: t("负责人"), value: entry.assigneeName }] : [])]} />
           {entry.kind === "asset_hold" && <Alert type="info" showIcon title={t("当前库存限制的起止区间未登记；计划结束不能证明已恢复可租。")}/>} 
+          {entry.kind === "work_order" && <p className={styles.help}>{t("工单条带表示处理过程，实际库存限制须结合当前资产状态及原验收结果。")}</p>}
           {entry.bufferBasis === "legacy_missing" && <p className={styles.help}>{t("历史规则缺失，缓冲沿原库存兼容口径。")}</p>}
           {selectableSource(entry) && <Button onClick={() => openSource(entry)}>{entry.source === "order" ? t("进入订单处理") : t("查看工单")}</Button>}
           {entry.source === "restricted" && <p className={styles.help}>{t("来源读取受限")}</p>}

@@ -16,8 +16,8 @@ export function reservedRentalPeriod(startAt: string, endAt: string, status: str
     ? "9999-12-30T00:00:00.000Z" : endAt, rule);
 }
 
-/** 半开区间内的最大同时占用量；前后串行的订单不能被简单求和成并发占用。 */
-export function peakReservedQuantity(rows: Array<{ startAt: string; endAt: string; quantity: number }>, startAt: string, endAt: string) {
+type Occupancy = { startAt: string; endAt: string; quantity: number };
+function occupancyEvents(rows: Occupancy[], startAt: string, endAt: string) {
   const from = new Date(startAt).getTime();
   const to = new Date(endAt).getTime();
   const events: Array<{ at: number; delta: number }> = [];
@@ -29,8 +29,32 @@ export function peakReservedQuantity(rows: Array<{ startAt: string; endAt: strin
     }
   }
   events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+  return events;
+}
+
+/** 半开区间内的最大同时占用量；前后串行的订单不能被简单求和成并发占用。 */
+export function peakReservedQuantity(rows: Occupancy[], startAt: string, endAt: string) {
+  const events = occupancyEvents(rows, startAt, endAt);
   let peak = 0;
   let current = 0;
   for (const event of events) { current += event.delta; peak = Math.max(peak, current); }
   return peak;
+}
+
+/** 将原库存事件投影为查询视窗内的占用分段。只解释已登记事实，不授予调度或库存释放。 */
+export function reservedQuantityPeriods(rows: Occupancy[], startAt: string, endAt: string): Occupancy[] {
+  const events = occupancyEvents(rows, startAt, endAt), periods: Occupancy[] = [];
+  let quantity = 0, previous: number | undefined;
+  for (let index = 0; index < events.length;) {
+    const at = events[index]!.at;
+    if (previous !== undefined && previous < at && quantity > 0) {
+      const start = new Date(previous).toISOString(), end = new Date(at).toISOString(), last = periods.at(-1);
+      if (last?.endAt === start && last.quantity === quantity) last.endAt = end;
+      else periods.push({ startAt: start, endAt: end, quantity });
+    }
+    // 同一边界上的离开/进入全部处理后才形成下一段，邻接预占不产生瞬时冲突。
+    while (index < events.length && events[index]!.at === at) quantity += events[index++]!.delta;
+    previous = at;
+  }
+  return periods;
 }

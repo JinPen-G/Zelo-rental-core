@@ -3,9 +3,9 @@ import { ConflictException, ForbiddenException, ServiceUnavailableException } fr
 import type { Prisma } from "@prisma/client";
 import { isDeepStrictEqual } from "node:util";
 import type { RentalCoreFactContacts, RentalCoreFactTransaction } from "./core-fact-storage";
-import { RentalAssetStatus, type RentalRuleConfig } from "./contracts";
+import { RentalAssetStatus, RENTAL_WORK_ORDER_TYPES, type RentalRuleConfig } from "./contracts";
 import type { RentalAssetSchedule, RentalAssetScheduleEntry, RentalAssetScheduleQuery } from "./asset-schedule";
-import { peakReservedQuantity, reservedRentalPeriod } from "./occupancy";
+import { peakReservedQuantity, reservedQuantityPeriods, reservedRentalPeriod } from "./occupancy";
 
 const FACT_LIMIT = 10000;
 const ASSET_LIMIT = 2000;
@@ -106,18 +106,28 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
   }).filter(fact => fact.quantity > 0 && Date.parse(fact.period.startAt) < to && Date.parse(fact.period.endAt) > from);
   const overlap = (entry: RentalAssetScheduleEntry) => (entry.startAt === null || Date.parse(entry.startAt) < to)
     && (entry.endAt === null || Date.parse(entry.endAt) > from);
+  let overlapCount = 0;
   const rows = visible.map(asset => {
     const entries: RentalAssetScheduleEntry[] = [];
-    for (const fact of facts.filter(fact => fact.assetIds.includes(asset.id))) {
+    const assigned = facts.filter(fact => fact.assetIds.includes(asset.id));
+    const overlaps = reservedQuantityPeriods(assigned.map(fact => ({ ...fact.period, quantity: 1 })), query.startAt, query.endAt)
+      .filter(period => period.quantity > 1).map(({ startAt, endAt, quantity }) => ({ startAt, endAt, reservationCount: quantity }));
+    overlapCount += overlaps.length;
+    if (overlapCount > FACT_LIMIT) throw new ServiceUnavailableException("排班重叠时段超出读取上限，请缩小时间或资产范围");
+    for (const fact of assigned) {
       entries.push(fact.entry);
       if (Date.parse(fact.period.startAt) < Date.parse(fact.entry.startAt!)) entries.push({ ...fact.entry,
         id: `${fact.entry.id}-preparation`, kind: "preparation", startAt: fact.period.startAt, endAt: fact.entry.startAt, overdue: false });
       if (fact.entry.endAt && Date.parse(fact.period.endAt) > Date.parse(fact.entry.endAt)) entries.push({ ...fact.entry,
         id: `${fact.entry.id}-turnaround`, kind: "turnaround", startAt: fact.entry.endAt, endAt: fact.period.endAt, overdue: false });
     }
-    for (const work of workOrders.filter(work => work.assetId === asset.id)) entries.push({ id: `work-${work.id}`, kind: "work_order",
-      startAt: work.createdAt.toISOString(), endAt: work.status === "completed" ? work.reviewedAt?.toISOString() ?? null : null,
-      source: "work_order", sourceId: work.id, sourceNo: work.workNo, status: work.status, assigneeName: work.assigneeName ?? undefined, overdue: false });
+    for (const work of workOrders.filter(work => work.assetId === asset.id)) {
+      const workOrderType = RENTAL_WORK_ORDER_TYPES.find(type => type === work.type);
+      if (!workOrderType) throw new ConflictException("排班养护工单类型无法识别");
+      entries.push({ id: `work-${work.id}`, kind: "work_order", workOrderType,
+        startAt: work.createdAt.toISOString(), endAt: work.status === "completed" ? work.reviewedAt?.toISOString() ?? null : null,
+        source: "work_order", sourceId: work.id, sourceNo: work.workNo, status: work.status, assigneeName: work.assigneeName ?? undefined, overdue: false });
+    }
     const status = asset.status.toLowerCase() as RentalAssetStatus;
     // Current status has no reliable start/finish interval. Keep it explicit;
     // neither work-order creation nor updatedAt proves when this hold began.
@@ -125,7 +135,7 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
       || [RentalAssetStatus.Reserved, RentalAssetStatus.Rented].includes(status) && !entries.some(entry => entry.kind === "rental" || entry.kind === "reservation")) entries.push({ id: `hold-${asset.id}`,
       kind: "asset_hold", startAt: null, endAt: null, source: "asset_status", status, overdue: false });
     return { id: asset.id, assetNo: asset.assetNo, itemGroupId: asset.itemGroupId, itemGroupName: asset.itemGroup.name,
-      locationId: asset.locationId, locationName: asset.location.name, status, entries: entries.filter(overlap) };
+      locationId: asset.locationId, locationName: asset.location.name, status, entries: entries.filter(overlap), overlaps };
   });
   const scopedFacts = facts.filter(fact => selectedLocations.includes(fact.row.locationId));
   const pairs = new Map([...assets, ...scopedFacts.map(fact => fact.row)].map(row => [`${row.locationId}\0${row.itemGroupId}`, row]));

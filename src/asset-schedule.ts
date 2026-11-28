@@ -1,5 +1,5 @@
 /** 序列化资产排班的只读投影。占用来自原预占/分配和库存状态，调度仍由原订单命令执行。 */
-import type { RentalAssetStatus } from "./contracts";
+import type { RentalAssetStatus, RentalWorkOrderType } from "./contracts";
 
 export interface RentalAssetScheduleQuery {
   startAt: string;
@@ -26,8 +26,15 @@ export interface RentalAssetScheduleEntry {
   sourceNo?: string;
   status?: string;
   assigneeName?: string;
+  workOrderType?: RentalWorkOrderType;
   /** 历史规则缺失时仅沿原库存的零缓冲兼容口径，不填充当前规则。 */
   bufferBasis?: "historical_rule" | "legacy_missing";
+}
+export interface RentalAssetScheduleOverlap {
+  /** 已包含原历史缓冲，仅截取当前查询视窗；不是订单的新时间或管控区间。 */
+  startAt: string;
+  endAt: string;
+  reservationCount: number;
 }
 export interface RentalAssetScheduleRow {
   id: string;
@@ -38,6 +45,8 @@ export interface RentalAssetScheduleRow {
   locationName: string;
   status: RentalAssetStatus;
   entries: RentalAssetScheduleEntry[];
+  /** 同一资产同时被至少两条有效预占分配的时段；不重复计算租期/准备/周转条带。 */
+  overlaps: RentalAssetScheduleOverlap[];
 }
 export interface RentalAssetSchedule {
   source: "persisted_inventory_facts";
