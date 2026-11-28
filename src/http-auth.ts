@@ -1319,7 +1319,12 @@ class RentalApiAuthGuard implements CanActivate {
     }
     if (
       user.mustChangePassword &&
-      !["/auth/me", "/auth/session-context", "/auth/change-password", "/auth/logout"].includes(path)
+      ![
+        "/auth/me", "/auth/session-context", "/auth/change-password", "/auth/logout",
+        // 员工认证保留独立前缀；首次改密只放行同等的账号自助入口。
+        "/staff/v1/auth/me", "/staff/v1/auth/session-context",
+        "/staff/v1/auth/change-password", "/staff/v1/auth/logout"
+      ].includes(path)
     ) {
       throw new ForbiddenException("首次登录或密码重置后必须先修改密码");
     }
