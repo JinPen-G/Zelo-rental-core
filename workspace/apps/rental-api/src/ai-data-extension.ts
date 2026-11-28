@@ -47,6 +47,8 @@ export function rentalAiExtensionPrerequisites(release: CorePlatformDataCapabili
   if (release.version === "0.2.0") return RENTAL_AI_EXTENSION_PREREQUISITES;
   if (release.version === "0.2.2") return { ...RENTAL_AI_EXTENSION_PREREQUISITES,
     publicAi: { minInclusive: "0.2.2", maxExclusive: "0.2.3" } } as const;
+  if (release.version === "0.2.4") return { ...RENTAL_AI_EXTENSION_PREREQUISITES,
+    publicAi: { minInclusive: "0.2.4", maxExclusive: "0.2.5" } } as const;
   throw new Error("Rental AI 扩展不支持该公共数据发行");
 }
 
