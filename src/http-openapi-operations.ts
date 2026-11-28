@@ -396,7 +396,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   backlogOperation("get", "/api/staff/v1/auth/contribution-context", "Auth", "getStaffContributionContext", "读取原员工会话的最小主体、范围和权限修订；不授予业务权限", [], true, undefined, "RentalClientContributionContext"),
   { ...backlogOperation("get", "/api/rental/v1/contribution-access", "RentalCore", "getRentalContributionAccess", "复核普通 Core 和当前订单操作权限；不执行业务", ["rental-os:order:operate"], true, undefined, "GenericObject"), parameters: [clientLocationParameter] },
   { ...backlogOperation("get", "/api/rental/v1/contribution-page-access", "RentalCore", "getRentalContributionPageAccess", "普通页面只读准入：当前 Core、订单查看及原地点/dataScope；不借用写权限或历史恢复", ["rental-os:order:view"], true, undefined, "GenericObject"), parameters: [clientLocationParameter] },
-  { method: "get", path: "/api/staff/v1/rental/v1/contribution-locations", tag: "RentalCore", operationId: "getRentalContributionLocations",
+  { method: "get", path: "/api/rental/v1/contribution-locations", tag: "RentalCore", operationId: "getRentalContributionLocations",
     summary: "读取当前员工受权空间内启用的履约地点名称，经营空间不等于门店", permissions: ["rental-os:order:view"], authRequired: true,
     responseSchema: arrayOf(objectOf({ id: stringSchema, name: stringSchema }, ["id", "name"], false)) },
   backlogOperation("post", "/api/staff/v1/auth/change-password", "Auth", "changeStaffPassword", "Change a staff password and revoke other sessions", [], true, "ChangePasswordRequest", "LoginResponse"),
