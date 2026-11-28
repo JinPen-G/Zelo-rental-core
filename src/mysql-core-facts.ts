@@ -2768,8 +2768,10 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     const client = tx ?? this.store;
     const workspaceId = await this.contacts.resolveWorkspaceId(client, tenantId);
     const rows = await client.operationLog.findMany({
-      where: { tenantId, workspaceId, action: { startsWith: "rental.work_order." } },
-      orderBy: { createdAt: "desc" },
+      // 先限定原工单再截取最近记录，其他工单的活动不能挤掉本工单履历。
+      where: { tenantId, workspaceId, action: { startsWith: "rental.work_order." },
+        detail: { path: "$.workOrderId", equals: workOrderId } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 200
     });
     return rows
