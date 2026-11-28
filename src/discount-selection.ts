@@ -381,6 +381,12 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
     || !Array.isArray(plan.rules) || !plan.rules.length || new Set(plan.rules.map(rule => rule?.id)).size !== plan.rules.length) {
     unavailable("营销方案版本或完整规则集合不可用");
   }
+  if (plan.legacySource !== undefined) {
+    const source = plan.legacySource?.plan;
+    if (!validDate(plan.legacySource?.importedAt) || !source || source.tenantId !== plan.tenantId || source.categoryCode !== plan.categoryCode
+      || ![source.id, source.version, source.name].every(validText) || source.appliesTo !== "rental" || source.stackableWithOtherPlans !== false
+      || source.stackableWithCoupon !== true || !validAmount(source.discountValue)) unavailable("旧营销转换来源不完整");
+  }
   for (const rule of plan.rules) {
     const condition = rule?.conditions, action = rule?.action;
     if (!rule || typeof rule !== "object" || Array.isArray(rule)

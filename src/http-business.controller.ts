@@ -31,6 +31,7 @@ import {
   RestoreRentalPriceVersionDto,
   SaveRentalDiscountPlanDto,
   SaveRentalMarketingPlanDraftDto,
+  ImportRentalMarketingPlanDto,
   ChangeRentalMarketingPlanStatusDto,
   ReadRentalMarketingOperationDto,
   ChangeRentalMarketingPricingPolicyDto,
@@ -199,6 +200,9 @@ export class RentalBusinessController {
   @Post("marketing-plans") async createMarketingPlan(@Req() req: AuthenticatedRequest, @Body() body: SaveRentalMarketingPlanDraftDto) {
     if (body.id) throw new BadRequestException("新建营销草稿不能提供已有方案标识");
     return this.business.saveMarketingPlanDraft(req.user.tenantId, await this.context(req.user.tenantId), body);
+  }
+  @Post("marketing-plans/import-legacy") async importLegacyMarketingPlan(@Req() req: AuthenticatedRequest, @Body() body: ImportRentalMarketingPlanDto) {
+    return this.business.importLegacyMarketingPlan(req.user.tenantId, await this.context(req.user.tenantId), body);
   }
   @Put("marketing-plans/:id/draft") async saveMarketingPlanDraft(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: SaveRentalMarketingPlanDraftDto) {
     return this.business.saveMarketingPlanDraft(req.user.tenantId, await this.context(req.user.tenantId), { ...body, id });

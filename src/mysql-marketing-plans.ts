@@ -7,14 +7,16 @@ import type { RequestIdentity } from "@rental-os/platform-server/request-identit
 import type { RentalBusinessConfigurationTransaction, RentalBusinessConfigurationStorage, RentalBusinessConfigurationContacts } from "./business-configuration-storage";
 import type { CategoryWriteBinding } from "./configuration-basis";
 import type { ChangeRentalMarketingPlanStatusRequest, RentalMarketingPlan, RentalMarketingPlanEvent,
-  RentalMarketingPlanHistory, RentalMarketingPlanVersion, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest } from "./contracts";
+  RentalMarketingPlanHistory, RentalMarketingPlanVersion, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest,
+  RentalDiscountPlan, ImportRentalMarketingPlanRequest } from "./contracts";
 import { assertMarketingPlan, RentalMarketingSelectionError } from "./discount-selection";
 import { assertMarketingAuthority, assertMarketingOperation, marketingEvent, prepareMarketingDraft, transitionMarketingPlan,
+  legacyMarketingPlanId, prepareLegacyMarketingImport,
   type RentalMarketingAction, type RentalMarketingScope, type RentalMarketingOperationScope } from "./marketing-plan";
 import { RentalIdempotencyRepository } from "./mysql-idempotency";
 import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
 import { readRentalOriginalReceipt } from "./mysql-business-fence";
-import { executeMarketingCommand } from "./marketing-command";
+import { executeMarketingCommand, readMarketingRejection } from "./marketing-command";
 
 type OperationResult = { actorUserId: string; action: RentalMarketingAction; operationId: string; result: RentalMarketingPlan };
 const operationAction = (action: RentalMarketingAction) => `marketing_plan.${action}`;
@@ -52,7 +54,8 @@ function decodePlan(row: PlanRow): RentalMarketingPlan {
 
 export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfigurationTransaction> {
   constructor(private readonly database: RentalBusinessConfigurationStorage<Tx>,
-    private readonly contacts: RentalBusinessConfigurationContacts<Tx>) {}
+    private readonly contacts: RentalBusinessConfigurationContacts<Tx>,
+    private readonly readLegacy?: (tx: Tx, scope: RentalMarketingScope, id: string) => Promise<RentalDiscountPlan | undefined>) {}
 
   private identity() { return this.contacts.getRequestIdentity() as Partial<RequestIdentity> | undefined; }
 
@@ -94,8 +97,10 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
       await current();
       const hit = await this.operations(scope).records.find(scope.tenantId, operationAction(action), operationKey(scope, actorUserId, operationId));
       if (hit && (hit.orderId !== null || hit.status !== "succeeded")) throw new ConflictException("营销原操作收据状态或关联无效");
-      const original = hit ? this.originalResult(hit.response, scope, actorUserId, action, operationId) : undefined;
+      const rejected = hit ? readMarketingRejection(hit.response, { ...scope, actorUserId, action: operationAction(action) }, operationId) : undefined;
+      const original = hit && !rejected ? this.originalResult(hit.response, scope, actorUserId, action, operationId) : undefined;
       await current();
+      if (rejected) return rejected;
       return original ? { status: "committed", operationId, action, planId: original.result.id, revision: original.result.revision } : { status: "unknown" };
     });
   }
@@ -169,7 +174,7 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
   }
 
   async write(scope: RentalMarketingScope, expectedBinding: CategoryWriteBinding, action: RentalMarketingAction,
-    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string): Promise<RentalMarketingPlan> {
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest | ImportRentalMarketingPlanRequest, id?: string): Promise<RentalMarketingPlan> {
     // 锁等待前冻结请求，避免调用者在权限或配置读取期间改变待发布规则。
     scope = structuredClone(scope);
     expectedBinding = structuredClone(expectedBinding);
@@ -198,9 +203,18 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
         if (id && !rows.length) throw new NotFoundException("营销方案不存在");
         const current = rows[0] ? decodePlan(rows[0]) : undefined;
         const at = new Date().toISOString();
-        const next = action === "save_draft"
+        let imported: RentalMarketingPlan | undefined;
+        if ("sourcePlanId" in input) {
+          if (action !== "save_draft" || id || !this.readLegacy) throw new ConflictException("旧方案转换入口或原读取器不可用");
+          if ((await this.currentRows(tx, scope, legacyMarketingPlanId(scope, input.sourcePlanId))).length)
+            throw new ConflictException("该旧方案已建立营销草稿，请沿原方案继续编辑");
+          const source = await this.readLegacy(tx, scope, input.sourcePlanId);
+          if (!source) throw new NotFoundException("当前空间的旧优惠方案不存在");
+          imported = prepareLegacyMarketingImport(scope, source, input, at);
+        }
+        const next = imported ?? (action === "save_draft"
           ? prepareMarketingDraft(scope, { ...input as SaveRentalMarketingPlanDraftRequest, id }, current, at)
-          : current ? transitionMarketingPlan(current, action, input, at) : undefined;
+          : current ? transitionMarketingPlan(current, action, input, at) : undefined);
         if (!next) throw new NotFoundException("营销方案不存在");
         if (action === "save_draft" || action === "publish") await this.validateReferences(tx, scope, action === "save_draft" ? next.draft! : next.published!);
         const duplicate = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
@@ -231,6 +245,10 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
         if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销提交前身份已变化");
         return { actorUserId, action, operationId: input.operationId, result: next };
       }
+    }, async () => {
+      assertMarketingAuthority(this.identity(), scope, action);
+      if (identity !== requestFingerprint(this.identity()) || await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
+        throw new ConflictException("营销原操作身份或空间已变化");
     });
     return original.result;
   }

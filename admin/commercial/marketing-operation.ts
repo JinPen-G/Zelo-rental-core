@@ -106,6 +106,11 @@ export function useMarketingOperation(context: RentalCommercialPageContext, asse
       : await context.api.marketingPlanOperation(reference.operationId, reference.action);
     assertCurrent();
     if (receipt.status === "unknown") throw new Error("原操作结果仍待核对，请保留原键，不要再次提交");
+    if (receipt.status === "rejected") {
+      if (receipt.operationId !== reference.operationId || receipt.action !== reference.action || receipt.planId !== reference.planId
+        || receipt.expectedRevision !== reference.expectedRevision) throw new Error("营销原收据与当前引用不一致");
+      clear(reference); throw new Error(receipt.message);
+    }
     if (receipt.operationId !== reference.operationId || ("result" in receipt
       ? reference.action !== "change_policy" || receipt.result.tenantId !== context.operationScope!.tenantId
         || receipt.result.workspaceId !== context.operationScope!.workspaceId || receipt.result.updatedBy !== context.operationScope!.actorUserId

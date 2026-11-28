@@ -31,7 +31,7 @@ import { lockRentalBusinessTenant } from "./mysql-business-fence";
 import { RentalMarketingPlanRepository } from "./mysql-marketing-plans";
 import { RentalMarketingPricingPolicyRepository } from "./mysql-marketing-pricing-policy";
 import type { RentalMarketingScope, RentalMarketingAction, RentalMarketingOperationScope } from "./marketing-plan";
-import type { RentalMarketingPlan, RentalMarketingPlanVersion, RentalMarketingPlanHistory, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest,
+import type { RentalMarketingPlan, RentalMarketingPlanVersion, RentalMarketingPlanHistory, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest, ImportRentalMarketingPlanRequest,
   ChangeRentalMarketingPlanStatusRequest, RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest,
   RentalMarketingPricingPolicyReceipt } from "./contracts";
 
@@ -166,7 +166,7 @@ export interface RentalBusinessConfigStore<TTransaction = RentalBusinessConfigur
   marketingPlanHistory?(scope: RentalMarketingScope, id: string): Promise<RentalMarketingPlanHistory>;
   marketingPlanOperation?(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string): Promise<RentalMarketingPlanOperationReceipt>;
   writeMarketingPlan?(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
-    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string): Promise<RentalMarketingPlan>;
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest | ImportRentalMarketingPlanRequest, id?: string): Promise<RentalMarketingPlan>;
   upsertService(service: RentalValueAddedService, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
   /** Current service admission under the same workspace mutex as service writers. */
   readServicesForExchange?(tenantId: string, workspaceId: string, tx: TTransaction): Promise<RentalValueAddedService[]>;
@@ -279,8 +279,11 @@ export class RentalBusinessConfigRepository<TTransaction extends RentalBusinessC
   }
 
   writeMarketingPlan(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
-    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string) {
-    return new RentalMarketingPlanRepository(this.store, this.contacts).write(scope, binding, action, input, id);
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest | ImportRentalMarketingPlanRequest, id?: string) {
+    return new RentalMarketingPlanRepository(this.store, this.contacts, async (tx, current, sourceId) => {
+      const row = await tx.rentalDiscountPlan.findFirst({ where: { id: sourceId, tenantId: current.tenantId, workspaceId: current.workspaceId } });
+      return row ? this.toDiscountPlan(row) : undefined;
+    }).write(scope, binding, action, input, id);
   }
 
   private async captureOpening(tx: TTransaction, tenantId: string, workspaceId: string) {

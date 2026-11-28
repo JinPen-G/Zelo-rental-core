@@ -9,7 +9,8 @@ import { useLocale } from "@rental-os/platform-admin/locale";
 import { Pencil } from "lucide-react";
 import { resolveCorePageLocation } from "@rental-os/core-contracts";
 import { rentalPagePermissions } from "@rental-os/rental-core/permissions";
-import { RENTAL_PRICING_UNIT_LABELS, type RentalMarketingPlan, type RentalMarketingPlanVersion, type RentalMarketingPricingPolicy } from "@rental-os/rental-core";
+import { RENTAL_PRICING_UNIT_LABELS, type RentalMarketingPlan, type RentalMarketingPlanVersion, type RentalMarketingPricingPolicy,
+  type RentalDiscountPlan, type ImportRentalMarketingPlanRequest } from "@rental-os/rental-core";
 import { RENTAL_COMMERCIAL_PAGES } from "./pages";
 import { RentalCommercialPageProvider, useRentalCommercialWorkspaceAccess, type RentalCommercialPageContext } from "./page-context";
 import { MarketingPlanEditor, marketingActionLabels, marketingStatusLabels, marketingCustomerLabels, marketingDayLabels, type MarketingDraftValues } from "./MarketingPlanEditor";
@@ -23,6 +24,7 @@ const catalogPermissions = [{ resource: "catalog", action: "view" }, { resource:
   { resource: "order", action: "view" }, { resource: "order", action: "create" }];
 const pricePermissions = [{ resource: "price", action: "manage" }];
 const pricingReadPermissions = [...pricePermissions, { resource: "order", action: "view" }, { resource: "order", action: "create" }];
+const legacyReadPermissions = [...pricePermissions, { resource: "marketing", action: "manage" }, { resource: "order", action: "view" }];
 const actionLabels = { publish: "发布方案", pause: "暂停方案", end: "结束方案", change_policy: "切换空间策略" };
 const policyLabels = { legacy: "旧优惠模式", single_rule_v1: "单规则最低价" };
 const errorText = (error: unknown) => {
@@ -53,12 +55,36 @@ function MarketingDecision({ decision, disabled, onSave, onClose, onExited, onEr
   </Modal>;
 }
 
+type LegacyImportValues = Pick<ImportRentalMarketingPlanRequest, "sourcePlanId" | "sourceVersion" | "changeReason">;
+function LegacyImport({ open, nonce, rows, disabled, onSave, onClose, onExited, onError }: {
+  open: boolean; nonce: number; rows: RentalDiscountPlan[]; disabled: boolean;
+  onSave: (value: LegacyImportValues) => Promise<unknown>; onClose: () => void; onExited: () => void; onError: (error: unknown) => void;
+}) {
+  const { t } = useLocale(), [form] = Form.useForm<LegacyImportValues>();
+  const editor = useOrderEditor({ form, identity: String(nonce), disabled: disabled || !open, onSave, onError });
+  return <Modal open={open} title={t("从旧方案建立草稿")} onCancel={() => editor.dismiss(onClose)} afterClose={onExited}
+    mask={{ closable: !editor.busy }} keyboard={!editor.busy}
+    footer={<SaveButton form={form} label={t("建立草稿")} pending={editor.busy} disabled={disabled || !open} onSave={editor.submit} />}>
+    <Form form={form} name="marketing-legacy-import" layout="vertical" disabled={disabled || editor.busy} {...editor.formProps}>
+      <Alert type="info" title={t("一份旧方案转换为一份草稿和一条规则；保留原版本及金额，不自动发布或切换空间策略。")}
+        description={t("含跨方案叠加、禁用优惠券或非租金费用的旧方案不能等价转换，请明确新建。")} />
+      <Form.Item name="sourcePlanId" label={t("旧优惠方案")} rules={[{ required: true }]}><Select options={rows.map(row => ({ value: row.id,
+        label: `${row.name} · ${row.version}`, disabled: row.appliesTo !== "rental" || row.stackableWithOtherPlans || !row.stackableWithCoupon }))}
+        onChange={id => form.setFieldValue("sourceVersion", rows.find(row => row.id === id)?.version)} /></Form.Item>
+      <Form.Item name="sourceVersion" label={t("原版本")} rules={[{ required: true }]}><Input readOnly /></Form.Item>
+      <Form.Item name="changeReason" label={t("变更原因")} rules={[{ required: true, whitespace: true, max: 500 }]}><Input.TextArea maxLength={500} /></Form.Item>
+    </Form>
+  </Modal>;
+}
+
 function MarketingVersion({ version }: { version: RentalMarketingPlanVersion }) {
   const { t, locale } = useLocale();
   const at = (value?: string) => value ? new Date(value).toLocaleString(locale) : t("未设置");
   const ids = (values?: string[]) => values?.length ? values.join(" · ") : t("全部");
   const dayTypes = (values?: Array<keyof typeof marketingDayLabels>) => values?.length ? values.map(value => t(marketingDayLabels[value])).join(" · ") : t("全部");
   return <>
+    {version.legacySource && <Alert type="info" title={t("旧单规则转换来源")}
+      description={`${version.legacySource.plan.name} · ${version.legacySource.plan.id} · ${version.legacySource.plan.version}`} />}
     <RecordFacts items={[{ key: "name", label: "方案名称", value: version.name }, { key: "version", label: "版本", value: version.version },
       { key: "start", label: "用租开始时点下限", value: at(version.effectiveFrom) }, { key: "end", label: "用租开始时点上限", value: at(version.effectiveTo) },
       { key: "customer", label: "适用客户", value: t(marketingCustomerLabels[version.customerScope]) },
@@ -100,6 +126,7 @@ function MarketingWorkspace() {
   const { api, scope, host, canManage: canRead, assertManage: assertRead, isCurrentScope } = access;
   const any = (permissions: typeof editPermissions) => permissions.some(permission => host.canAccess("rental", [permission]));
   const canEdit = any(editPermissions), canPublish = any(publishPermissions), canCatalog = any(catalogPermissions), canPrice = any(pricingReadPermissions);
+  const canReadLegacy = any(legacyReadPermissions);
   const assertPermission = (permissions: typeof editPermissions) => { assertRead(); if (!any(permissions)) throw new Error(t("当前操作不可用")); };
   const read = async <Value,>(load: () => Promise<Value>, signal: AbortSignal, check = assertRead) => {
     check(); if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -119,6 +146,9 @@ function MarketingWorkspace() {
     queryFn: ({ signal }) => read(() => api.marketingPlanHistory(planId!, { signal }), signal) });
   const operation = useMarketingOperation(access, assertRead);
   const [editing, setEditing] = useState<{ open: boolean; nonce: number; plan?: RentalMarketingPlan }>();
+  const [importing, setImporting] = useState<{ open: boolean; nonce: number }>();
+  const legacy = useQuery({ queryKey: [scope, "marketing-import-sources", canReadLegacy], enabled: Boolean(scope && importing?.open) && canEdit && canReadLegacy,
+    queryFn: ({ signal }) => read(() => api.discountPlans({ signal }), signal, () => { assertPermission(editPermissions); assertPermission(legacyReadPermissions); }) });
   const [decision, setDecision] = useState<Decision>();
   const nonce = useRef(0);
   const rows = canRead && !plans.isError ? plans.data : undefined;
@@ -153,6 +183,14 @@ function MarketingWorkspace() {
     assertRead(); setEditing(current => current?.nonce === original.nonce ? { ...current, open: false } : current);
     await refresh(); return result;
   });
+  const importLegacy = async (values: LegacyImportValues) => guarded(async () => {
+    if (!importing?.open || legacy.isError || !legacy.data) throw new Error(t("当前操作不可用"));
+    const original = importing;
+    const result = await operation.run("save_draft", undefined, 0, () => { assertPermission(editPermissions); assertPermission(legacyReadPermissions); },
+      operationId => api.importLegacyMarketingPlan({ ...values, operationId, expectedRevision: 0 }));
+    assertRead(); setImporting(current => current?.nonce === original.nonce ? { ...current, open: false } : current);
+    await refresh(); navigate(result.id); return result;
+  });
   const decide = async (values: DecisionValues) => guarded(async () => {
     if (!decision?.open) throw new Error(t("当前操作不可用"));
     const original = decision;
@@ -169,6 +207,8 @@ function MarketingWorkspace() {
     await refresh();
   });
   const pageActions: CoreAdminPageAction<Record<string, unknown>>[] = [
+    ...(!planId && canEdit && canReadLegacy ? [{ id: "import-legacy", kind: "open" as const, label: { default: "从旧方案建立草稿" }, slot: "tools" as const,
+      disabled: operation.blocked || plans.isError, open: () => { assertPermission(editPermissions); assertPermission(legacyReadPermissions); setImporting({ open: true, nonce: ++nonce.current }); } }] : []),
     { id: "marketing-calendar", kind: "navigate", label: { default: "活动日历" }, slot: "tools", to: { coreId: "rental", pageId: "marketing-calendar" } },
     ...(canEdit ? [{ id: "edit-marketing", kind: "open" as const, label: { default: selected ? "编辑草稿" : "新建营销方案" }, emphasis: "primary" as const,
       disabled: operation.blocked || plans.isError || !plans.data || Boolean(planId && !selected) || selected?.status === "ended",
@@ -237,5 +277,11 @@ function MarketingWorkspace() {
     {canRead && decision && <MarketingDecision key={decision.nonce} decision={decision} disabled={!canPublish || operation.blocked}
       onSave={decide} onClose={() => setDecision(current => current ? { ...current, open: false } : current)}
       onExited={() => setDecision(current => current?.open ? current : undefined)} onError={report} />}
+    {canRead && importing && <>
+      {legacy.isError && <Alert type="error" title={t("旧方案读取失败")} action={<Button onClick={() => legacy.refetch()}>{t("重试")}</Button>} />}
+      <LegacyImport key={importing.nonce} open={importing.open} nonce={importing.nonce} rows={legacy.isError || !canReadLegacy ? [] : legacy.data ?? []}
+        disabled={!canEdit || !canReadLegacy || operation.blocked || !legacy.isSuccess || legacy.isFetching} onSave={importLegacy}
+        onClose={() => setImporting(current => current ? { ...current, open: false } : current)} onExited={() => setImporting(current => current?.open ? current : undefined)} onError={report} />
+    </>}
   </>;
 }

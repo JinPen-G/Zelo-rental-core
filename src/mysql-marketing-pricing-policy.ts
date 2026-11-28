@@ -13,7 +13,7 @@ import { assertMarketingAuthority, type RentalMarketingScope, type RentalMarketi
 import { RentalIdempotencyRepository, assertSameRequest } from "./mysql-idempotency";
 import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
 import { readRentalOriginalReceipt } from "./mysql-business-fence";
-import { executeMarketingCommand } from "./marketing-command";
+import { executeMarketingCommand, readMarketingRejection } from "./marketing-command";
 
 type Row = Omit<RentalMarketingPricingPolicy, "updatedAt"> & { updatedAt: Date };
 type Original = { actorUserId: string; operationId: string; result: RentalMarketingPricingPolicy };
@@ -90,8 +90,10 @@ export class RentalMarketingPricingPolicyRepository<Tx extends RentalBusinessCon
       await this.current(scope, fingerprint, "read");
       const hit = await this.operations(scope).records.find(scope.tenantId, action, operationKey(scope, actorUserId, operationId));
       if (hit && (hit.orderId !== null || hit.status !== "succeeded")) throw new ConflictException("营销策略原收据状态无效");
-      const result = hit ? this.decode(hit.response, scope, actorUserId, operationId).result : undefined;
+      const rejected = hit ? readMarketingRejection(hit.response, { ...scope, actorUserId, action }, operationId) : undefined;
+      const result = hit && !rejected ? this.decode(hit.response, scope, actorUserId, operationId).result : undefined;
       await this.current(scope, fingerprint, "read");
+      if (rejected) return rejected;
       return result ? { status: "committed", operationId, result } : { status: "unknown" };
     });
   }
@@ -145,7 +147,7 @@ export class RentalMarketingPricingPolicyRepository<Tx extends RentalBusinessCon
         assertMarketingAuthority(this.identity(), scope, "publish");
         if (fingerprint !== requestFingerprint(this.identity())) throw new ConflictException("营销策略提交前身份已变化");
         return { actorUserId, operationId: input.operationId, result };
-      } });
+      } }, () => this.current(scope, fingerprint, "publish"));
     return original.result;
   }
 }

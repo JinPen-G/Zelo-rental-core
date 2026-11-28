@@ -9,6 +9,7 @@ import type {
   RentalMarketingRule,
   RentalMarketingRuleConditions,
   SaveRentalMarketingPlanDraftRequest,
+  ImportRentalMarketingPlanRequest,
   ApplyOfficialCalendarSourceRequest,
   PublishRentalCalendarRequest,
   RestoreRentalCalendarVersionRequest,
@@ -667,6 +668,14 @@ export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanD
 export class ChangeRentalMarketingPlanStatusDto implements ChangeRentalMarketingPlanStatusRequest {
   @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
   @IsInt() @Min(1) expectedRevision!: number;
+  @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
+}
+
+export class ImportRentalMarketingPlanDto implements ImportRentalMarketingPlanRequest {
+  @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
+  @IsIn([0]) expectedRevision!: 0;
+  @IsString() @IsNotEmpty() @MaxLength(191) sourcePlanId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(191) sourceVersion!: string;
   @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
 }
 

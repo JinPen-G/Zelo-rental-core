@@ -172,7 +172,7 @@ import { assertMarketingPricingPolicy } from "./mysql-marketing-pricing-policy";
 import { originalMarketingPlan, isSingleRuleEvaluation } from "./marketing-quote-history";
 import type { RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest, RentalMarketingPricingLine } from "./contracts";
 import { assertMarketingAuthority, type RentalMarketingAction } from "./marketing-plan";
-import type { SaveRentalMarketingPlanDraftRequest, ChangeRentalMarketingPlanStatusRequest, RentalMarketingScheduleQuery } from "./contracts";
+import type { SaveRentalMarketingPlanDraftRequest, ImportRentalMarketingPlanRequest, ChangeRentalMarketingPlanStatusRequest, RentalMarketingScheduleQuery } from "./contracts";
 import { buildMarketingSchedule, marketingScheduleRange } from "./marketing-schedule";
 import { resolveQuoteServices, resolveExchangeServices } from "./service-catalog";
 import { applyPricingGroupSecurityRateOverrides, computeSecurityAmounts, type SecurityLineInput, type RentalPricingSecurityRateOverride, validateSecurityRateCoverage, validateSecurityRules } from "./security-deposit";
@@ -2273,6 +2273,24 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const binding = await this.categoryConfigurationBinding(tenantId, context);
     if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销草稿持久化或品类依据不可用");
     return this.configStore.writeMarketingPlan(scope, binding, "save_draft", input, input.id);
+  }
+
+  async importLegacyMarketingPlan(tenantId: string, context: BusinessContext, input: ImportRentalMarketingPlanRequest) {
+    input = structuredClone(input);
+    const scope = this.marketingScope(tenantId, context, "save_draft");
+    const identity = requestFingerprint(getRequestIdentity());
+    const readSource = () => {
+      const current = getRequestIdentity();
+      if (identity !== requestFingerprint(current) || !(current?.isPlatformAdmin
+        || ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:view"].some(code => hasEffectivePermission(current?.permissions ?? [], code))))
+        throw new ForbiddenException("转换旧方案仍需原优惠方案读取权");
+    };
+    readSource();
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    readSource();
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("旧方案转换缺少原配置事务或品类依据");
+    const result = await this.configStore.writeMarketingPlan(scope, binding, "save_draft", input);
+    readSource(); return result;
   }
 
   async changeMarketingPlanStatus(tenantId: string, context: BusinessContext, id: string,

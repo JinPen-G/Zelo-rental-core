@@ -18,6 +18,7 @@ import type {
   RentalMarketingPlanOperationReceipt,
   RentalMarketingPlanEvent,
   SaveRentalMarketingPlanDraftRequest,
+  ImportRentalMarketingPlanRequest,
   ChangeRentalMarketingPlanStatusRequest,
   RentalPriceAdjustmentPlan,
   RentalPriceAdjustmentPreviewRow,
@@ -130,6 +131,7 @@ export function createRentalCommercialApi(
     marketingPlanOperation: (operationId: string, action: RentalMarketingPlanEvent["action"], options?: ReadOptions) =>
       request<RentalMarketingPlanOperationReceipt>(`/rental/v1/marketing-plans/operations/${encodeURIComponent(operationId)}`,
         { params: { action }, ...readOptions(options) }),
+    importLegacyMarketingPlan: (data: ImportRentalMarketingPlanRequest) => request<RentalMarketingPlan>("/rental/v1/marketing-plans/import-legacy", { method: "post", data, retryAuthentication: false }),
     saveMarketingPlanDraft: (data: SaveRentalMarketingPlanDraftRequest) => request<RentalMarketingPlan>(
       data.id ? `/rental/v1/marketing-plans/${encodeURIComponent(data.id)}/draft` : "/rental/v1/marketing-plans",
       { method: data.id ? "put" : "post", data, retryAuthentication: false }),

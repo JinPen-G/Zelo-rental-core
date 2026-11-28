@@ -2,12 +2,12 @@
  * 本模块不读库、不分配权限、不迁移旧方案或更新历史报价。 */
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { isDeepStrictEqual } from "node:util";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { RequestIdentity } from "@rental-os/platform-server/request-identity";
 import {
   RENTAL_SINGLE_MARKETING_RULE_POLICY, type ChangeRentalMarketingPlanStatusRequest,
   type RentalMarketingPlan, type RentalMarketingPlanEvent, type RentalMarketingPlanVersion,
-  type SaveRentalMarketingPlanDraftRequest
+  type SaveRentalMarketingPlanDraftRequest, type RentalDiscountPlan, type ImportRentalMarketingPlanRequest
 } from "./contracts";
 import { assertMarketingPlan, RentalMarketingSelectionError } from "./discount-selection";
 
@@ -85,6 +85,7 @@ export function prepareMarketingDraft(scope: RentalMarketingScope, input: SaveRe
     applicablePricingGroupIds: structuredClone(input.applicablePricingGroupIds ?? []),
     applicableDayTypes: structuredClone(input.applicableDayTypes), priority: input.priority,
     effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo,
+    legacySource: structuredClone(current?.draft?.legacySource ?? current?.published?.legacySource),
     rules: input.rules.map(rule => ({ ...structuredClone(rule), version: `draft-${revision}` })),
     createdAt: current?.createdAt ?? at, updatedAt: at
   };
@@ -92,6 +93,32 @@ export function prepareMarketingDraft(scope: RentalMarketingScope, input: SaveRe
   return { id, ...scope, code: draft.code, status: current?.status ?? "draft", revision, draft,
     published: current?.published ? structuredClone(current.published) : undefined,
     createdAt: current?.createdAt ?? at, updatedAt: at };
+}
+
+export function legacyMarketingPlanId(scope: RentalMarketingScope, sourcePlanId: string) {
+  return `marketing_legacy_${createHash("sha256").update(JSON.stringify([scope.tenantId, scope.workspaceId, sourcePlanId])).digest("hex")}`;
+}
+
+/** 单规则等价映射只接受原租金且不叠加/允许券的配置；不能静默改造旧权益。 */
+export function prepareLegacyMarketingImport(scope: RentalMarketingScope, source: RentalDiscountPlan,
+  input: ImportRentalMarketingPlanRequest, at: string): RentalMarketingPlan {
+  if (input.expectedRevision !== 0 || source.id !== input.sourcePlanId || source.version !== input.sourceVersion
+    || source.tenantId !== scope.tenantId || source.categoryCode !== scope.categoryCode)
+    throw new ConflictException("旧优惠方案来源或版本已变化");
+  if (source.appliesTo !== "rental" || source.stackableWithOtherPlans || !source.stackableWithCoupon)
+    throw new ConflictException("旧方案含叠加、禁券或非租金目标，请按新策略明确新建，不能自动等价转换");
+  const stableId = legacyMarketingPlanId(scope, source.id), pricingIds = source.applicablePricingGroupIds ?? [];
+  const next = prepareMarketingDraft(scope, { operationId: input.operationId, expectedRevision: 0, changeReason: input.changeReason,
+    code: source.code, name: source.name, pricingPolicy: RENTAL_SINGLE_MARKETING_RULE_POLICY, appliesTo: "rental",
+    minimumSpend: source.minimumSpend, customerScope: source.customerScope,
+    // 原单规则用定价分组优先于商品。保持其实际命中范围，原字段完整保存在来源快照。
+    applicableItemGroupIds: pricingIds.length ? [] : [...source.applicableItemGroupIds], applicablePricingGroupIds: [...pricingIds],
+    applicableDayTypes: [...source.applicableDayTypes], priority: source.priority, effectiveFrom: source.effectiveFrom, effectiveTo: source.effectiveTo,
+    rules: [{ id: `legacy_rule_${stableId.slice(-64)}`, name: source.name, status: "enabled", priority: source.priority, conditions: {},
+      action: { type: source.discountType, value: source.discountValue, thresholdAmount: source.thresholdAmount, maximumDiscount: source.maximumDiscount } }] }, undefined, at);
+  next.id = stableId; next.draft!.id = stableId;
+  next.draft!.legacySource = { importedAt: at, plan: structuredClone(source) };
+  return next;
 }
 
 /** published 正文只在发布时产生新版本。暂停/结束保留同一份不可变正文及历史版本。 */

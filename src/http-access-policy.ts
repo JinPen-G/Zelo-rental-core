@@ -496,7 +496,7 @@ export const RENTAL_HTTP_REVIEWED_ACCESS: readonly RentalHttpAccessDeclaration[]
     "original configuration/price-adjustment/calendar/rule/service-capacity transaction enters lockActiveCategoryBinding -> Tenant/Core; version/revision/configuration/audit commit together; official calendar uses stored approved source, normalized business/core persist performs no second write"),
   ...reviewed(RentalBusinessController, [business.calendarRangePreview, business.calendarRangeRemovePreview], "buffered-read",
     "original calendar range preview builds detached draft changes from committed configuration, writes/audits only occur in the separate apply handlers"),
-  ...reviewed(RentalBusinessController, [business.createMarketingPlan, business.saveMarketingPlanDraft,
+  ...reviewed(RentalBusinessController, [business.createMarketingPlan, business.saveMarketingPlanDraft, business.importLegacyMarketingPlan,
     business.publishMarketingPlan, business.pauseMarketingPlan, business.endMarketingPlan, business.changeMarketingPricingPolicy], "transactional-write",
     "original idempotent action takes Tenant/Core before category/workspace; action permission, expected revision and references rechecked before draft/version/event and original receipt commit in the same transaction; replay keeps original actor/scope and frozen result; no pricing or external side effects"),
   ...reviewed(RentalBusinessController, [business.initiateFunding, business.appendFunding,

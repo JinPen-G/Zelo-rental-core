@@ -3507,7 +3507,15 @@ export interface RentalQuoteMarketingOptions {
   policyRevision: number;
   plans: Array<{ id: string; name: string; version: string }>;
 }
-export type RentalMarketingPricingPolicyReceipt = { status: "unknown" } | {
+export interface RentalMarketingOperationRejection {
+  status: "rejected";
+  operationId: string;
+  action: RentalMarketingPlanEvent["action"] | "change_policy";
+  planId?: string;
+  expectedRevision: number;
+  message: string;
+}
+export type RentalMarketingPricingPolicyReceipt = { status: "unknown" } | RentalMarketingOperationRejection | {
   status: "committed"; operationId: string; result: RentalMarketingPricingPolicy;
 };
 export const RENTAL_MARKETING_RULE_ACTIONS = [...RENTAL_DISCOUNT_TYPES, "fixed_price"] as const;
@@ -3556,6 +3564,8 @@ export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
   pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
   workspaceId: string;
   appliesTo: "rental";
+  /** 由显式旧方案转换保存的原版本；后续编辑不得改写此来源。 */
+  legacySource?: { importedAt: string; plan: RentalDiscountPlan };
   rules: RentalMarketingRule[];
 }
 
@@ -3617,13 +3627,22 @@ export interface RentalMarketingPlan {
 }
 
 export interface SaveRentalMarketingPlanDraftRequest extends Omit<RentalMarketingPlanVersion,
-  "id" | "tenantId" | "workspaceId" | "categoryCode" | "status" | "version" | "rules" | "createdAt" | "updatedAt"> {
+  "id" | "tenantId" | "workspaceId" | "categoryCode" | "status" | "version" | "rules" | "createdAt" | "updatedAt" | "legacySource"> {
   id?: string;
   /** 同一提交意图的稳定原操作号；未知结果仅查询原收据，不换号自动重发。 */
   operationId: string;
   /** 新建为0；修改必须是本次读取到的原修订，不由服务端静默补齐。 */
   expectedRevision: number;
   rules: Array<Omit<RentalMarketingRule, "version">>;
+  changeReason: string;
+}
+
+/** 只生成一份草稿，不改旧方案、发布状态或空间策略。原源版本须在同事务锁内复验。 */
+export interface ImportRentalMarketingPlanRequest {
+  operationId: string;
+  expectedRevision: 0;
+  sourcePlanId: string;
+  sourceVersion: string;
   changeReason: string;
 }
 
@@ -3650,7 +3669,7 @@ export interface RentalMarketingPlanHistory {
 }
 
 /** 当前有读取权限的原操作者核对自己的原操作；无收据不代表失败或可重做。 */
-export type RentalMarketingPlanOperationReceipt = { status: "unknown" } | {
+export type RentalMarketingPlanOperationReceipt = { status: "unknown" } | RentalMarketingOperationRejection | {
   status: "committed";
   operationId: string;
   action: RentalMarketingPlanEvent["action"];

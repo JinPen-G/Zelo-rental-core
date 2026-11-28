@@ -2,6 +2,13 @@
 import type { AdminMessages } from "@rental-os/platform-admin/locale";
 
 export const marketingMessages = {
+  "从旧方案建立草稿": "Create draft from legacy plan",
+  "建立草稿": "Create draft",
+  "原版本": "Original version",
+  "旧单规则转换来源": "Original single-rule plan",
+  "旧方案读取失败": "Unable to load legacy plans",
+  "一份旧方案转换为一份草稿和一条规则；保留原版本及金额，不自动发布或切换空间策略。": "Convert one legacy plan into one draft with one rule. Preserve its original version and amounts; publication and workspace policy stay explicit.",
+  "含跨方案叠加、禁用优惠券或非租金费用的旧方案不能等价转换，请明确新建。": "Plans with stacking, coupon exclusions or non-rent charges cannot be converted equivalently. Create a new plan explicitly.",
   "活动日历": "Activity calendar",
   "金额试算": "Price simulation",
   "下单时间窗": "Booking window",
