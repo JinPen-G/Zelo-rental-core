@@ -1,4 +1,5 @@
-/** 原库存事实的有界排班读取。只投影当前可见资产和获授权来源，不创建预占、工单或配置。 */
+/** 原库存事实的有界排班读取。调用方提供同一 RepeatableRead 事务，包含资产归属范围读取；
+ * 只投影当前可见资产和获授权来源，不创建预占、工单或配置，也不代替提交时授权与库存复核。 */
 import { ConflictException, ForbiddenException, ServiceUnavailableException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { isDeepStrictEqual } from "node:util";

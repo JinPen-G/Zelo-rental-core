@@ -31,7 +31,7 @@ export type RentalCoreFactTransaction = RentalCategoryWriteTransaction & {
 
 export type RentalCoreFactStorage<TTransaction extends RentalCoreFactTransaction> = TTransaction & {
   $transaction<T>(run: (transaction: TTransaction) => Promise<T>,
-    options?: { isolationLevel: "ReadCommitted" }): Promise<T>;
+    options?: { isolationLevel: "ReadCommitted" | "RepeatableRead" }): Promise<T>;
 };
 
 export interface RentalCoreFactContacts<TTransaction extends RentalCoreFactTransaction>

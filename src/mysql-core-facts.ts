@@ -1685,10 +1685,27 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
 
   async readAssetSchedule(tenantId: string, workspaceId: string, query: RentalAssetScheduleQuery,
     access: { readOrders: boolean; readWorkOrders: boolean }): Promise<Omit<RentalAssetSchedule, "timeZone">> {
-    return readRentalAssetSchedule(this.store, this.contacts, tenantId, workspaceId, query, {
-      assets: await this.assetVisibilityWhere(this.store, tenantId, workspaceId),
-      orders: requestRentalOrderVisibilityWhere(this.contacts), workOrders: this.workOrderVisibilityWhere(), ...access
-    });
+    query = structuredClone(query);
+    access = { ...access };
+    const identity = structuredClone(this.contacts.getRequestIdentity());
+    const locationIds = structuredClone(this.contacts.getRequestLocationIds());
+    const assertCurrentScope = () => {
+      if (!isDeepStrictEqual(identity, this.contacts.getRequestIdentity())
+        || !isDeepStrictEqual(locationIds, this.contacts.getRequestLocationIds()))
+        throw new ForbiddenException("排班读取期间身份或经营范围已变化");
+    };
+    // 配车/归还/养护会在同一提交中改变多张表。所有权、资产、预占与分配
+    // 必须来自同一快照；逐项 autocommit 可能把旧可用资产和新释放预占拼成空闲。
+    const result = await this.store.$transaction(async tx => {
+      assertCurrentScope();
+      const assets = await this.assetVisibilityWhere(tx, tenantId, workspaceId);
+      assertCurrentScope();
+      return readRentalAssetSchedule(tx, this.contacts, tenantId, workspaceId, query, {
+        assets, orders: requestRentalOrderVisibilityWhere(this.contacts), workOrders: this.workOrderVisibilityWhere(), ...access
+      });
+    }, { isolationLevel: "RepeatableRead" });
+    assertCurrentScope();
+    return result;
   }
 
   private async assetVisibilityWhere(client: TTransaction, tenantId: string, workspaceId: string, assetId?: string): Promise<Prisma.RentalAssetWhereInput> {
