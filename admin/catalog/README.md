@@ -70,6 +70,8 @@
 
 新建、紧急停租、延期、取消未来管控和解除分别调用原命令。管控类型可配置阻租、工单与验收要求，每张管控冻结创建时的规则；须验收的类型必须关联原工单。计划结束不自动释放，延期不改旧履历，同车多条限制在库存中按区间并集合并为一次占用。原工单继续承担派工、处理、附件和验收；工单完成后仍从本条管控解除，其他限制及订单保留。[合同](../../src/asset-controls.ts) · [原事务仓储](../../src/mysql-asset-controls.ts)
 
+管控详情显示最近200条原操作履历，包括原因、操作者标识、修订与时间。使用公共Table的展开行核对原操作号、变更前后区间、状态及冻结的恢复条件；未记录的历史明确显示缺失，不从当前管控或当前类型补齐，也不把当前人员姓名当成历史姓名。展开只展示已受权读取的原履历，不执行写入。
+
 普通命令在原资产锁内核原分配和预约峰值。冲突只投影当前有权读取的订单编号、标识与状态，进入原订单处理。紧急停租必须显式拥有 `rental-core:asset:control:emergency` 并确认原因；管理员标志或通配权限不能替代此码。不自动取消订单、退款或调车。页面读权由 `page.asset-controls/view` 映射原资产、养护或管控权限；写入另核 `asset.control/manage|configure|emergency`。[唯一权限映射](../../src/permissions.ts)
 
 HTTP公开读口为 `asset-control-types`、`asset-control-options`、`asset-control-assignees`、`asset-controls` 及管控的 `history/conflicts`，均位于 `/rental/v1`。写口使用 `operationId/expectedRevision/reason`；`GET asset-control-operations/:operationId?action=...&targetId=...` 读取本人原账，targetId在创建时是资产、类型保存时是code、其他动作是管控ID。收据确认原修订，当前状态另读；unknown不代表可以重发。原Core停用准入未放宽。[HTTP合同](../../src/http-openapi-asset-controls.ts) · [原账适配](../../src/asset-control-application.ts)

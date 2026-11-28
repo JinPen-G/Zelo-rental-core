@@ -132,6 +132,19 @@ function ControlsBody(context: RentalCatalogPageContext) {
       {row.plannedEndAt && <Button disabled={blocked} onClick={() => open("extend", row)}>{t("延期")}</Button>}
       <Button disabled={blocked} onClick={() => open(Date.parse(row.startAt) > Date.now() ? "cancel" : "release", row)}>{t(Date.parse(row.startAt) > Date.now() ? "取消未来管控" : "解除管控")}</Button>
     </>}</div>;
+  const historyTime = (value?: string) => value && Number.isFinite(Date.parse(value)) ? format(value) : t("原履历未记录");
+  // 履历只解释当次保存的前后事实，不拿当前类型配置或当前管控补齐历史。
+  const historySnapshot = (snapshot: RentalAssetControl | undefined, missing: string) => snapshot ? <RecordFacts items={[
+    { key: "type", label: t("管控类型"), value: snapshot.policy?.name ? t(snapshot.policy.name) : t("原履历未记录") },
+    { key: "revision", label: t("修订"), value: snapshot.revision ?? t("原履历未记录") },
+    { key: "status", label: t("状态"), value: statuses[snapshot.status] ? t(statuses[snapshot.status]) : t("原履历未记录") },
+    { key: "start", label: t("开始时间"), value: historyTime(snapshot.startAt) },
+    { key: "plannedEnd", label: t("计划结束"), value: snapshot.plannedEndAt ? historyTime(snapshot.plannedEndAt) : t("结束未定") },
+    { key: "ended", label: t("实际结束"), value: snapshot.endedAt ? historyTime(snapshot.endedAt) : snapshot.status === "active" ? t("未解除") : t("原履历未记录") },
+    ...(["blocksRental", "requiresWorkOrder", "releaseRequiresAcceptance"] as const).map((key, index) => ({ key,
+      label: t(["阻止出租", "需要工单", "解除须验收"][index]),
+      value: typeof snapshot.policy?.[key] === "boolean" ? t(snapshot.policy[key] ? "是" : "否") : t("原履历未记录") }))
+  ]} /> : <p className={styles.help}>{t(missing)}</p>;
   return <CorePage title={t("人工管控中心")} summary={zone} actions={actions}>
     {!canRead() ? <Alert type="warning" showIcon title={t("管控读取受限")} /> : <div className={styles.workspace}>
       {(operation.blocked || operation.unavailable) && <Alert type="error" showIcon title={t("当前浏览器无法可靠保存管控原操作")} />}
@@ -174,10 +187,17 @@ function ControlsBody(context: RentalCatalogPageContext) {
               { title: t("订单编号"), dataIndex: "orderNo" }, { title: t("操作"), render: (_value, row) => orderAccess && <Button onClick={() => navigate(rentalOrderLocation(row.id))}>{t("进入订单处理")}</Button> }
             ]} /> : <Alert type="warning" title={t("冲突订单读取受限")} />}</QueryState>}
           <ListSection title={t("操作履历")}><QueryState loading={history.isLoading} error={history.error} onRetry={() => history.refetch({ throwOnError: true })}>
-            <Table rowKey="id" dataSource={!history.isError ? history.data ?? [] : []} pagination={{ pageSize: 10 }} columns={[
+            <Table key={selected.id} rowKey="id" dataSource={!history.isError ? history.data ?? [] : []} pagination={{ pageSize: 10 }}
+              expandable={{ expandedRowRender: row => <div className={styles.workspace}>
+                <RecordFacts items={[{ key: "operation", label: t("原操作号"), value: row.operationId || t("原履历未记录") }]} />
+                <ListSection title={t("变更前")}>{historySnapshot(row.before, ["create", "emergency"].includes(row.action) ? "创建前无管控记录" : "变更前记录缺失")}</ListSection>
+                <ListSection title={t("变更后")}>{historySnapshot(row.after, "变更后记录缺失")}</ListSection>
+              </div> }} columns={[
               { title: t("动作"), render: (_value, row) => t(names[row.action]) }, { title: t("原因"), dataIndex: "reason" },
-              { title: t("修订"), dataIndex: "revision" }, { title: t("时间"), render: (_value, row) => format(row.createdAt) }
+              { title: t("操作者标识"), render: (_value, row) => row.actorUserId || t("原履历未记录") },
+              { title: t("修订"), dataIndex: "revision" }, { title: t("时间"), render: (_value, row) => historyTime(row.createdAt) }
             ]} /></QueryState></ListSection>
+          <p className={styles.help}>{t("显示最近200条操作履历")}</p>
         </div>}
       </Drawer>
       <Drawer open={Boolean(editor)} onClose={() => edit.dismiss(() => setEditor(undefined))} title={editor ? t(names[editor.action]) : ""}
