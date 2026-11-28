@@ -85,6 +85,8 @@ export function MaintenanceWorkOrdersPage({
   const [searchParams, setSearchParams] = useSearchParams();
   const detailTab = searchParams.get("tab") === "history" ? "history" : "detail";
   const [createForm] = Form.useForm<CreateRentalWorkOrderRequest>();
+  const [createSource, setCreateSource] = useState<"return" | "asset">("return");
+  const createOperationId = useRef("");
   const [assignForm] = Form.useForm<{ assigneeId?: string }>();
   const [submitForm] = Form.useForm<SubmitFormValues>();
   const [reviewForm] = Form.useForm<ReviewRentalWorkOrderRequest>();
@@ -127,12 +129,18 @@ export function MaintenanceWorkOrdersPage({
   const activeWorkOrder = workOrderId ? workOrders.data?.find(row => row.id === workOrderId) : actionWorkOrder;
   const validationTarget = useRef("");
   validationTarget.current = JSON.stringify([
-    boardScope, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible
+    boardScope, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible,
+    createSource, createForm.getFieldValue("assetId"), createForm.getFieldValue("dispositionId")
   ]);
   const selectedDispositionId = Form.useWatch("dispositionId", createForm);
   const selectedDisposition = (dispositions.data ?? []).find((row) => row.id === selectedDispositionId);
+  const selectedAssetId = Form.useWatch("assetId", createForm);
+  const assets = useQuery({ queryKey: ["rental-core", "work-order-assets", boardScope],
+    queryFn: ({ signal }) => rentalCoreApi.assets({ signal }), enabled: dialog === "create" && createSource === "asset" });
+  const selectedAsset = assets.data?.find(row => row.id === selectedAssetId);
+  const createReady = createSource === "asset" ? Boolean(selectedAsset) && !assets.isError : Boolean(selectedDisposition) && !dispositions.isError;
   const assigneeLocationId = dialog === "create"
-    ? selectedDisposition?.locationId
+    ? createSource === "asset" ? selectedAsset?.locationId : selectedDisposition?.locationId
     : dialog === "assign"
       ? activeWorkOrder?.locationId
       : undefined;
@@ -154,7 +162,8 @@ export function MaintenanceWorkOrdersPage({
       queryClient.invalidateQueries({ queryKey: ["rental-core", "stock-dispositions"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "work-orders"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "stocks"] }),
-      queryClient.invalidateQueries({ queryKey: ["rental-core", "assets"] })
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "assets"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "work-order-assets"] })
     ]);
   };
 
@@ -180,8 +189,10 @@ export function MaintenanceWorkOrdersPage({
 
   const createEditor = useCoreForm({
     form: createForm, permissions: [{ resource: "maintenance", action: "manage" }],
-    disabled: dialog !== "create" || run.isPending || !selectedDisposition || dispositions.isError || assignmentCandidates.isError,
-    onSave: data => run.mutateAsync({ kind: "create", data })
+    disabled: dialog !== "create" || run.isPending || !createReady || assignmentCandidates.isError,
+    onSave: data => run.mutateAsync({ kind: "create", data: createSource === "asset"
+      ? { type: data.type, assetId: data.assetId, assigneeId: data.assigneeId, reason: data.reason, operationId: createOperationId.current }
+      : { type: data.type, dispositionId: data.dispositionId, assigneeId: data.assigneeId, reason: data.reason } })
   });
   const assignEditor = useCoreForm({
     form: assignForm, permissions: [{ resource: "maintenance", action: "manage" }],
@@ -245,7 +256,11 @@ export function MaintenanceWorkOrdersPage({
     if (run.isPending || dialog) return;
     dialogSequence.current += 1;
     resetActionForm(kind);
-    if (kind === "create") createForm.setFieldsValue({ type: "repair", dispositionId: workOrderDispositions[0]?.id });
+    if (kind === "create") {
+      setCreateSource("return");
+      createOperationId.current = crypto.randomUUID();
+      createForm.setFieldsValue({ type: "repair", dispositionId: workOrderDispositions[0]?.id });
+    }
     setActiveWorkOrder(workOrder);
     setBoardAssignment(undefined);
     setDialog(kind);
@@ -320,7 +335,7 @@ export function MaintenanceWorkOrdersPage({
   if (canManage && mainView === "work") listActions.push({
     id: "create", kind: "open", label: t("新建工单"), emphasis: "primary", icon: <PlusOutlined />,
     permissions: [{ resource: "maintenance", action: "manage" }],
-    disabled: run.isPending || Boolean(dialog) || dispositions.isLoading || dispositions.isError,
+    disabled: run.isPending || Boolean(dialog),
     open: () => openDialog("create")
   });
   const detailActions: CoreAdminPageAction<Record<string, unknown>>[] = [];
@@ -460,16 +475,21 @@ export function MaintenanceWorkOrdersPage({
           { key: "history", label: t("工单历史"), children: <QueryState loading={history.isLoading} error={history.error} onRetry={() => history.refetch({ throwOnError: true })}><ListSection><Table rowKey="id" size="small" loading={history.isLoading} refreshing={history.isFetching} onRefresh={() => history.refetch()} dataSource={history.data ?? []} pagination={false} locale={{ emptyText: t("暂无操作记录") }} columns={[{ title: t("时间"), dataIndex: "createdAt", width: 180, render: (value: string) => dateTime(value, locale) }, { title: t("动作"), dataIndex: "action", render: (value) => value.replace("rental.work_order.", "") }, { title: t("操作人"), dataIndex: "operator", width: 110 }, { title: t("说明"), dataIndex: "detail" }]} /></ListSection></QueryState> }
         ]} />}
     </RecordDetailLayout></QueryState>}
-    <Modal {...modalProps} title={t("新建养护工单")} open={dialog === "create" && actionDialog.visible} okText={t("新建工单")} okButtonProps={{ disabled: !selectedDisposition || dispositions.isError || assignmentCandidates.isError }} onConfirm={() => confirmEditor(createForm, createEditor.submit)}>
-      {!workOrderDispositions.length && !dispositions.isError && <Alert type="info" showIcon title={t("暂无待处理的归还处置")} />}
-      <QueryState loading={dispositions.isLoading} error={dispositions.error} onRetry={() => dispositions.refetch({ throwOnError: true })}>
+    <Modal {...modalProps} title={t("新建养护工单")} open={dialog === "create" && actionDialog.visible} okText={t("新建工单")} okButtonProps={{ disabled: !createReady || assignmentCandidates.isError }} onConfirm={() => confirmEditor(createForm, createEditor.submit)}>
+      <Segmented value={createSource} disabled={saving} options={[{ value: "return", label: t("归还处置") }, { value: "asset", label: t("独立资产养护") }]} onChange={value => {
+        setCreateSource(value as "return" | "asset");
+        createForm.setFieldsValue({ dispositionId: undefined, assetId: undefined, assigneeId: undefined });
+      }} />
+      {createSource === "return" && !workOrderDispositions.length && !dispositions.isError && <Alert type="info" showIcon title={t("暂无待处理的归还处置")} />}
+      <QueryState loading={createSource === "asset" ? assets.isLoading : dispositions.isLoading} error={createSource === "asset" ? assets.error : dispositions.error} onRetry={() => createSource === "asset" ? assets.refetch({ throwOnError: true }) : dispositions.refetch({ throwOnError: true })}>
       <Form form={createForm} layout="vertical" disabled={saving} {...createEditor.formProps}>
-        <Form.Item name="dispositionId" label={t("归还处置")} rules={[{ required: true, message: t("请选择归还处置") }]}><Select options={workOrderDispositions.map((row) => ({ value: row.id, label: `${row.itemGroupId} · ${row.blockReason || (row.status === "buffered" ? t("周转清洁") : t("异常隔离"))} · ${row.quantity} ${t("件")}` }))} placeholder={t("选择待处理的归还处置")} /></Form.Item>
+        {createSource === "return" ? <Form.Item name="dispositionId" label={t("归还处置")} rules={[{ required: true, message: t("请选择归还处置") }]}><Select options={workOrderDispositions.map((row) => ({ value: row.id, label: `${row.itemGroupId} · ${row.blockReason || (row.status === "buffered" ? t("周转清洁") : t("异常隔离"))} · ${row.quantity} ${t("件")}` }))} placeholder={t("选择待处理的归还处置")} /></Form.Item>
+          : <Form.Item name="assetId" label={t("养护资产")} rules={[{ required: true, message: t("请选择养护资产") }]}><Select showSearch options={(assets.data ?? []).filter(row => ["available", "maintenance"].includes(row.status)).map(row => ({ value: row.id, label: `${row.assetNo} · ${row.itemGroupName} · ${row.locationName}` }))} onChange={() => createForm.setFieldValue("assigneeId", undefined)} /></Form.Item>}
         <Form.Item name="type" label={t("工单类型")} rules={[{ required: true }]}><Select options={Object.entries(WORK_ORDER_TYPE_LABELS).map(([value, label]) => ({ value, label: t(label) }))} /></Form.Item>
         <QueryState loading={assignmentCandidates.isLoading} error={assignmentCandidates.error} onRetry={() => assignmentCandidates.refetch({ throwOnError: true })}>
-          <Form.Item name="assigneeId" label={t("处理人")}><Select allowClear disabled={run.isPending || !selectedDisposition || assignmentCandidates.isFetching} options={assignmentCandidates.data?.map((item) => ({ value: item.id, label: `${item.displayName} · ${item.account}` }))} placeholder={t("可稍后派工")} /></Form.Item>
+          <Form.Item name="assigneeId" label={t("处理人")}><Select allowClear disabled={run.isPending || !createReady || assignmentCandidates.isFetching} options={assignmentCandidates.data?.map((item) => ({ value: item.id, label: `${item.displayName} · ${item.account}` }))} placeholder={t("可稍后派工")} /></Form.Item>
         </QueryState>
-        <Form.Item name="reason" label={t("处理要求")}><Input.TextArea rows={3} placeholder={t("可补充清洁、维修或缺件处理要求")} /></Form.Item>
+        <Form.Item name="reason" label={t("处理要求")} rules={[{ required: createSource === "asset", whitespace: true, message: t("请填写处理要求") }, { max: 500 }]}><Input.TextArea rows={3} maxLength={500} placeholder={t("可补充清洁、维修或缺件处理要求")} /></Form.Item>
       </Form>
       </QueryState>
     </Modal>

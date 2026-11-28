@@ -942,10 +942,29 @@ export class RentalCoreController {
   @Get("work-order-assignees") workOrderAssignees(@Req() req: AuthenticatedRequest, @Query("locationId") locationId?: string) {
     return this.service.listWorkOrderAssignees(req.user.tenantId, locationId);
   }
+  @Get("work-order-assets") workOrderAssets(@Req() req: AuthenticatedRequest) {
+    return this.service.listWorkOrderAssets(req.user.tenantId);
+  }
   @Get("work-orders/:id/history") workOrderHistory(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
     return this.service.listWorkOrderHistory(req.user.tenantId, id);
   }
   @Post("work-orders") createWorkOrder(@Req() req: AuthenticatedRequest, @Body() body: CreateRentalWorkOrderDto) {
+    if (body.assetId) {
+      if (body.dispositionId || !body.operationId?.trim()) throw new BadRequestException("独立养护须提供唯一资产来源与原操作号");
+      const workspaceId = getRequestIdentity()?.workspaceId;
+      if (!workspaceId) throw new ForbiddenException("独立养护缺少当前经营空间");
+      return this.factResponse(this.idempotent.execute({
+        tenantId: req.user.tenantId, action: "work_order.create_manual", key: body.operationId,
+        fallbackKey: body.operationId, request: { workspaceId, ...body },
+        run: tx => this.service.createWorkOrder(req.user.tenantId, body, req.user.displayName, tx),
+        replay: async response => {
+          const original = response as import("./contracts").RentalWorkOrder | undefined;
+          if (!original?.id || original.tenantId !== req.user.tenantId || original.workspaceId !== workspaceId) return undefined;
+          const visible = (await this.service.listWorkOrders(req.user.tenantId)).find(row => row.id === original.id);
+          return visible && visible.assetId === original.assetId ? original : undefined;
+        }
+      }));
+    }
     return this.factResponse(this.service.createWorkOrder(req.user.tenantId, body, req.user.displayName));
   }
   @Put("work-orders/:id/assign") assignWorkOrder(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: AssignRentalWorkOrderDto) {

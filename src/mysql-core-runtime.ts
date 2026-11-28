@@ -1870,6 +1870,14 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
     return this.factStore.listWorkOrderAssignees(tenantId, locationId);
   }
 
+  async listWorkOrderAssets(tenantId: string): Promise<import("./contracts").RentalWorkOrderAsset[]> {
+    this.workspaceOf(tenantId);
+    return (await this.factStore.listAssets(tenantId))
+      .filter(row => [RentalAssetStatus.Available, RentalAssetStatus.Maintenance].includes(row.status))
+      .map(({ id, assetNo, itemGroupName, locationId, locationName, status, updatedAt }) =>
+        ({ id, assetNo, itemGroupName, locationId, locationName, status, updatedAt }));
+  }
+
   async listWorkOrderHistory(tenantId: string, workOrderId: string): Promise<RentalWorkOrderHistoryEntry[]> {
     this.workspaceOf(tenantId);
     const row = (await this.factStore.listWorkOrders(tenantId)).find((item) => item.id === workOrderId);
@@ -1884,10 +1892,28 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
     return assignee;
   }
 
-  async createWorkOrder(tenantId: string, input: CreateRentalWorkOrderRequest, operator: string) {
+  async createWorkOrder(tenantId: string, input: CreateRentalWorkOrderRequest, operator: string, tx?: TTransaction) {
     input = structuredClone(input);
     this.workspaceOf(tenantId);
-    const dispositions = await this.factStore.listStockDispositions(tenantId);
+    if (Boolean(input.dispositionId) === Boolean(input.assetId)) throw new BadRequestException("必须选择一项归还处置或一辆独立资产");
+    if (!["cleaning", "restock", "calibration", "repair"].includes(input.type)) throw new BadRequestException("养护工单类型无效");
+    if (input.assetId) {
+      if (!tx || !input.operationId?.trim() || !input.reason?.trim()) throw new BadRequestException("独立养护须提供原操作号、原因并在原幂等事务中创建");
+      const asset = (await this.factStore.listAssets(tenantId, tx)).find(row => row.id === input.assetId);
+      if (!asset) throw new NotFoundException("资产不存在或不在当前账号的经营空间与数据范围内");
+      const timestamp = now();
+      // 独立来源的创建者记录可信账号 id，供原 own 数据范围与创建审计使用。
+      const creator = getRequestIdentity()?.userId;
+      if (!creator) throw new ForbiddenException("独立养护缺少当前操作账号");
+      return this.factStore.upsertWorkOrder({
+        id: id("work"), tenantId, workspaceId: this.resolveWorkspaceId(tenantId),
+        workNo: `WO${timestamp.replace(/\D/g, "").slice(0, 14)}${randomUUID().slice(0, 4).toUpperCase()}`,
+        type: input.type, status: "pending", assetId: asset.id, itemGroupId: asset.itemGroupId,
+        locationId: asset.locationId, quantity: 1, assigneeId: input.assigneeId,
+        reason: input.reason.trim(), attachments: [], createdBy: creator, createdAt: timestamp, updatedAt: timestamp
+      }, tx);
+    }
+    const dispositions = await this.factStore.listStockDispositions(tenantId, undefined, tx);
     const disposition = dispositions.find((row) => row.id === input.dispositionId);
     if (!disposition) throw new NotFoundException("库存处置不存在或不属于当前经营空间");
     if (disposition.status === "restored" || disposition.status === "written_off") throw new ConflictException("已结束的库存处置不能再建养护工单");
@@ -1916,7 +1942,7 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    return this.factStore.upsertWorkOrder(workOrder);
+    return this.factStore.upsertWorkOrder(workOrder, tx);
   }
 
   async assignWorkOrder(tenantId: string, workOrderId: string, input: AssignRentalWorkOrderRequest) {

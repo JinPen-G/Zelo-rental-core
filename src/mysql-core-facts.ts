@@ -2767,7 +2767,49 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     if (!workOrder.orderId) await lockRentalBusinessTenant(client, workOrder.tenantId);
     if (workOrder.orderId) await this.lockOrder(workOrder.tenantId, workOrder.orderId, client);
     const workspaceId = await this.contacts.resolveWorkspaceId(client, workOrder.tenantId);
+    if (!workOrder.orderId && !workOrder.dispositionId) {
+      // 普通独立养护与新订单共用空间→型号资产锁，避免容量检查与新预占交错。
+      const scope = await client.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM business_workspaces
+        WHERE tenantId = ${workOrder.tenantId} AND id = ${workspaceId} FOR UPDATE`);
+      if (!scope.length) throw new ConflictException("经营空间已变化");
+      await this.lockInventoryTargets(workOrder.tenantId, workOrder.locationId,
+        [{ itemGroupId: workOrder.itemGroupId, inventoryMode: RentalInventoryMode.Serialized }], client);
+    }
     const assets = await this.lockAssetRows(client, workOrder.tenantId, workspaceId, workOrder.assetId ? [workOrder.assetId] : []);
+    if (!workOrder.orderId && !workOrder.dispositionId) {
+      if (!workOrder.assetId || workOrder.quantity !== 1 || workOrder.status !== "pending"
+        || workOrder.workspaceId !== workspaceId || workOrder.createdBy !== this.contacts.getRequestUserId()) {
+        throw new ConflictException("独立养护的资产、状态或当前账号来源不一致");
+      }
+      const current = await client.rentalAsset.findFirst({ where: {
+        tenantId: workOrder.tenantId, workspaceId,
+        AND: [{ id: workOrder.assetId }, await this.assetVisibilityWhere(client, workOrder.tenantId, workspaceId, workOrder.assetId)]
+      } });
+      if (!current || current.itemGroupId !== workOrder.itemGroupId || current.locationId !== workOrder.locationId) {
+        throw new ConflictException("独立养护的资产或地点范围已变化，请重新读取");
+      }
+      if (!["AVAILABLE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("当前资产状态不能发起普通独立养护，请先处理原占用或限制");
+      const allocations = await client.rentalAllocation.findMany({ where: {
+        assetId: current.id, status: { in: IN_USE_ALLOCATION_STATES }, order: { tenantId: workOrder.tenantId, workspaceId }
+      }, select: { id: true } });
+      if (allocations.length) throw new ConflictException("资产已有有效分配，须先经原订单流程处理；普通养护不能覆盖在途订单");
+      if (current.status === "AVAILABLE") {
+        const [inventory, reservations] = await Promise.all([
+          client.rentalAsset.findMany({ where: { tenantId: workOrder.tenantId, workspaceId,
+            itemGroupId: current.itemGroupId, locationId: current.locationId,
+            status: { notIn: ["MAINTENANCE", "DISABLED"] } }, select: { id: true } }),
+          this.activeReservations(workOrder.tenantId, client)
+        ]);
+        const reserved = peakReservedQuantity(reservations.filter(row => row.itemGroupId === current.itemGroupId
+          && row.locationId === current.locationId), new Date().toISOString(), "9999-12-30T00:00:00.000Z");
+        if (reserved > inventory.length - 1) throw new ConflictException("独立养护将影响既有预约容量，须先处理订单冲突");
+      }
+      const assignee = workOrder.assigneeId
+        ? (await this.listWorkOrderAssignees(workOrder.tenantId, current.locationId, client)).find(row => row.id === workOrder.assigneeId)
+        : undefined;
+      if (workOrder.assigneeId && !assignee) throw new ConflictException("处理人范围已变化，请重新选择");
+      workOrder = { ...workOrder, assigneeName: assignee?.displayName };
+    }
     if (workOrder.dispositionId) {
       const disposition = (await client.$queryRaw<Array<{ orderId: string; assetId: string | null; itemGroupId: string; locationId: string; status: string }>>(sql`
         SELECT orderId, assetId, itemGroupId, locationId, status FROM rental_stock_dispositions
@@ -2826,10 +2868,65 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       if (updated.count !== 1) throw new ConflictException("养护资产状态已变化，不能提交失去可租限制的工单");
       await appendAssetStatusHistory(client, { tenantId: workOrder.tenantId, workspaceId, assetId: asset.id,
         assetNo: asset.assetNo, fromStatus: asset.status, toStatus: RentalAssetStatus.Maintenance,
-        source: workOrder.orderId ? "order" : "manual", sourceId: workOrder.orderId,
+        source: workOrder.orderId ? "order" : "manual", sourceId: workOrder.orderId ?? workOrder.id,
         reason: workOrder.reason, operator: workOrder.createdBy });
     }
+    if (asset?.status === "MAINTENANCE" && !workOrder.orderId && !workOrder.dispositionId
+      && await this.independentWorkOrderOwnsAssetHold(client, workOrder.tenantId, workspaceId, asset.id)) {
+      // 后续独立养护可接手同一工单来源的隔离；不能接管资料维护或归还处置施加的限制。
+      await appendAssetStatusHistory(client, { tenantId: workOrder.tenantId, workspaceId, assetId: asset.id,
+        assetNo: asset.assetNo, fromStatus: asset.status, toStatus: RentalAssetStatus.Maintenance,
+        source: "manual", sourceId: workOrder.id, reason: workOrder.reason,
+        operator: workOrder.createdBy, recordUnchanged: true });
+    }
+    if (!workOrder.orderId && !workOrder.dispositionId) await client.operationLog.create({ data: {
+      tenantId: workOrder.tenantId, workspaceId, action: "rental.work_order.create",
+      detail: { workOrderId: row.id, workNo: row.workNo, assetId: row.assetId,
+        operator: workOrder.createdBy, reason: workOrder.reason, source: "manual_asset" } as Prisma.InputJsonValue
+    } });
     return toWorkOrder(row);
+  }
+
+  private async independentWorkOrderOwnsAssetHold(client: TTransaction, tenantId: string, workspaceId: string, assetId: string,
+    completedOnly = false): Promise<boolean> {
+    const history = await client.$queryRaw<Array<{ source: string; sourceId: string | null; toStatus: string; createdAt: Date }>>(sql`
+      SELECT source, sourceId, toStatus, createdAt FROM rental_asset_status_history
+      WHERE tenantId = ${tenantId} AND workspaceId = ${workspaceId} AND assetId = ${assetId}
+      ORDER BY createdAt DESC, id DESC LIMIT 2 FOR UPDATE`);
+    // UUID 不表示事件先后；同毫秒存在两条记录时不能猜测哪个限制最后生效。
+    if (history.length > 1 && history[0].createdAt.getTime() === history[1].createdAt.getTime()) return false;
+    const latest = history[0];
+    if (latest?.source !== "manual" || !latest.sourceId || assetStateFromSql(latest.toStatus) !== "MAINTENANCE") return false;
+    return Boolean(await client.rentalWorkOrder.findFirst({ where: {
+      id: latest.sourceId, tenantId, workspaceId, assetId, orderId: null, dispositionId: null,
+      ...(completedOnly ? { status: "completed" } : {})
+    }, select: { id: true } }));
+  }
+
+  private async restoreIndependentWorkOrderAsset(client: TTransaction, row: Prisma.RentalWorkOrderGetPayload<{}>, operator: string) {
+    if (!row.assetId || row.orderId || row.dispositionId) return;
+    const { tenantId, workspaceId, assetId } = row;
+    const asset = (await this.lockAssetRows(client, tenantId, workspaceId, [assetId])).get(assetId)!;
+    if (asset.status !== "MAINTENANCE") return;
+    const [work, dispositions, allocations] = await Promise.all([
+      client.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_work_orders
+        FORCE INDEX (rental_work_orders_asset_status_idx)
+        WHERE tenantId = ${tenantId} AND workspaceId = ${workspaceId} AND assetId = ${assetId}
+          AND status IN ('pending', 'in_progress', 'pending_review') FOR UPDATE`),
+      client.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_stock_dispositions
+        FORCE INDEX (rental_stock_dispositions_asset_status_idx)
+        WHERE tenantId = ${tenantId} AND workspaceId = ${workspaceId} AND assetId = ${assetId}
+          AND status IN ('blocked', 'buffered') FOR UPDATE`),
+      client.rentalAllocation.findMany({ where: { assetId, status: { in: IN_USE_ALLOCATION_STATES },
+        order: { tenantId, workspaceId } }, select: { id: true } })
+    ]);
+    if (work.length || dispositions.length || allocations.length
+      || !await this.independentWorkOrderOwnsAssetHold(client, tenantId, workspaceId, assetId, true)) return;
+    const changed = await client.rentalAsset.updateMany({ where: { id: assetId, tenantId, workspaceId, status: "MAINTENANCE" }, data: { status: "AVAILABLE" } });
+    if (changed.count !== 1) throw new ConflictException("独立养护验收时资产状态已变化");
+    await appendAssetStatusHistory(client, { tenantId, workspaceId, assetId, assetNo: asset.assetNo,
+      fromStatus: asset.status, toStatus: RentalAssetStatus.Available, source: "manual", sourceId: row.id,
+      reason: "独立养护验收完成，原工单隔离已解除", operator });
   }
 
   async assignWorkOrder(tenantId: string, workOrderId: string, assigneeId?: string, assigneeName?: string, tx?: TTransaction): Promise<RentalWorkOrder> {
@@ -2837,11 +2934,14 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     const client = tx;
     await lockRentalBusinessTenant(client, tenantId);
     const workspaceId = await this.contacts.resolveWorkspaceId(client, tenantId);
-    const row = await client.rentalWorkOrder.findFirst({ where: { id: workOrderId, tenantId, workspaceId } });
+    const row = await client.rentalWorkOrder.findFirst({ where: { id: workOrderId, tenantId, workspaceId, ...this.workOrderVisibilityWhere() } });
     if (!row) throw new NotFoundException("养护工单不存在或不属于当前经营空间");
+    if (!["pending", "in_progress"].includes(row.status)) throw new ConflictException("当前工单状态不能派工");
+    const assignee = assigneeId ? (await this.listWorkOrderAssignees(tenantId, row.locationId, client)).find(item => item.id === assigneeId) : undefined;
+    if (assigneeId && !assignee) throw new ConflictException("处理人范围已变化，请重新选择");
     const updated = await client.rentalWorkOrder.updateMany({
-      where: { id: row.id, tenantId, workspaceId },
-      data: { assigneeId: assigneeId ?? null, assigneeName: assigneeName?.trim() || null }
+      where: { id: row.id, tenantId, workspaceId, status: row.status, updatedAt: row.updatedAt },
+      data: { assigneeId: assigneeId ?? null, assigneeName: assignee?.displayName ?? null }
     });
     if (updated.count !== 1) throw new ConflictException("养护工单已被其他人修改，请刷新后重试");
     const refreshed = await client.rentalWorkOrder.findFirst({ where: { id: row.id, tenantId, workspaceId } });
@@ -2860,7 +2960,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     const run = async (client: TTransaction) => {
       await lockRentalBusinessTenant(client, tenantId);
       const workspaceId = await this.contacts.resolveWorkspaceId(client, tenantId);
-      const visible = await client.rentalWorkOrder.findFirst({ where: { id: workOrderId, tenantId, workspaceId } });
+      const visible = await client.rentalWorkOrder.findFirst({ where: { id: workOrderId, tenantId, workspaceId, ...this.workOrderVisibilityWhere() } });
       if (!visible) throw new NotFoundException("养护工单不存在或不属于当前经营空间");
       if (visible.orderId) await this.lockOrder(tenantId, visible.orderId, client);
       await this.lockAssetRows(client, tenantId, workspaceId, visible.assetId ? [visible.assetId] : []);
@@ -2927,6 +3027,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       }
       const updatedCount = await client.rentalWorkOrder.updateMany({ where: { id: row.id, tenantId, workspaceId, status: from }, data: { ...data, status: to } });
       if (updatedCount.count === 0) throw new ConflictException("工单已被其他人推进，请刷新后重试");
+      if (action === "review" && to === "completed") await this.restoreIndependentWorkOrderAsset(client, row, operator);
       await client.operationLog.create({
         data: {
           tenantId,

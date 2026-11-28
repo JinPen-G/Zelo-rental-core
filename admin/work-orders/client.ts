@@ -6,6 +6,7 @@ import type {
   AssignRentalWorkOrderRequest,
   CancelRentalWorkOrderRequest,
   CreateRentalWorkOrderRequest,
+  RentalWorkOrderAsset,
   RentalStockDisposition,
   RentalWorkOrder,
   RentalWorkOrderAssignee,
@@ -19,6 +20,7 @@ type ReadOptions = Pick<AdminRequestOptions, "signal">;
 
 export function createRentalWorkOrderApi(request: AdminRuntime["request"]) {
   return {
+    assets: (options: ReadOptions = {}) => request<RentalWorkOrderAsset[]>("/rental/v1/work-order-assets", options),
     stockDispositions: (orderId?: string, options: ReadOptions = {}) => request<RentalStockDisposition[]>("/rental/v1/stock-dispositions", { ...options, params: { orderId } }),
     restoreStockDisposition: (id: string) => request<RentalStockDisposition>(`/rental/v1/stock-dispositions/${id}/restore`, { method: "post" }),
     writeOffStockDisposition: (id: string, reason: string) => request<RentalStockDisposition>("/rental/v1/stock-dispositions/" + id + "/write-off", { method: "post", data: { reason } }),

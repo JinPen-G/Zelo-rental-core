@@ -373,7 +373,7 @@ export const RENTAL_HTTP_REVIEWED_ACCESS: readonly RentalHttpAccessDeclaration[]
   ...reviewed(RentalCoreController, [core.listCarrierShipmentEvents, core.bookingMembers, core.bookingOptions,
     core.bookingDeliveryAddresses, core.operationReport, core.profile, core.tenantReadiness,
     core.businessSettings, core.couponTemplates, core.locations, core.operators, core.groups, core.pricingGroups,
-    core.dispositions, core.workOrders, core.workOrderAssignees, core.workOrderHistory, core.workbenchTodos,
+    core.dispositions, core.workOrders, core.workOrderAssignees, core.workOrderAssets, core.workOrderHistory, core.workbenchTodos,
     core.orders, core.order, core.orderDocumentVersions, core.orderDocumentVersion, core.allocationCandidates,
     core.listInternalOrderNotes, core.extensions, core.changes, core.exchangeServiceOptions, core.templates,
     core.inspections, core.getServiceExecutionReceipt], "buffered-read",

@@ -697,7 +697,12 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   },
   {
     method: "post", path: "/api/rental/v1/work-orders", tag: "RentalCore", operationId: "createRentalWorkOrder",
-    summary: "Create maintenance work order", permissions: ["rental-core:maintenance:manage"], requestSchema: "GenericObject", responseSchema: "GenericObject"
+    summary: "Create a return-disposition or independent asset maintenance work order", permissions: ["rental-core:maintenance:manage"], requestSchema: "CreateRentalWorkOrderRequest", responseSchema: "GenericObject"
+  },
+  {
+    method: "get", path: "/api/rental/v1/work-order-assets", tag: "RentalCore", operationId: "listRentalWorkOrderAssets",
+    summary: "List scoped assets for independent maintenance without private attributes", permissions: ["rental-core:maintenance:manage"],
+    responseSchema: { type: "array", items: { $ref: "#/components/schemas/RentalWorkOrderAsset" } }
   },
   {
     method: "put", path: "/api/rental/v1/work-orders/{id}/assign", tag: "RentalCore", operationId: "assignRentalWorkOrder",

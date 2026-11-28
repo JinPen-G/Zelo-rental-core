@@ -1,6 +1,6 @@
 /** Rental 原 HTTP schema 单源。保留历史宽泛字段，字段完整性缺口由接口贡献明确列出。 */
 import { STAFF_UPLOAD_OBSERVATION_SCHEMAS } from "@rental-os/shared";
-import { RENTAL_CURRENCY_CODES, RentalInventoryMode, RENTAL_LOCATION_TYPES, RENTAL_PRICING_UNIT_CODES, RENTAL_SERVICE_EXECUTION_ACTIONS } from "./contracts";
+import { RENTAL_CURRENCY_CODES, RentalInventoryMode, RENTAL_LOCATION_TYPES, RENTAL_PRICING_UNIT_CODES, RENTAL_SERVICE_EXECUTION_ACTIONS, RENTAL_WORK_ORDER_TYPES } from "./contracts";
 import type {
   InitiateRentalFundingRequest,
   RefundRentalServiceRequest,
@@ -1944,6 +1944,25 @@ export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
     { timeStamp: stringSchema, nonceStr: stringSchema, package: stringSchema, signType: { type: "string", enum: ["RSA"] }, paySign: stringSchema },
     ["timeStamp", "nonceStr", "package", "signType", "paySign"], false
   ),
+  RentalWorkOrderAsset: objectOf({ id: stringSchema, assetNo: stringSchema, itemGroupName: stringSchema,
+    locationId: stringSchema, locationName: stringSchema, status: { type: "string", enum: ["available", "maintenance"] },
+    updatedAt: { type: "string", format: "date-time" }
+  }, ["id", "assetNo", "itemGroupName", "locationId", "locationName", "status", "updatedAt"]),
+  CreateRentalWorkOrderRequest: {
+    ...objectOf({
+      dispositionId: { type: "string", minLength: 1, maxLength: 191 },
+      assetId: { type: "string", minLength: 1, maxLength: 191 },
+      operationId: { type: "string", minLength: 1, maxLength: 128, description: "独立创建的原操作号；未知结果保留原键核对。" },
+      type: { type: "string", enum: [...RENTAL_WORK_ORDER_TYPES] },
+      assigneeId: stringSchema,
+      reason: { type: "string", maxLength: 500 }
+    }, ["type"]),
+    oneOf: [
+      { required: ["dispositionId"], not: { required: ["assetId"] } },
+      { required: ["assetId", "operationId", "reason"], not: { required: ["dispositionId"] },
+        properties: { reason: { type: "string", minLength: 1, maxLength: 500, pattern: "\\S" } } }
+    ]
+  },
   ClientPaymentIntentResponse: objectOf(
     {
       apiVersion: stringSchema,

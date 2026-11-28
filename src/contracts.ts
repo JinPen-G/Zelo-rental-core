@@ -5572,6 +5572,9 @@ export interface RentalWorkOrderAssignee {
   displayName: string;
 }
 
+/** 独立养护表单的受权资产投影；不包含资产扩展属性或客户/设备资料。 */
+export type RentalWorkOrderAsset = Pick<RentalAsset, "id" | "assetNo" | "itemGroupName" | "locationId" | "locationName" | "status" | "updatedAt">;
+
 export interface RentalWorkOrderHistoryEntry {
   id: string;
   action: string;
@@ -5581,7 +5584,11 @@ export interface RentalWorkOrderHistoryEntry {
 }
 
 export interface CreateRentalWorkOrderRequest {
-  dispositionId: string;
+  /** 归还处置或独立资产二选一；原归还处置请求保持兼容。 */
+  dispositionId?: string;
+  assetId?: string;
+  /** 独立创建必填；同一提交意图保留原键，未知结果不得换键重发。 */
+  operationId?: string;
   type: RentalWorkOrderType;
   assigneeId?: string;
   reason?: string;
