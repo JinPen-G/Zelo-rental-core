@@ -14,5 +14,8 @@ export const rentalScheduleMessages = {
   "来源读取受限": "Source access restricted", "排班详情": "Schedule details", "计划结束": "Planned end",
   "当前库存限制的起止区间未登记；计划结束不能证明已恢复可租。": "The current hold has no recorded start or end. A planned end does not confirm availability.",
   "历史规则缺失，缓冲沿原库存兼容口径。": "Historical rules are missing. Buffers follow the original inventory compatibility behavior.",
-  "进入订单处理": "Open order workflow", "查看工单": "View work order"
+  "进入订单处理": "Open order workflow", "查看工单": "View work order",
+  "查看排班": "View schedule", "当前仅查看所选资产": "Showing the selected asset", "查看全部资产": "Show all assets",
+  "该资产的养护工单": "Work orders for this asset", "当前仅查看所选资产的养护记录": "Showing maintenance records for the selected asset",
+  "所选资产当前不可用于独立养护，请重新选择": "This asset is currently unavailable for independent maintenance. Select another asset."
 };

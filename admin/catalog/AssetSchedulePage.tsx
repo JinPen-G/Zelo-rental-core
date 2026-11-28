@@ -1,8 +1,9 @@
 /** Rental 原库存资源时间轴。UIArc 适配控件承载筛选、详情和导航；不在图上直接写订单日期。 */
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
-import { resolveCorePageLocation, type CorePageLocation } from "@rental-os/core-contracts";
+import { corePageKey, resolveCorePageLocation, type CorePageLocation } from "@rental-os/core-contracts";
 import { CorePage, QueryState, useCorePageHost } from "@rental-os/platform-admin/core";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { ActionButton, Alert, Button, CalendarOutlined, ContentTransition, DataTableText, DatePicker, Drawer, Empty, FileTextOutlined, LeftOutlined, RightOutlined,
@@ -20,9 +21,12 @@ const kindLabels: Record<RentalAssetScheduleEntry["kind"], string> = { reservati
 const statusLabels: Record<string, string> = { available: "可用", reserved: "已预占", rented: "租赁中", inspection: "检查中", maintenance: "维护中", disabled: "停用" };
 
 export function AssetSchedulePage(context: RentalCatalogPageContext) {
-  return <AssetScheduleBody key={context.scopeKey} {...context} />;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const assetId = searchParams.get("assetId") ?? undefined;
+  return <AssetScheduleBody key={JSON.stringify([context.scopeKey, assetId])} {...context} assetId={assetId}
+    clearAsset={() => setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete("assetId"); return next; }, { replace: true })} />;
 }
-function AssetScheduleBody({ api, scopeKey, currentScopeKey }: RentalCatalogPageContext) {
+function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset }: RentalCatalogPageContext & { assetId?: string; clearAsset: () => void }) {
   const { t, locale } = useLocale(), host = useCorePageHost();
   const [zoom, setZoom] = useState<ScheduleZoom>("week"), [date, setDate] = useState<string>(), [timeZone, setTimeZone] = useState<string>();
   const [view, setView] = useState("gantt"), [page, setPage] = useState(1);
@@ -31,6 +35,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey }: RentalCatalogPage
   const [initial] = useState(() => ({ startAt: new Date().toISOString(), endAt: new Date(Date.now() + 7 * 86400000).toISOString() }));
   const range = date && timeZone ? scheduleWindow(date, zoom, timeZone) : { ...initial, ticks: [] };
   const params: RentalAssetScheduleQuery = { startAt: range.startAt, endAt: range.endAt, page,
+    ...(assetId !== undefined ? { assetId } : {}),
     ...(locationId ? { locationId } : {}), ...(itemGroupId ? { itemGroupId } : {}), ...(status ? { status } : {}), ...(keyword ? { keyword } : {}) };
   const query = useQuery({ queryKey: ["rental-core", "asset-schedule", scopeKey, params],
     queryFn: ({ signal }) => api.assetSchedule(params, { signal }), retry: false });
@@ -45,9 +50,14 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey }: RentalCatalogPage
   const label = (entry: RentalAssetScheduleEntry) => `${t(kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
-  const navigate = (location: CorePageLocation, permission: { resource: string; action: string }) => {
-    if (currentScopeKey() !== scopeKey || !host.canAccess("rental", [permission])) return;
-    host.navigate(resolveCorePageLocation(host.pages, location));
+  const canOpen = (location: CorePageLocation) => {
+    const page = host.pages.get(corePageKey(location.coreId, location.pageId));
+    return Boolean(page && host.canAccess(location.coreId, page.definition.permissions));
+  };
+  const navigate = (location: CorePageLocation, permission: { resource: string; action: string }, selectedAssetId?: string) => {
+    if (currentScopeKey() !== scopeKey || !host.canAccess("rental", [permission]) || !canOpen(location)) return;
+    const path = resolveCorePageLocation(host.pages, location);
+    host.navigate(selectedAssetId ? `${path}?${new URLSearchParams({ assetId: selectedAssetId })}` : path);
   };
   const openSource = (entry: RentalAssetScheduleEntry) => {
     if (!entry.sourceId) return;
@@ -58,9 +68,11 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey }: RentalCatalogPage
     || (entry.source === "work_order" && host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
   const resetPage = (change: () => void) => { setPage(1); setSelection(undefined); change(); };
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
-    actions={host.canAccess("rental", [{ resource: "maintenance", action: "view" }]) ? [{ id: "maintenance", kind: "navigate",
+    actions={canOpen(rentalWorkOrderLocation()) ? [{ id: "maintenance", kind: "navigate",
       label: { default: t("养护管控") }, to: rentalWorkOrderLocation(), permissions: [{ resource: "maintenance", action: "view" }] }] : []}>
     <div className={styles.workspace}>
+      {assetId !== undefined && <Alert type="info" showIcon title={t("当前仅查看所选资产")}
+        action={<Button onClick={clearAsset}>{t("查看全部资产")}</Button>} />}
       <ListFilterBar>
         <ListFilterItem width="search"><SearchField label={t("车辆或资产编号")} placeholder={t("车辆或资产编号")} value={search}
           onValueChange={setSearch} onSearch={value => resetPage(() => setKeyword(value.trim()))} onClear={() => resetPage(() => { setSearch(""); setKeyword(""); })} /></ListFilterItem>
@@ -140,6 +152,10 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey }: RentalCatalogPage
       {selected && <div className={styles.workspace}>
         {selected.asset && <RecordFacts items={[{ key: "model", label: t("型号"), value: selected.asset.itemGroupName }, { key: "location", label: t("地点"), value: selected.asset.locationName },
           { key: "status", label: t("资产状态"), value: t(statusLabels[selected.asset.status]) }]} />}
+        {selected.asset && canOpen(rentalWorkOrderLocation()) && <Button
+          onClick={() => navigate(rentalWorkOrderLocation(), { resource: "maintenance", action: "view" }, selected.asset!.id)}>
+          {t("该资产的养护工单")}
+        </Button>}
         {(selected.entry ? [selected.entry] : selected.asset?.entries ?? []).map(entry => <div key={entry.id} className={styles.detail}>
           <strong>{label(entry)}</strong>
           <RecordFacts items={[{ key: "start", label: t("开始"), value: format(entry.startAt) }, { key: "end", label: t("结束"), value: format(entry.endAt) },
