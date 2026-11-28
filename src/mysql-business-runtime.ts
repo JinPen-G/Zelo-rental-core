@@ -84,6 +84,7 @@ import {
   type RentalDayType,
   type RentalDiscountPlan,
   type RentalMarketingPlanVersion,
+  type RentalQuoteMarketingOptions,
   type RentalFulfillmentLocation,
   type RentalFulfillmentOperator,
   type RentalItemGroup,
@@ -2182,6 +2183,32 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
   }
 
   listDiscountPlans(tenantId: string, context: BusinessContext) { return this.state(tenantId, context).discountPlans; }
+
+  async quoteMarketingOptions(tenantId: string, context: BusinessContext): Promise<RentalQuoteMarketingOptions> {
+    context = structuredClone(context);
+    const workspaceId = this.workspaceOf(tenantId), fingerprint = requestFingerprint(getRequestIdentity());
+    const current = () => {
+      const identity = getRequestIdentity();
+      if (!identity?.userId || identity.tenantId !== tenantId || identity.workspaceId !== workspaceId
+        || identity.isSaasAdmin || identity.audience === "client" || fingerprint !== requestFingerprint(identity)
+        || !(identity.isPlatformAdmin || ["rental-os:order:operate", "rental-os:order:create"].some(code => hasEffectivePermission(identity.permissions ?? [], code))))
+        throw new ForbiddenException("当前空间下单方案读取权限已变化");
+    };
+    current();
+    if (!context.categoryVersionId || context.categoryAdoptionRevision === undefined || !this.configStore.loadWorkspaceSnapshot)
+      throw new ServiceUnavailableException("下单方案缺少完整当前配置依据");
+    const config = await this.configStore.loadWorkspaceSnapshot(tenantId, workspaceId,
+      { categoryVersionId: context.categoryVersionId, adoptionRevision: context.categoryAdoptionRevision });
+    current();
+    if (config.tenantId !== tenantId || config.workspaceId !== workspaceId || config.categoryCode !== context.category.code || !config.marketingPricingPolicy)
+      throw new ConflictException("下单方案配置范围或策略不可用");
+    assertMarketingPricingPolicy(config.marketingPricingPolicy, { tenantId, workspaceId });
+    const policy = config.marketingPricingPolicy;
+    if (policy.policy === "single_rule_v1" && !config.marketingPlans) throw new ServiceUnavailableException("下单方案缺少完整发布版本");
+    return { policy: policy.policy, policyRevision: policy.revision,
+      plans: (policy.policy === "single_rule_v1" ? config.marketingPlans! : config.discountPlans)
+        .filter(plan => plan.status === "enabled").map(({ id, name, version }) => ({ id, name, version })) };
+  }
 
   private marketingScope(tenantId: string, context: BusinessContext, action: "read" | RentalMarketingAction) {
     const scope = { tenantId, workspaceId: this.workspaceOf(tenantId), categoryCode: context.category.code };

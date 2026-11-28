@@ -82,7 +82,8 @@ function RentalOrderCreateContent() {
   const categoryDefinition = RENTAL_CATEGORY_DEFINITIONS.find((item) => item.code === profile.data?.categoryCode);
   const deliveryDestination = categoryDefinition?.businessModel.deliveryDestination ?? "customer_address";
   const pricing = useQuery({ queryKey: ["rental-core", "pricing-plans", queryScope], queryFn: rentalCoreApi.pricingPlans });
-  const discounts = useQuery({ queryKey: ["rental-core", "discount-plans", queryScope], queryFn: rentalCoreApi.discountPlans });
+  const discounts = useQuery({ queryKey: ["rental-core", "quote-marketing-options", queryScope],
+    queryFn: ({ signal }) => rentalCoreApi.quoteMarketingOptions({ signal }) });
   const services = useQuery({ queryKey: ["rental-core", "value-added-services", queryScope], queryFn: rentalCoreApi.valueAddedServices });
   // 下单只读取会员最小摘要，不依赖租户会员维护权限。
   const members = useQuery({ queryKey: ["rental-core", "booking-members", queryScope], queryFn: rentalCoreApi.bookingMembers });
@@ -510,8 +511,11 @@ function RentalOrderCreateContent() {
             <Space orientation="vertical" size={16} style={{ width: "100%" }}>
               <Card className="data-panel" title={<Space><TagsOutlined />{t("优惠与权益")}</Space>}>
                 <Form.Item name="discountPlanId" label={t("优惠方案")} extra={t("可留空，由服务端自动匹配最优方案。")}>
-                  <Select allowClear placeholder={t("自动匹配")} options={(discounts.data ?? []).filter((item) => item.status === "enabled").map((item) => ({ value: item.id, label: item.name }))} />
+                  <Select allowClear loading={discounts.isFetching} disabled={discounts.isPending || discounts.isError} placeholder={t("自动匹配")}
+                    options={discounts.isError ? [] : (discounts.data?.plans ?? []).map(item => ({ value: item.id, label: item.name }))} />
                 </Form.Item>
+                {discounts.isError && <Alert type="warning" title={t("下单方案读取失败，请重试；原选择不会自动更换。")}
+                  action={<Button onClick={() => discounts.refetch()}>{t("重试")}</Button>} />}
                 <Form.Item name="customerCouponId" label={t("会员优惠券")} style={{ marginBottom: 0 }}>
                   <Select
                     allowClear

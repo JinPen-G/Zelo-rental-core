@@ -23,6 +23,8 @@ const commonRequired = ["code", "name", "pricingPolicy", "appliesTo", "minimumSp
   "applicableItemGroupIds", "applicableDayTypes", "priority", "effectiveFrom"];
 
 export const RENTAL_MARKETING_SCHEMAS: Record<string, SchemaObject> = {
+  RentalQuoteMarketingOptions: objectOf({ policy: pricingPolicy, policyRevision: revision,
+    plans: arrayOf(objectOf({ id, name: id, version: id }, ["id", "name", "version"], false)) }, ["policy", "policyRevision", "plans"], false),
   RentalMarketingScheduleRow: objectOf({ id: { type: "string", minLength: 1, maxLength: 1024 }, date: { type: "string", format: "date" }, dayType: days.items!, planId: id, planName: id,
     planCode: id, planStatus: { type: "string", enum: ["draft", "enabled", "paused", "ended"] }, planVersion: id, revision,
     ruleId: id, ruleName: id, ruleVersion: id, ruleStatus: { type: "string", enum: ["enabled", "disabled"] },
@@ -95,6 +97,9 @@ const errors = { "400": { description: "规则或请求字段无效", schema: ob
   "409": { description: "方案修订、范围或发布依据已变化", schema: objectSchema },
   "503": { description: "必要持久化或规则资料不可用", schema: objectSchema } };
 const operations: Omit<ContractOperation, "tag">[] = [
+  { method: "get", path: "/api/rental/v1/quote-marketing-options", operationId: "readRentalQuoteMarketingOptions",
+    summary: "按当前空间唯一策略读取下单可指定的方案标识，不开放草稿或替代资格判断", permissions: ["rental-os:order:operate", "rental-os:order:create"],
+    responseSchema: "RentalQuoteMarketingOptions" },
   { method: "get", path: "/api/rental/v1/marketing-plans/schedule", operationId: "readRentalMarketingSchedule",
     summary: "按营业时区及原规则版本读取活动日程，不计算价格或变更发布状态", permissions: [...RENTAL_MARKETING_READ_PERMISSIONS],
     responseSchema: "RentalMarketingSchedule", parameters: [

@@ -819,6 +819,7 @@ function requiredPermissions(method: string, path: string) {
     if (/\/(publish|pause|end)$/u.test(path)) return [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
     return [...RENTAL_MARKETING_EDIT_PERMISSIONS];
   }
+  if (path === "/rental/v1/quote-marketing-options") return ["rental-os:order:operate", "rental-os:order:create"];
   if (path.startsWith("/rental/v1/discount-plans") || path.startsWith("/rental/v1/customer-coupons")) {
     return method === "GET" ? ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:view"] : ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:operate"];
   }

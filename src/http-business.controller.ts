@@ -162,6 +162,9 @@ export class RentalBusinessController {
   @Post("pricing-adjustments/:aid/cancel") async cancelSpacePriceAdjustment(@Req() req: AuthenticatedRequest, @Param("aid") aid: string, @Body() body: CancelRentalPriceAdjustmentDto) { return this.business.cancelSpacePriceAdjustment(req.user.tenantId, (await this.context(req.user.tenantId)), aid, body.reason); }
 
   @Get("discount-plans") async discountPlans(@Req() req: AuthenticatedRequest) { return this.business.listDiscountPlans(req.user.tenantId, (await this.context(req.user.tenantId))); }
+  @Get("quote-marketing-options") async quoteMarketingOptions(@Req() req: AuthenticatedRequest) {
+    return this.business.quoteMarketingOptions(req.user.tenantId, await this.context(req.user.tenantId));
+  }
   @Get("marketing-plans") async marketingPlans(@Req() req: AuthenticatedRequest) {
     return this.business.listMarketingPlans(req.user.tenantId, await this.context(req.user.tenantId));
   }

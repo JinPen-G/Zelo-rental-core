@@ -386,7 +386,7 @@ export const RENTAL_HTTP_REVIEWED_ACCESS: readonly RentalHttpAccessDeclaration[]
     business.ruleVersionPublishPreview, business.fundingEvents, business.rewards, business.benefitAccounts,
     business.notificationTemplates, business.notificationLogs, business.quoteDetail], "buffered-read",
     "rentalHttpBusinessContext reads committed Core/business configuration snapshots; original pricing/calendar/rule/funding/notification/quote readers only query or project cache; calendar previews build detached values, official source readers query stored versions without fetching"),
-  ...reviewed(RentalBusinessController, [business.marketingPlans, business.marketingPlanHistory, business.marketingSchedule], "buffered-read",
+  ...reviewed(RentalBusinessController, [business.marketingPlans, business.marketingPlanHistory, business.marketingSchedule, business.quoteMarketingOptions], "buffered-read",
     "rentalHttpBusinessContext reads committed configuration; marketing repository reads scoped drafts, immutable versions and events, rechecks current identity without initialization or writes"),
   ...reviewed(RentalBusinessController, [business.previewMarketingQuote], "buffered-read",
     "authoritative configuration and original inventory/customer/location scope reads feed the original quote calculation; preview rejects lazy initialization and skips quote persistence/cache insertion, capacity expiry maintenance and capability hooks/audits; returns amount-only projection without usable quote ID"),

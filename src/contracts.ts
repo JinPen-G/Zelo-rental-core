@@ -3501,6 +3501,12 @@ export interface ChangeRentalMarketingPricingPolicyRequest {
   policy: RentalMarketingPricingPolicy["policy"];
   changeReason: string;
 }
+/** 下单仅取得当前策略下可指定的方案身份；不开放营销草稿、配置或替代报价资格判断。 */
+export interface RentalQuoteMarketingOptions {
+  policy: RentalMarketingPricingPolicy["policy"];
+  policyRevision: number;
+  plans: Array<{ id: string; name: string; version: string }>;
+}
 export type RentalMarketingPricingPolicyReceipt = { status: "unknown" } | {
   status: "committed"; operationId: string; result: RentalMarketingPricingPolicy;
 };

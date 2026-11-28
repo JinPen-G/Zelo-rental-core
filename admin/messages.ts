@@ -8,6 +8,7 @@ import { rentalSetupMessages } from './setup/messages';
 import { rentalPaymentReconciliationMessages } from './payment-reconciliation/messages';
 
 const ENGLISH = {
+  "下单方案读取失败，请重试；原选择不会自动更换。": "Unable to load booking plans. Retry; your original selection is retained.",
   "请选择至少一个经营空间": "Select at least one workspace",
   "邀请正在处理中": "Invitations are being processed",
   "原邀请已结束，请查看邀请记录": "The original invitation has ended. Check invitation records.",
