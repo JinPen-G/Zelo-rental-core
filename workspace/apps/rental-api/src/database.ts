@@ -8,10 +8,20 @@ import { PrismaClient, Prisma } from "../generated/client";
 
 export type RentalDatabaseTransaction = Prisma.TransactionClient;
 
+function transactionDefaults(options: Prisma.PrismaClientOptions | undefined, configured: string | undefined) {
+  if (configured === undefined) return options;
+  const value = configured.trim();
+  const timeout = Number(value);
+  if (!/^\d+$/u.test(value) || !Number.isSafeInteger(timeout) || timeout < 5_000 || timeout > 30_000)
+    throw new Error("RENTAL_TRANSACTION_TIMEOUT_MS 须为 5000～30000 的整数毫秒数");
+  // 只提供所选宿主的缺省预算；构造参数及单次事务仍由 Prisma 按原优先级处理。
+  return { ...options, transactionOptions: { timeout, ...options?.transactionOptions } };
+}
+
 @Injectable()
 export class RentalDatabaseClient extends PrismaClient {
   constructor(options?: Prisma.PrismaClientOptions) {
-    super(options);
+    super(transactionDefaults(options, process.env.RENTAL_TRANSACTION_TIMEOUT_MS));
     // 私有适配不加载默认生成 Client；在同一调用及事务内采用本宿主的官方空值品牌。
     this.$use((parameters, next) => {
       parameters.args = mapPrismaNullInputs(parameters.args, Prisma);

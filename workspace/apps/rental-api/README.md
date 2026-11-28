@@ -14,6 +14,12 @@ node scripts/package-rental-host.cjs --development --repo <Zelo目录> --reposit
 
 解包后按归档 README 安装原锁依赖、生成两份所选 Client、验证运行包和迁移。只对为本次启动准备的空 MySQL 库应用归档内 `apps/rental-api/prisma-deployment` 的迁移；该开发入口不接管旧库。设置该库的 `DATABASE_URL` 与本机 `AUTH_TOKEN_SECRET`，按归档步骤初始化。`RENTAL_AI_MODE=disabled`、`RENTAL_DEPLOYMENT_LOCK` 指向随包锁的绝对路径，启动 `node apps/rental-api/dist/main.js` 后检查 `/api/health`。API 和后台须使用同一个包与锁。开发归档不满足正式版本 Tag 或服务器更新资格。
 
+### 交互事务的宿主预算
+
+`RENTAL_TRANSACTION_TIMEOUT_MS` 可在进程配置中显式设置为 **5000～30000 的整数毫秒数**。未设置时不注入 `timeout`，继续使用 Prisma 原默认值；空值、非整数或越界值在构造 Client 时明确拒绝。配置只在构造时读取，不加载 `.env`，不提前连接数据库。构造参数 `transactionOptions` 内的显式选项优先，单次 `$transaction` 的显式选项仍按 Prisma 原规则优先；`maxWait`、隔离级别、唯一 Client 和生命周期不变。
+
+在已获授权的独占环境中，若原当前授权、迁移账和物理检查受默认 5 秒交互事务上限影响，可明确设置 `RENTAL_TRANSACTION_TIMEOUT_MS=30000` 并核实际整次请求耗时。该配置不缓存或省略准入检查，不改变 HTTP 等待期限、幂等或原收据。超时、取消及 `503` 不证明动作未发生；先保留原操作键并读取可信结果，不自动换键重发。达到 30 秒仍不足时须定位事务或调用原因，不能继续放宽上限。
+
 ## 新装 Rental 与公共 AI
 
 在包含 v2 构建工具的固定 Zelo 检出，执行上面的命令，在 `--development` 后追加 `--fresh-ai`。用同一组 Git SHA 和 `--fresh-ai --profile host` 准备后台源码。API 运行包保存两个来源、编译证明、公共 AI 数据包和四阶段原 SQL：公共 14、Rental 2、公共 AI 1、Rental 扩展 1。
