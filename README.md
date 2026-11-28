@@ -92,7 +92,7 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 `GET/PUT /api/rental/v1/marketing-pricing-policy`读取/显式切换当前空间的`legacy`或`single_rule_v1`，切换需要独立发布权、原`operationId`、`expectedRevision`及原因。未切换空间继续旧模式；新策略只影响之后的新报价：基础租金→一个营销方案的一条规则→原优惠券，不再追加独立会员租金/服务折扣，资格、非金额权益与保证金风控保留。原券的范围、门槛、封顶和营销兼容权益保持。切换的本人原收据由`GET /api/rental/v1/marketing-pricing-policy/operations/:operationId`在当前营销读取权限下核对，未知结果保持`unknown`。
 
-原全租期重算消费[冻结的唯一营销规则](src/marketing-quote-history.ts)，为本次动作保存独立依据；独立新增时段继续原续租计价方式，不自动授予旧优惠。原支持的完整单行换货接入原规则、封顶及券的剩余额度，已履行段不改写，缺少完整联合来源的多行/后继情况仍拒绝自动推算。管理页面与全端解释继续接入中。开发数据版本`0.1.3`追加空间策略及履历两表，旧方案/报价不回填、不自动转换；部署须固定兼容版本并核定增量迁移，见[数据说明](prisma/README.md#迁移与历史)。
+原全租期重算消费[冻结的唯一营销规则](src/marketing-quote-history.ts)，为本次动作保存独立依据；独立新增时段继续原续租计价方式，不自动授予旧优惠。原支持的完整单行换货接入原规则、封顶及券的剩余额度，已履行段不改写，缺少完整联合来源的多行/后继情况仍拒绝自动推算。管理页面已接列表、规则草稿、发布历史及策略切换；试算、活动日历与全端解释继续接入中。开发数据版本`0.1.3`追加空间策略及履历两表，旧方案/报价不回填、不自动转换；部署须固定兼容版本并核定增量迁移，见[数据说明](prisma/README.md#迁移与历史)。
 
 原客户预约来源通过服务器侧 `RentalOrderCreationParticipant` 参加同一次建单事务，在首个 Tenant 锁前取得来源会话权威，并在写入后复核原材料与自然期限；HTTP 请求不能提供参加者或批准。见[建单端口](src/order-confirmation-ports.ts)和[订单确认](src/mysql-order-confirmation.ts)。
 

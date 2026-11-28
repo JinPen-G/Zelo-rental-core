@@ -287,7 +287,9 @@ export function createRentalAdminHost(options: RentalAdminHostOptions): RentalAd
           canManageOrganizationMapping: options.canManageOrganizationMapping,
         }),
         catalog,
-        commercial: createRentalCommercialPageContext({ ...workspace, requestImage: options.requestImage }),
+        commercial: createRentalCommercialPageContext({ ...workspace, requestImage: options.requestImage,
+          operationScope: workspaceSession.sessionVerified && workspaceSession.tenant?.tenantId && workspaceSession.user?.id && workspaceSession.currentWorkspaceId
+            ? { tenantId: workspaceSession.tenant.tenantId, workspaceId: workspaceSession.currentWorkspaceId, actorUserId: workspaceSession.user.id } : undefined }),
         governance: createRentalGovernancePageContext({
           ...business,
           ...workspace,

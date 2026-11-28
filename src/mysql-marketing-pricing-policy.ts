@@ -13,6 +13,7 @@ import { assertMarketingAuthority, type RentalMarketingScope, type RentalMarketi
 import { RentalIdempotencyRepository, assertSameRequest } from "./mysql-idempotency";
 import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
 import { readRentalOriginalReceipt } from "./mysql-business-fence";
+import { executeMarketingCommand } from "./marketing-command";
 
 type Row = Omit<RentalMarketingPricingPolicy, "updatedAt"> & { updatedAt: Date };
 type Original = { actorUserId: string; operationId: string; result: RentalMarketingPricingPolicy };
@@ -109,7 +110,7 @@ export class RentalMarketingPricingPolicyRepository<Tx extends RentalBusinessCon
     await this.current(scope, fingerprint, "publish");
     const key = operationKey(operationScope, actorUserId, input.operationId);
     const { records, actions } = this.operations(operationScope), request = { ...operationScope, actorUserId, input };
-    const original = await actions.execute<Original>({ tenantId: scope.tenantId, action, key, fallbackKey: key,
+    const original = await executeMarketingCommand<Original, Tx>(actions, input.operationId, { tenantId: scope.tenantId, action, key, fallbackKey: key,
       request, replay: async value => {
         await this.current(scope, fingerprint, "publish");
         return this.decode(value, scope, actorUserId, input.operationId);

@@ -3,7 +3,7 @@
  * 不负责：报价匹配、保存、发布或版本落库；这里的内容都不是服务端事实。
  * 后端接入时用接口结果替换 DISCOUNT_PLAN_DEMO_ROWS，并将 DISCOUNT_PLAN_DEMO 改为 false 或移除旧列表分支。
  */
-export const DISCOUNT_PLAN_DEMO: boolean = true;
+export const DISCOUNT_PLAN_DEMO: boolean = false;
 
 export type DiscountPlanStatus = "draft" | "enabled" | "disabled";
 export type DiscountRulePricing =

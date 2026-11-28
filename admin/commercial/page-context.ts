@@ -10,6 +10,8 @@ export interface RentalCommercialPageContext {
   api: RentalCommercialApi;
   scopeKey: string;
   currentScopeKey: () => string | undefined;
+  /** 原宿主已验证的持久身份，仅用于浏览器原操作定位，不参与服务端授权。 */
+  operationScope?: { tenantId: string; workspaceId: string; actorUserId: string };
 }
 
 export function createRentalCommercialPageContext({
@@ -17,11 +19,13 @@ export function createRentalCommercialPageContext({
   requestImage,
   scopeKey,
   currentScopeKey,
+  operationScope,
 }: {
   runtime: AdminRuntime;
   requestImage: RentalCatalogImageRequest;
   scopeKey: string;
   currentScopeKey: RentalCommercialPageContext["currentScopeKey"];
+  operationScope?: RentalCommercialPageContext["operationScope"];
 }): RentalCommercialPageContext {
   const assertCurrent = () => {
     if (!scopeKey || currentScopeKey() !== scopeKey)
@@ -42,7 +46,8 @@ export function createRentalCommercialPageContext({
     assertCurrent();
     return image;
   };
-  return { api: createRentalCommercialApi(request, imageRequest), scopeKey, currentScopeKey };
+  return { api: createRentalCommercialApi(request, imageRequest), scopeKey, currentScopeKey,
+    operationScope: operationScope ? { ...operationScope } : undefined };
 }
 
 const CommercialContext = createContext<RentalCommercialPageContext | null>(null);

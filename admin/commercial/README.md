@@ -1,16 +1,20 @@
 # Rental 商业后台
 
-定价分组、整体价格版本、调价计划、优惠、优惠券和服务容量共用包内页面与客户端。价格、预算、券状态和容量占用读取原服务端事实。[页面贡献](<index.tsx>) · [七页声明](<pages.ts>) · [请求工厂](<client.ts>)
+定价分组、整体价格版本、调价计划、优惠、优惠券和服务容量共用包内页面与客户端。价格、预算、券状态和容量占用读取原服务端事实。[页面贡献](<index.tsx>) · [页面声明](<pages.ts>) · [请求工厂](<client.ts>)
 
-多规则营销使用独立的[版本合同](../../src/contracts.ts)、[选择器](../../src/discount-selection.ts)及[草稿发布入口](../../src/marketing-plan.ts)。`single_rule_v1`只选一个方案的一条规则：规则只减免公共条件和规则条件共同命中的租金行，其他行保持基础价，按整单租金比较。例如A600+B400仅A九折，候选租金940。`fixed_price`表示每件标的完整请求租期的固定租金，只乘数量一次；必须有`rentalDuration`单位及至少一个时长界限，资格使用原基础计价的单位和计费数量，使用量行不能冒充时间单位。封顶按各行实际可减免金额分摊，固定租价高于行原价时不抬价。DTO、发布校验及OpenAPI共用这些语义。现有优惠页面仍消费旧方案；该计算出口不表示经营空间已经切换生产报价策略。
+多规则营销使用独立的[版本合同](../../src/contracts.ts)、[选择器](../../src/discount-selection.ts)及[草稿发布入口](../../src/marketing-plan.ts)。`single_rule_v1`只选一个方案的一条规则：规则只减免公共条件和规则条件共同命中的租金行，其他行保持基础价，按整单租金比较。例如A600+B400仅A九折，候选租金940。`fixed_price`表示每件标的完整请求租期的固定租金，只乘数量一次；必须有`rentalDuration`单位及至少一个时长界限，资格使用原基础计价的单位和计费数量，使用量行不能冒充时间单位。封顶按各行实际可减免金额分摊，固定租价高于行原价时不抬价。DTO、发布校验及OpenAPI共用这些语义。新页面提供完整规则草稿与发布历史，空间策略仍须显式切换。
 
-客户端提供营销草稿/发布/历史、原操作收据，以及`marketingPricingPolicy`、`changeMarketingPricingPolicy`和`marketingPricingPolicyOperation`。策略切换需当前发布权、原修订、稳定操作号及原因；未知应答只核原收据。服务端新报价已按空间策略执行基础价→单规则营销→优惠券，原未切换空间继续旧模式；管理页面接入与实际宿主验证单独核定。配置表及策略表必须按[数据说明](../../prisma/README.md#迁移与历史)就绪。
+客户端提供营销草稿/发布/历史、原操作收据，以及`marketingPricingPolicy`、`changeMarketingPricingPolicy`和`marketingPricingPolicyOperation`。策略切换需当前发布权、原修订、稳定操作号及原因；未知应答只核原收据。服务端新报价已按空间策略执行基础价→单规则营销→优惠券，原未切换空间继续旧模式，实际宿主验证单独核定。配置表及策略表必须按[数据说明](../../prisma/README.md#迁移与历史)就绪。
+
+[营销页面](RentalMarketingPage.tsx)复用CorePage、公共表格/筛选/详情、UIArc抽屉及原Form驱动；列表、草稿、发布/暂停/结束与历史分开。读取接受营销读取/编辑/发布、原营销或价格管理权限，编辑沿原营销编辑权，发布和策略切换另需`marketing/publish`；服务端仍是唯一授权。旧`/discounts/legacy`保留原`price/manage`页面，默认关闭演示数据。活动日历和同源模拟在后续切片接入，当前页面尚不具备这两项能力。
+
+[原操作恢复](marketing-operation.ts)要求宿主提供已验证的`operationScope={tenantId,workspaceId,actorUserId}`。标准Rental宿主已接；其他宿主缺少该身份、持久存储或Web Locks时禁止配置写入。浏览器只保存原操作号、动作、对象及预期修订，不保存草稿正文或凭据。成功原收据清除引用；应答未知保留引用并禁止换键，用户可在当前读取权限下核对。服务端仅对原事务回调确定回滚的业务拒绝标记`rental_marketing_write_rejected`及原操作号，页面才能保留输入并解除该次意图；普通409、提交失败和回放拒绝均不作此判断。
 
 ## 宿主接入
 
 宿主通过 createRentalCommercialPageContext 供给当前 AdminRuntime、原鉴权图片读取、包含租户与经营空间的 scopeKey 和当前身份读取函数，再将上下文交给 createRentalCommercialAdminContribution。JSON 与图片传输在请求前后复验同一身份，查询传递取消信号。[上下文](<page-context.ts>) · [旧宿主上下文](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/commercial/legacy-commercial-context.ts>) · [原图片传输](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/api/rentalCore.ts>)
 
-统一 Rental 贡献合并这七页。页面入口沿原价格权限；增值服务使用由 rental-os:price:manage 投影的 page.services/view，其他页面使用 price/manage，旧宿主继续复验 rental-os:price:manage。版本详情参数由已匹配的宿主路由供给，正整数与安全整数检查沿原页面。页头主操作、价格版本入口与返回动作使用正式 CorePage 声明。“价格版本”沿原正文辅助操作区使用 tools 插槽，新增调价计划沿原顶部主操作区，返回沿 navigation 插槽，版本导航解析当前注册表。[商业页面](<RentalCommercialPage.tsx>) · [旧路由适配](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/commercial/legacy-commercial-page.tsx>) · [统一贡献](<../index.tsx>)
+统一 Rental 贡献合并商业页面。营销页沿上面的独立权限；增值服务使用由 rental-os:price:manage 投影的 page.services/view，其他页面使用原价格权限。版本详情参数由已匹配的宿主路由供给，正整数与安全整数检查沿原页面。页头主操作、价格版本入口与返回动作使用正式 CorePage 声明。“价格版本”沿原正文辅助操作区使用 tools 插槽，新增调价计划沿原顶部主操作区，返回沿 navigation 插槽，版本导航解析当前注册表。[商业页面](<RentalCommercialPage.tsx>) · [旧路由适配](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/commercial/legacy-commercial-page.tsx>) · [统一贡献](<../index.tsx>)
 
 | 页面 | 声明路径 | 旧兼容路径 |
 | --- | --- | --- |
@@ -18,7 +22,9 @@
 | 价格与调价 | /pricing | /rental/pricing |
 | 价格版本列表 | /pricing/versions | /rental/pricing/versions |
 | 价格版本详情 | /pricing/versions/:sequence | /rental/pricing/versions/:sequence |
-| 优惠方案 | /discounts | /rental/discounts |
+| 营销方案 | /discounts | /rental/discounts |
+| 营销方案详情 | /discounts/plans/:planId | 无旧路径 |
+| 旧优惠方案 | /discounts/legacy | 无旧路径 |
 | 优惠券 | /coupons | /rental/coupons |
 | 增值服务 | /services | /rental/services |
 
@@ -52,12 +58,12 @@
 
 定价组、优惠、服务和优惠券卡片保留原只读预览、关闭后操作与样式。头像缓存键绑定当前范围、型号和图片，渲染首帧复验对象 URL 对应的身份及 Blob，替换和卸载时释放 URL。[商业卡片](<commercialCards.tsx>) · [优惠券卡片](<couponCards.tsx>) · [头像与卡片呈现](<commercialCardParts.tsx>)
 
-演示优惠继续由 DISCOUNT_PLAN_DEMO 控制，演示发布与停用留在原页面内存。Spotlight 编译预览的插槽、原样式和来源许可随同迁入。[演示页面](<DiscountPlanShowcase.tsx>) · [原演示数据](<discountPlanDemo.ts>) · [来源与许可](<archive/spotlight-grid/SOURCE.md>)
+演示优惠由 DISCOUNT_PLAN_DEMO 控制，默认关闭；保留的演示材料不参与生产配置。Spotlight 编译预览的插槽、原样式和来源许可随同迁入。[演示页面](<DiscountPlanShowcase.tsx>) · [原演示数据](<discountPlanDemo.ts>) · [来源与许可](<archive/spotlight-grid/SOURCE.md>)
 
 ## 公共整合要求
 
 - Rental 包提供 admin/commercial、admin/commercial/client、admin/commercial/context 和 admin/commercial/pages 的 exports 与 typesVersions，后台类型配置包含 commercial。
-- 统一 Rental 上下文提供 useCommercialContext，统一贡献合并七页；页面入口沿原价格角色，价格与服务业务动作分别沿 price/manage 和 service/manage 映射。
+- 统一 Rental 上下文提供 useCommercialContext，统一贡献合并商业页；营销读取/编辑/发布按动作分开，价格与服务业务动作分别沿 price/manage 和 service/manage 映射。
 - 公共 native-ui 提供 avatarGroupClasses，消费原 Avatar group CSS。公共 motion 提供 motionTokens 和 usePrefersReducedMotion，消费原 UIArc 动效参数与偏好。
 - 公共 ui 提供卡片事实、原图标与列表宽度，shell 提供 SettingsWorkspace；页面使用正式出口，编译预览与外层适配从公共 motion 读取同一 motionTokens 和 usePrefersReducedMotion，原函数和 CSS 按来源说明维护。
 - 宿主合并 rentalCommercialMessages，并将旧菜单、路由和面包屑绑定同一页面声明。

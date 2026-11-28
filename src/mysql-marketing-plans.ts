@@ -14,6 +14,7 @@ import { assertMarketingAuthority, assertMarketingOperation, marketingEvent, pre
 import { RentalIdempotencyRepository } from "./mysql-idempotency";
 import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
 import { readRentalOriginalReceipt } from "./mysql-business-fence";
+import { executeMarketingCommand } from "./marketing-command";
 
 type OperationResult = { actorUserId: string; action: RentalMarketingAction; operationId: string; result: RentalMarketingPlan };
 const operationAction = (action: RentalMarketingAction) => `marketing_plan.${action}`;
@@ -182,7 +183,7 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
       throw new ConflictException("营销写入空间已变化");
     const { actions } = this.operations(scope);
     const key = operationKey(scope, actorUserId, input.operationId);
-    const original = await actions.execute<OperationResult>({ tenantId: scope.tenantId, action: operationAction(action), key, fallbackKey: key,
+    const original = await executeMarketingCommand<OperationResult, Tx>(actions, input.operationId, { tenantId: scope.tenantId, action: operationAction(action), key, fallbackKey: key,
       request: { tenantId: scope.tenantId, workspaceId: scope.workspaceId, actorUserId, action, id: id ?? null, input },
       replay: async response => {
         assertMarketingAuthority(this.identity(), scope, action);
