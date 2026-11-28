@@ -41,7 +41,7 @@ export class FreshRentalAiSelection {
     const extension = readRentalAiDataExtension(input.extension.files);
     this.#observe = createFreshRentalAiDataObservation({ lock, platform: createPublicPlatformDataPlan(rental.dataPlan.publicForeignKeys),
       rental: rental.dataPlan, publicAiFiles: data.files, extension: input.extension, mcp: input.mcp?.plan });
-    this.#dataPlan = createRentalAiMysqlPlans(contribution, extension, data.release).publicAi;
+    this.#dataPlan = createRentalAiMysqlPlans(contribution, extension, data.release, rental.manifest.data.version).publicAi;
     this.#schema = composeRentalPublicAiPrismaSchema(input.publicSchema, contribution, rental.schema, extension);
     this.#base = lock.base;
     this.#data = data.release;

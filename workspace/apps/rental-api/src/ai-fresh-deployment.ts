@@ -23,7 +23,7 @@ export function createFreshRentalAiDeployment(input: Parameters<typeof createRen
     throw new Error("新装 MCP 数据包须来自同一固定底座");
   const extension = readRentalAiDataExtension(input.extension.files);
   const [publicMigration] = ai.contribution.migrations;
-  const { publicAi, rental } = rentalAiExtensionPrerequisites(ai.release);
+  const { publicAi, rental } = rentalAiExtensionPrerequisites(ai.release, ordinary.rental.manifest.data.version);
   const { id, file, sha256 } = RENTAL_AI_EXTENSION_MIGRATION;
   const prepared = createCorePhasedMigrationDeployment({
     lock: { ...ordinary.lock, dataCapabilities: [ai.release, ...(mcp ? [mcp.release] : [])] }, platform: input.publicMigrations,

@@ -160,7 +160,7 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 开发快照可使用未打 Tag 的已提交源码。正式标准包继续通过底座的 `scripts/verify-rental-distribution.cjs --portable` 核对版本 Tag、发行来源、实际构建字节与归档摘要。旧 Tag 的根目录布局仍可读取，运行部署继续使用正式部署锁。
 
-独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)、[后台](workspace/apps/rental-admin)和 [Web 会话](workspace/packages/web-client/src/index.ts)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在组合工作区构建，原页面与设计规范保持。新装开发在带宿主的范围显式加 `--fresh-ai`，需要 23 条 MCP 数据计划时再加 `--mcp`；使用各自空库与原迁移账，旧库不能换锁直接采用。缺少真实 MCP 授权来源时不发布业务入口。声明缺件会中止，不从 Zelo 的旧业务目录补件。
+独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)、[后台](workspace/apps/rental-admin)和 [Web 会话](workspace/packages/web-client/src/index.ts)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在组合工作区构建，原页面与设计规范保持。新装开发在带宿主的范围显式加 `--fresh-ai`，需要 MCP 数据计划时再加 `--mcp`；当前开发数据 `0.1.4` 分别使用完整的 21/26 条迁移，旧发行保留原固定链。使用各自空库与原迁移账，旧库不能换锁直接采用。缺少真实 MCP 授权来源时不发布业务入口。声明缺件会中止，不从 Zelo 的旧业务目录补件。
 
 归档内的 `development.workspace.json` 记录两仓提交、文件来源和摘要。组合从固定底座锁及[独立构建依赖锁](workspace.build-lock.json)核外部依赖；官网和企业门户仍使用各自锁定的 TypeScript，重叠固定依赖冲突直接拒绝。此文件供组合工具消费，解包后以生成的 `package-lock.json` 执行 `npm ci` 和 `npm run check:types`。构建不需要旧业务测试、私有资料、环境文件或作者生成物。
 
