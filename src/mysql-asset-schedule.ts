@@ -7,6 +7,8 @@ import type { RentalCoreFactContacts, RentalCoreFactTransaction } from "./core-f
 import { RentalAssetStatus, RentalCoreOrderStatus, RENTAL_FULFILLMENT_MODES, RENTAL_WORK_ORDER_TYPES, type RentalRuleConfig } from "./contracts";
 import type { RentalAssetSchedule, RentalAssetScheduleEntry, RentalAssetScheduleQuery } from "./asset-schedule";
 import { peakReservedQuantity, reservedQuantityPeriods, reservedRentalPeriod } from "./occupancy";
+import { readAssetControls } from "./mysql-asset-control-read";
+import { assetControlOccupancies } from "./asset-control-policy";
 
 const FACT_LIMIT = 10000;
 const ASSET_LIMIT = 2000;
@@ -77,6 +79,7 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
     && (!query.keyword || row.assetNo.toLocaleLowerCase().includes(query.keyword.trim().toLocaleLowerCase())));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleIds = visible.map(row => row.id);
+  const controls = await readAssetControls(client, tenantId, workspaceId, assets.map(row => row.id));
   const orderIds = [...new Set(reservations.map(row => row.orderId))];
   const [orders, workOrders, allocations] = await Promise.all([
     scope.readOrders && orderIds.length ? client.rentalOrder.findMany({ where: { AND: [{ tenantId, workspaceId, id: { in: orderIds } }, scope.orders] },
@@ -127,7 +130,12 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
       if (fact.entry.endAt && Date.parse(fact.period.endAt) > Date.parse(fact.entry.endAt)) entries.push({ ...fact.entry,
         id: `${fact.entry.id}-turnaround`, kind: "turnaround", startAt: fact.entry.endAt, endAt: fact.period.endAt, overdue: false });
     }
-    for (const work of workOrders.filter(work => work.assetId === asset.id)) {
+    for (const control of controls.filter(control => control.assetId === asset.id && control.status !== "cancelled")) {
+      entries.push({ id: `control-${control.id}`, kind: "manual_control", source: "asset_control", sourceId: control.id,
+        sourceNo: control.policy.name, startAt: control.startAt, endAt: control.endedAt ?? null, plannedEndAt: control.plannedEndAt,
+        status: control.status, overdue: control.status === "active" && Boolean(control.plannedEndAt && Date.parse(control.plannedEndAt) < now.getTime()) });
+    }
+    for (const work of workOrders.filter(work => work.assetId === asset.id && !controls.some(control => control.workOrderId === work.id))) {
       const workOrderType = RENTAL_WORK_ORDER_TYPES.find(type => type === work.type);
       if (!workOrderType) throw new ConflictException("排班养护工单类型无法识别");
       entries.push({ id: `work-${work.id}`, kind: "work_order", workOrderType,
@@ -150,13 +158,18 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
     const operableQuantity = assets.filter(row => row.itemGroupId === asset.itemGroupId && row.locationId === asset.locationId
       && row.status !== "MAINTENANCE" && row.status !== "DISABLED").length;
     const reservedPeak = peakReservedQuantity(matching.map(fact => ({ ...fact.period, quantity: fact.quantity })), query.startAt, query.endAt);
+    const eligible = new Set(assets.filter(row => row.itemGroupId === asset.itemGroupId && row.locationId === asset.locationId
+      && row.status !== "MAINTENANCE" && row.status !== "DISABLED").map(row => row.id));
+    const holds = assetControlOccupancies(controls).filter(row => eligible.has(row.assetId));
+    const controlPeak = peakReservedQuantity(holds, query.startAt, query.endAt);
+    const occupiedPeak = peakReservedQuantity([...matching.map(fact => ({ ...fact.period, quantity: fact.quantity })), ...holds], query.startAt, query.endAt);
     const unassignedPeak = peakReservedQuantity(matching.map(fact => ({ ...fact.period, quantity: fact.unassigned })), query.startAt, query.endAt);
     const group = groups.find(row => row.id === asset.itemGroupId), location = locations.find(row => row.id === asset.locationId);
     if (!group || !location) throw new ConflictException("排班型号或地点来源缺失");
     const enabled = group.status === "enabled";
     return { itemGroupId: asset.itemGroupId, itemGroupName: group.name, locationId: asset.locationId, locationName: location.name,
-      operableQuantity, reservedPeak, unassignedPeak, availableQuantity: enabled ? Math.max(0, operableQuantity - reservedPeak) : 0,
-      shortage: Math.max(0, reservedPeak - (enabled ? operableQuantity : 0)), enabled };
+      operableQuantity, reservedPeak, controlPeak, occupiedPeak, unassignedPeak, availableQuantity: enabled ? Math.max(0, operableQuantity - occupiedPeak) : 0,
+      shortage: Math.max(0, occupiedPeak - (enabled ? operableQuantity : 0)), enabled };
   });
   await current();
   return { source: "persisted_inventory_facts", observedAt: now.toISOString(), startAt: query.startAt, endAt: query.endAt,

@@ -16,14 +16,14 @@ import { RentalOrderRowActions } from "../orders/RentalOrderRowActions";
 import { retainOrderExtensionPreparation } from "../orders/orderExtensionPreparation";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import type { RentalCatalogPageContext } from "./page-context";
-import { rentalAssetLocation } from "./pages";
+import { rentalAssetLocation, RENTAL_CATALOG_PAGES } from "./pages";
 import { scheduleLanes, scheduleWindow, shiftScheduleDate, type ScheduleZoom } from "./asset-schedule-view";
 import { ScheduleExtensionHandle } from "./ScheduleExtensionHandle";
 import { ScheduleExtensionPreparation } from "./ScheduleExtensionPreparation";
 import styles from "./AssetSchedulePage.module.css";
 
 const kindLabels: Record<RentalAssetScheduleEntry["kind"], string> = { reservation: "已分配预约", rental: "租用中", preparation: "交付准备",
-  turnaround: "归还周转", work_order: "养护工单", asset_hold: "当前库存限制" };
+  turnaround: "归还周转", work_order: "养护工单", asset_hold: "当前库存限制", manual_control: "人工管控" };
 const workOrderLabels: Record<RentalWorkOrderType, string> = { cleaning: "清洁工单", restock: "补货/缺件工单", calibration: "校准工单", repair: "维修工单" };
 const statusLabels: Record<string, string> = { available: "可用", reserved: "已预占", rented: "租赁中", inspection: "检查中", maintenance: "维护中", disabled: "停用" };
 
@@ -80,7 +80,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
     if (query.isFetching || preparation && preparation.snapshot !== data) setPreparation(undefined);
   }, [data, query.isFetching, preparation]);
   const label = (entry: RentalAssetScheduleEntry) => `${t(entry.kind === "work_order" && entry.workOrderType ? workOrderLabels[entry.workOrderType]
-    : ["reservation", "rental"].includes(entry.kind) && entry.order ? orderStatusLabels[entry.order.status] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
+    : ["reservation", "rental"].includes(entry.kind) && entry.order ? orderStatusLabels[entry.order.status] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t(entry.kind === "manual_control" ? "逾期未解除" : "逾期未还")}` : ""}`;
   const overlapLabel = (asset: RentalAssetScheduleRow) => t("{count} 段预占重叠", { count: asset.overlaps.length });
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
@@ -101,9 +101,14 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
     if (!entry.sourceId) return;
     if (entry.source === "order") navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "view" });
     if (entry.source === "work_order") navigate(rentalWorkOrderLocation(entry.sourceId), { resource: "maintenance", action: "view" });
+    if (entry.source === "asset_control" && isCurrentSnapshot() && canOpen({ coreId: "rental", pageId: "asset-controls" })) {
+      const path = resolveCorePageLocation(live.current.host.pages, { coreId: "rental", pageId: "asset-controls" });
+      live.current.host.navigate(`${path}?${new URLSearchParams({ controlId: entry.sourceId })}`);
+    }
   };
   const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(canRead() && entry.sourceId && ((entry.source === "order" && live.current.host.canAccess("rental", [{ resource: "order", action: "view" }]))
-    || (entry.source === "work_order" && live.current.host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
+    || (entry.source === "work_order" && live.current.host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))
+    || (entry.source === "asset_control" && canOpen({ coreId: "rental", pageId: "asset-controls" }))));
   const orderPermissions = () => ({
     operate: live.current.host.canAccess("rental", [{ resource: "order", action: "operate" }]),
     pickup: live.current.host.canAccess("rental", [{ resource: "order", action: "pickup" }]),
@@ -132,8 +137,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   };
   const resetPage = (change: () => void) => { setPage(1); setSelection(undefined); change(); };
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
-    actions={canOpen(rentalWorkOrderLocation()) ? [{ id: "maintenance", kind: "navigate",
-      label: { default: t("养护管控") }, to: rentalWorkOrderLocation(), permissions: [{ resource: "maintenance", action: "view" }] }] : []}>
+    actions={canOpen({ coreId: "rental", pageId: "asset-controls" }) ? [{ id: "controls", kind: "navigate",
+      label: { default: t("人工管控中心") }, to: { coreId: "rental", pageId: "asset-controls" }, permissions: RENTAL_CATALOG_PAGES.controls.permissions }] : []}>
     {!canRead() ? <Alert type="warning" showIcon title={t("排班读取受限")} /> : <div className={styles.workspace}>
       {assetId !== undefined && <Alert type="info" showIcon title={t("当前仅查看所选资产")}
         action={<Button onClick={clearAsset}>{t("查看全部资产")}</Button>} />}
@@ -207,6 +212,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           <ListSection title={t("区间容量")}><p className={styles.help}>{t("容量覆盖当前地点与型号的完整可见库存，不随资产编号、状态或分页缩小。")}</p><Table rowKey={row => `${row.locationId}:${row.itemGroupId}`} dataSource={data.capacity} pagination={{ pageSize: 10 }} columns={[
             { title: t("型号 / 地点"), render: (_: unknown, row) => <DataTableText primary={row.itemGroupName} secondary={row.locationName} /> },
             { title: t("可运营数量"), dataIndex: "operableQuantity" }, { title: t("预占峰值"), dataIndex: "reservedPeak" },
+            { title: t("管控峰值"), dataIndex: "controlPeak" },
             { title: t("待分配峰值"), dataIndex: "unassignedPeak" }, { title: t("剩余容量"), dataIndex: "availableQuantity" },
             { title: t("冲突"), render: (_: unknown, row) => row.shortage > 0 ? t("缺少 {count}", { count: row.shortage }) : row.enabled ? "—" : t("型号已停用") }
           ]} /></ListSection>

@@ -43,6 +43,12 @@ export const RENTAL_CATALOG_PAGES = {
     parent: "assets",
     permissions: rentalPagePermissions("asset-detail"),
   },
+  controls: {
+    id: "asset-controls", path: "/asset-controls",
+    title: { default: "人工管控中心", translations: { "en-US": "Asset controls" } },
+    permissions: rentalPagePermissions("asset-controls"),
+    menu: { group: RENTAL_WORK_ORDER_PAGES.workOrders.menu.group, order: RENTAL_WORK_ORDER_PAGES.workOrders.menu.order - 3 },
+  },
 } satisfies Record<string, CorePageDescriptor>;
 
 export function rentalAssetLocation(assetId?: string): CorePageLocation {

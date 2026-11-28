@@ -5553,6 +5553,8 @@ export interface RentalWorkOrder {
   quantity: number;
   assigneeId?: string;
   assigneeName?: string;
+  /** 仅投影本工单的原管控来源；工单完成不代表这条管控已解除。 */
+  assetControl?: { id: string; status: "active" | "cancelled" | "released"; startAt: string; releaseRequiresAcceptance: boolean };
   reason: string;
   result?: string;
   attachments: string[];

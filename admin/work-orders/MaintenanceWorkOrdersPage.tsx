@@ -143,6 +143,13 @@ export function MaintenanceWorkOrdersPage({
   const canViewSchedule = Boolean(schedulePage && host.canAccess("rental", schedulePage.definition.permissions));
   const assetDetailPage = host.pages.get(corePageKey("rental", RENTAL_CATALOG_PAGES.assetDetail.id));
   const canViewAssetDetail = Boolean(assetDetailPage && host.canAccess("rental", assetDetailPage.definition.permissions));
+  const controlsTarget = { coreId: "rental", pageId: RENTAL_CATALOG_PAGES.controls.id };
+  const controlsPage = host.pages.get(corePageKey("rental", controlsTarget.pageId));
+  const canViewControls = Boolean(controlsPage && host.canAccess("rental", controlsPage.definition.permissions));
+  function openAssetControl(controlId: string, assetId: string) {
+    if (!activePage.current || currentScopeKey() !== boardScope || !controlsPage || !host.canAccess("rental", controlsPage.definition.permissions)) return;
+    host.navigate(`${resolveCorePageLocation(host.pages, controlsTarget)}?${new URLSearchParams({ assetId, controlId })}`);
+  }
   function openAssetDetail(assetId: string) {
     if (currentScopeKey() !== boardScope || !assetDetailPage || !host.canAccess("rental", assetDetailPage.definition.permissions)) return;
     host.navigate(resolveCorePageLocation(host.pages, rentalAssetLocation(assetId)));
@@ -178,7 +185,7 @@ export function MaintenanceWorkOrdersPage({
   const dispositions = useQuery({ queryKey: ["rental-core", "stock-dispositions", boardScope], queryFn: ({ signal }) => rentalCoreApi.stockDispositions(undefined, { signal }) });
   const workOrders = useQuery({ queryKey: ["rental-core", "work-orders", boardScope], queryFn: ({ signal }) => rentalCoreApi.workOrders(undefined, { signal }) });
   const activeWorkOrder = workOrderId ? workOrders.data?.find(row => row.id === workOrderId) : actionWorkOrder;
-  const independentWorkOrder = Boolean(activeWorkOrder?.assetId && !activeWorkOrder.orderId && !activeWorkOrder.dispositionId);
+  const independentWorkOrder = Boolean(activeWorkOrder?.assetId && !activeWorkOrder.orderId && !activeWorkOrder.dispositionId && !activeWorkOrder.assetControl);
   const validationTarget = useRef("");
   validationTarget.current = JSON.stringify([
     boardScope, assetFilter, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible,
@@ -565,10 +572,14 @@ export function MaintenanceWorkOrdersPage({
           const next = new URLSearchParams(previous); if (key === "history") next.set("tab", key); else next.delete("tab"); return next;
         })} items={[
           { key: "detail", label: t("处理与验收"), children: <RecordDetailStack>
+            {activeWorkOrder.assetControl && <Alert type="info" showIcon title={t("人工管控关联工单")}
+              description={t("未来管控从开始时点办理。验收完成后仍须解除原管控，预计结束不会自动恢复可租；其他限制继续保留。")}
+              action={canViewControls && activeWorkOrder.assetId ? <Button onClick={() => openAssetControl(activeWorkOrder.assetControl!.id, activeWorkOrder.assetId!)}>{t("查看原管控")}</Button> : undefined} />}
             {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
               description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
             <RecordFacts items={[
-              { key: "source", label: t("工单来源"), value: activeWorkOrder.dispositionId ? t("归还处置") : independentWorkOrder ? t("独立资产养护") : t("来源未完整登记") },
+              { key: "source", label: t("工单来源"), value: activeWorkOrder.assetControl ? t("人工管控关联工单") : activeWorkOrder.dispositionId ? t("归还处置") : independentWorkOrder ? t("独立资产养护") : t("来源未完整登记") },
+              ...(activeWorkOrder.assetControl ? [{ key: "control-start", label: t("管控开始时间"), value: dateTime(activeWorkOrder.assetControl.startAt, locale) }] : []),
               { key: "reason", label: "处理原因", value: activeWorkOrder.reason || "—", wide: true },
               { key: "result", label: "处理结果", value: activeWorkOrder.result || "—", wide: true },
               { key: "review", label: "验收", value: activeWorkOrder.reviewReason || "—" },
@@ -642,9 +653,11 @@ export function MaintenanceWorkOrdersPage({
     <Modal {...modalProps} title={`${t("验收工单")}：${activeWorkOrder?.workNo ?? ""}`} open={dialog === "review" && actionDialog.visible} okText={t("确认验收")} onConfirm={() => confirmEditor(reviewForm, reviewEditor.submit)}>
       <Descriptions size="small" column={1} style={{ marginBottom: 16 }} items={[{ key: "reason", label: t("处理原因"), children: activeWorkOrder?.reason }, { key: "result", label: t("处理结果"), children: activeWorkOrder?.result || t("尚未提交") }]} />
       <Form form={reviewForm} layout="vertical" disabled={saving} {...reviewEditor.formProps}>
+        {activeWorkOrder?.assetControl && <Alert type="info" showIcon title={t("人工管控关联工单")}
+          description={t("验收完成后仍须解除原管控，其他限制继续保留。")} />}
         {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
           description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
-        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t(independentWorkOrder ? "通过验收" : "通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
+        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t(independentWorkOrder || activeWorkOrder?.assetControl ? "通过验收" : "通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
         <Form.Item name="reason" label={t("验收说明")} rules={[{ required: true, message: t("请填写验收说明") }]}><Input.TextArea rows={3} placeholder={t("填写通过或驳回的依据")} /></Form.Item>
       </Form>
     </Modal>

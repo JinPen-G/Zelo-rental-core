@@ -3,9 +3,9 @@ import { RentalCoreOrderStatus, RENTAL_FULFILLMENT_MODES, RENTAL_WORK_ORDER_TYPE
 
 const optionalTime: SchemaObject = { type: "string", format: "date-time", nullable: true };
 export const RENTAL_ASSET_SCHEDULE_SCHEMAS: Record<string, SchemaObject> = {
-  RentalAssetScheduleEntry: objectOf({ id: stringSchema, kind: { type: "string", enum: ["reservation", "rental", "preparation", "turnaround", "work_order", "asset_hold"] },
+  RentalAssetScheduleEntry: objectOf({ id: stringSchema, kind: { type: "string", enum: ["reservation", "rental", "preparation", "turnaround", "work_order", "asset_hold", "manual_control"] },
     startAt: optionalTime, endAt: optionalTime, plannedEndAt: { type: "string", format: "date-time" }, overdue: booleanSchema,
-    source: { type: "string", enum: ["order", "work_order", "asset_status", "restricted"] }, sourceId: stringSchema, sourceNo: stringSchema,
+    source: { type: "string", enum: ["order", "work_order", "asset_status", "restricted", "asset_control"] }, sourceId: stringSchema, sourceNo: stringSchema,
     order: objectOf({ status: { type: "string", enum: Object.values(RentalCoreOrderStatus) },
       fulfillmentMode: { type: "string", enum: [...RENTAL_FULFILLMENT_MODES] }, effectiveEndAt: { type: "string", format: "date-time" } }, ["status", "fulfillmentMode"]),
     status: stringSchema, assigneeName: stringSchema, workOrderType: { type: "string", enum: [...RENTAL_WORK_ORDER_TYPES] },
@@ -20,7 +20,7 @@ export const RENTAL_ASSET_SCHEDULE_SCHEMAS: Record<string, SchemaObject> = {
     ["id", "assetNo", "itemGroupId", "itemGroupName", "locationId", "locationName", "status", "entries", "overlaps"])),
     locations: arrayOf(objectOf({ id: stringSchema, name: stringSchema }, ["id", "name"])), itemGroups: arrayOf(objectOf({ id: stringSchema, name: stringSchema }, ["id", "name"])),
     capacity: arrayOf(objectOf({ itemGroupId: stringSchema, itemGroupName: stringSchema, locationId: stringSchema, locationName: stringSchema,
-      operableQuantity: numberSchema, reservedPeak: numberSchema, unassignedPeak: numberSchema, availableQuantity: numberSchema, shortage: numberSchema, enabled: booleanSchema },
+      operableQuantity: numberSchema, reservedPeak: numberSchema, controlPeak: numberSchema, occupiedPeak: numberSchema, unassignedPeak: numberSchema, availableQuantity: numberSchema, shortage: numberSchema, enabled: booleanSchema },
     ["itemGroupId", "itemGroupName", "locationId", "locationName", "operableQuantity", "reservedPeak", "unassignedPeak", "availableQuantity", "shortage", "enabled"])),
     unassigned: arrayOf({ allOf: [ref("RentalAssetScheduleEntry"), objectOf({ itemGroupId: stringSchema, locationId: stringSchema, quantity: numberSchema }, ["itemGroupId", "locationId", "quantity"])] }) },
   ["source", "observedAt", "timeZone", "startAt", "endAt", "page", "pageSize", "total", "rows", "locations", "itemGroups", "capacity", "unassigned"])

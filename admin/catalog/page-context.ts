@@ -7,17 +7,21 @@ export interface RentalCatalogPageContext {
   api: RentalCatalogApi;
   scopeKey: string;
   currentScopeKey: () => string | undefined;
+  /** 受信会话的租户/空间/账号稳定引用；会话代次仍由scopeKey复验。 */
+  operationScopeKey?: string;
 }
 export function createRentalCatalogPageContext({
   runtime,
   requestImage,
   scopeKey,
   currentScopeKey,
+  operationScopeKey,
 }: {
   runtime: AdminRuntime;
   requestImage: RentalCatalogImageRequest;
   scopeKey: string;
   currentScopeKey: RentalCatalogPageContext["currentScopeKey"];
+  operationScopeKey?: string;
 }): RentalCatalogPageContext {
   const assertCurrent = () => {
     if (!scopeKey || currentScopeKey() !== scopeKey)
@@ -38,7 +42,7 @@ export function createRentalCatalogPageContext({
     assertCurrent();
     return image;
   };
-  return { api: createRentalCatalogApi(request, imageRequest), scopeKey, currentScopeKey };
+  return { api: createRentalCatalogApi(request, imageRequest), scopeKey, currentScopeKey, operationScopeKey };
 }
 const CatalogContext = createContext<RentalCatalogPageContext | null>(null);
 export function RentalCatalogPageProvider({

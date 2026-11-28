@@ -78,6 +78,9 @@ function AssetDetailBody({ api, scopeKey, currentScopeKey, assetId }: RentalCata
     permissions: RENTAL_CATALOG_PAGES.schedule.permissions, open: () => navigate(schedule, true) });
   if (current && canReadWork() && canOpen(rentalWorkOrderLocation())) actions.push({ id: "asset-maintenance", kind: "open",
     label: { default: t("养护管控") }, permissions: [{ resource: "maintenance", action: "view" }], open: () => navigate(rentalWorkOrderLocation(), true) });
+  const controls = { coreId: "rental", pageId: RENTAL_CATALOG_PAGES.controls.id };
+  if (current && canOpen(controls)) actions.push({ id: "asset-controls", kind: "open", label: { default: t("人工管控中心") },
+    permissions: RENTAL_CATALOG_PAGES.controls.permissions, open: () => navigate(controls, true) });
   const title = current?.assetNo ?? t("资产详情");
   return <RecordDetailLayout title={title} onBack={() => navigate(rentalAssetLocation())}
     header={<CorePage title={title} actions={actions}>{null}</CorePage>}

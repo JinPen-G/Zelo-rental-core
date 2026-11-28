@@ -2,6 +2,7 @@
 export * from "./core-identity";
 export * from "./contracts";
 export * from "./asset-schedule";
+export * from "./asset-controls";
 export * from "./payment-contracts";
 export * from "./enterprise-booking";
 export * from "./workspace-names";

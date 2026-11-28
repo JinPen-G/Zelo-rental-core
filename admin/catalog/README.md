@@ -62,6 +62,20 @@
 
 筛选、列表、抽屉和动作使用公共 UIArc 适配。时间轴为 Rental 专属资源条带投影；公共出口目前没有可复用的只读 Gantt 组件，本地重建 Pro 项目甘特也没有只读合同，因此没有复制私有镜像或把项目拖拽接成订单写入。页面不宣称使用官方 Pro 原始 TSX；正式浏览器主题、窄屏及交互验收需授权宿主。
 
+## 人工管控中心
+
+[管控页面](AssetControlsPage.tsx)登记为 `asset-controls`（`/asset-controls`），资产详情、排班条带和菜单可定位同一资产/管控。使用公共UIArc表格、筛选、日期选择、抽屉、确认和原表单驱动；没有引入本地重建Pro源码或新日历库。时间按服务端返回的经营空间时区输入和显示，非存在的夏令时当地时刻拒绝提交。
+
+新建、紧急停租、延期、取消未来管控和解除分别调用原命令。管控类型可配置阻租、工单与验收要求，每张管控冻结创建时的规则；须验收的类型必须关联原工单。计划结束不自动释放，延期不改旧履历，同车多条限制在库存中按区间并集合并为一次占用。原工单继续承担派工、处理、附件和验收；工单完成后仍从本条管控解除，其他限制及订单保留。[合同](../../src/asset-controls.ts) · [原事务仓储](../../src/mysql-asset-controls.ts)
+
+普通命令在原资产锁内核原分配和预约峰值。冲突只投影当前有权读取的订单编号、标识与状态，进入原订单处理。紧急停租必须显式拥有 `rental-core:asset:control:emergency` 并确认原因；管理员标志或通配权限不能替代此码。不自动取消订单、退款或调车。页面读权由 `page.asset-controls/view` 映射原资产、养护或管控权限；写入另核 `asset.control/manage|configure|emergency`。[唯一权限映射](../../src/permissions.ts)
+
+HTTP公开读口为 `asset-control-types`、`asset-control-options`、`asset-control-assignees`、`asset-controls` 及管控的 `history/conflicts`，均位于 `/rental/v1`。写口使用 `operationId/expectedRevision/reason`；`GET asset-control-operations/:operationId?action=...&targetId=...` 读取本人原账，targetId在创建时是资产、类型保存时是code、其他动作是管控ID。收据确认原修订，当前状态另读；unknown不代表可以重发。原Core停用准入未放宽。[HTTP合同](../../src/http-openapi-asset-controls.ts) · [原账适配](../../src/asset-control-application.ts)
+
+宿主通过 `operationScopeKey` 提供已验证的租户/空间/账号稳定引用，查询代次继续使用 `scopeKey/currentScopeKey`。[恢复驱动](asset-control-operation.ts)在发送前保存原键、动作、目标和修订，不保存原因或凭据；Web Locks隔离多页面。未知结果、损坏引用、浏览器存储或协调能力不可用时阻止新命令。可解释的业务拒绝先回滚本命令保存点，再把 `rejected` 结论提交到原幂等账；只有 `committed/rejected` 原收据或已确认拒绝响应才清除引用。查无收据、关闭、刷新、认证失败或提交不明不会自动重做，历史拒绝不重复返回原时点的订单字段。
+
+迁移和真实环境前置见[数据说明](../../prisma/README.md#人工管控开发数据)。本页面已有类型及离线验证，浏览器主题、语言、键盘、窄屏与真实HTTP/MySQL并发须在授权宿主另验。
+
 ## 验证入口
 
 类型检查消费 Rental 后台与原宿主入口。现有列表交互、导航术语和后台结构断言定位同一业务正文，原路由边界继续留在旧宿主。浏览器、真实 HTTP、对象存储与完整标准 Core 装配分别验收。[类型配置](<../tsconfig.json>) · [列表交互](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-list-interactions.test.cjs>) · [导航术语](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-navigation-terminology.test.cjs>) · [后台检查器](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/scripts/validate-react-admin.cjs>)

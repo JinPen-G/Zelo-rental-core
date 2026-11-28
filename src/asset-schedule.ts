@@ -12,7 +12,7 @@ export interface RentalAssetScheduleQuery {
   page?: number;
 }
 
-export type RentalAssetScheduleKind = "reservation" | "rental" | "preparation" | "turnaround" | "work_order" | "asset_hold";
+export type RentalAssetScheduleKind = "reservation" | "rental" | "preparation" | "turnaround" | "work_order" | "asset_hold" | "manual_control";
 export interface RentalAssetScheduleEntry {
   /** 仅在本次投影中稳定；受限来源不得通过此键暴露原对象编号。 */
   id: string;
@@ -21,7 +21,7 @@ export interface RentalAssetScheduleEntry {
   endAt: string | null;
   plannedEndAt?: string;
   overdue: boolean;
-  source: "order" | "work_order" | "asset_status" | "restricted";
+  source: "order" | "work_order" | "asset_status" | "restricted" | "asset_control";
   sourceId?: string;
   sourceNo?: string;
   /** 仅在原订单可读时提供同一快照的事实，供原页面定位与核对准备依据；不代表动作已获准执行。 */
@@ -64,6 +64,7 @@ export interface RentalAssetSchedule {
   itemGroups: Array<{ id: string; name: string }>;
   /** 容量按地点/型号完整事实计算，不随车辆状态筛选或分页缩小分母。 */
   capacity: Array<{ itemGroupId: string; itemGroupName: string; locationId: string; locationName: string;
+    controlPeak?: number; occupiedPeak?: number;
     operableQuantity: number; reservedPeak: number; unassignedPeak: number; availableQuantity: number; shortage: number; enabled: boolean }>;
   unassigned: Array<RentalAssetScheduleEntry & { itemGroupId: string; locationId: string; quantity: number }>;
 }

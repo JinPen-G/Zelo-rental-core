@@ -26,6 +26,7 @@ import type { RentalCoreFactStore } from "./mysql-core-facts";
 import type { RentalCoreService } from "./mysql-core-runtime";
 import { resolveScopeWorkspaceId } from "./mysql-workspace-scope";
 import { bufferedRentalPeriod, peakReservedQuantity } from "./occupancy";
+import { readAssetControlReservations } from "./mysql-asset-control-read";
 import { getRequestIdentity, getRequestTenantId, getRequestWorkspaceId, runWithRequestIdentity } from "@rental-os/platform-server/request-identity";
 import { requestFingerprint } from "@rental-os/platform-contracts/request-fingerprint";
 import type { RentalAllocationTransaction, RentalAllocationStorage, RentalAllocationFailureEvents, RentalAllocationWorkerAuthority } from "./allocation-storage";
@@ -106,7 +107,7 @@ export class RentalAllocationService<TTransaction extends RentalAllocationTransa
       },
       include: { order: true },
     });
-    return rows.map((r) => {
+    const assignments = rows.map((r) => {
       const p = bufferedRentalPeriod(
         r.order.startAt.toISOString(),
         (r.order.effectiveEndAt ?? r.order.endAt).toISOString(),
@@ -128,6 +129,9 @@ export class RentalAllocationService<TTransaction extends RentalAllocationTransa
           r.order.returnLocationId ?? r.order.fulfillmentLocationId,
       };
     });
+    const controls = await readAssetControlReservations(tx, tenantId, workspaceId);
+    return [...assignments, ...controls.map(row => ({ orderId: `control:${row.assetIds[0]}`, assetId: row.assetIds[0],
+      startAt: row.startAt, endAt: row.endAt, status: "asset_control", locationId: row.locationId, returnLocationId: row.locationId }))];
   }
 
   async candidates(

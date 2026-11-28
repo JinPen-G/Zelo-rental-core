@@ -102,6 +102,8 @@ import { exchangePickupInspectionRequirements } from "./exchange-inspection";
 import { PlatformOperationLogService } from "@rental-os/platform-server/operation-log";
 import { lockRentalBusinessTenant } from "./mysql-business-fence";
 import { rentalNativeResponse } from "./http-native-response";
+import { RentalAssetControlApplication, type AssetControlAction } from "./asset-control-application";
+import { AssetControlCommandDto, CreateAssetControlDto, EmergencyAssetControlDto, ExtendAssetControlDto, SaveAssetControlTypeDto } from "./asset-control.dto";
 
 interface AuthenticatedRequest { user: SystemUserRow; headers?: Record<string, unknown>; }
 type RentalCoreService = RentalHttpApplications["core"];
@@ -939,6 +941,50 @@ export class RentalCoreController {
   @Post("stock-dispositions/:dispositionId/restore") restoreDisposition(@Req() req: AuthenticatedRequest, @Param("dispositionId") dispositionId: string) { return this.factResponse(this.service.restoreStockDisposition(req.user.tenantId, dispositionId, req.user.displayName)); }
   @Post("stock-dispositions/:dispositionId/write-off") writeOffDisposition(@Req() req: AuthenticatedRequest, @Param("dispositionId") dispositionId: string, @Body() body: WriteOffRentalStockDispositionDto) { return this.factResponse(this.service.writeOffStockDisposition(req.user.tenantId, dispositionId, body.reason, req.user.displayName)); }
   @Put("stock-balances") saveStock(@Req() req: AuthenticatedRequest, @Body() body: SaveRentalStockBalanceDto) { return this.committed(req.user.tenantId, this.service.saveStockBalance(req.user.tenantId, body)); }
+  private assetControlApplication() { return new RentalAssetControlApplication(this.service, this.idempotent); }
+  @Get("asset-control-types") assetControlTypes(@Req() req: AuthenticatedRequest) { return this.service.assetControlTypes(req.user.tenantId); }
+  @Get("asset-control-options") assetControlOptions(@Req() req: AuthenticatedRequest) { return this.service.assetControlOptions(req.user.tenantId); }
+  @Get("asset-control-assignees") assetControlAssignees(@Req() req: AuthenticatedRequest, @Query("locationId") locationId: string) {
+    if (!locationId?.trim()) throw new BadRequestException("处理人查询须指定原受权地点");
+    return this.service.assetControlAssignees(req.user.tenantId, locationId);
+  }
+  @Get("asset-controls") assetControls(@Req() req: AuthenticatedRequest, @Query("assetId") assetId?: string) {
+    return this.service.listAssetControls(req.user.tenantId, assetId);
+  }
+  @Get("asset-controls/:id/history") assetControlHistory(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
+    return this.service.assetControlHistory(req.user.tenantId, id);
+  }
+  @Get("asset-controls/:id/conflicts") assetControlConflicts(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
+    return this.service.assetControlConflicts(req.user.tenantId, id);
+  }
+  @Get("asset-control-operations/:operationId") assetControlReceipt(@Req() req: AuthenticatedRequest,
+    @Param("operationId") operationId: string, @Query("action") action: AssetControlAction, @Query("targetId") targetId: string) {
+    return this.assetControlApplication().read(req.user.tenantId, req.user.id, action, operationId, targetId);
+  }
+  @Put("asset-control-types") saveAssetControlType(@Req() req: AuthenticatedRequest, @Body() body: SaveAssetControlTypeDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "save_type", body.type.code, body,
+      tx => this.service.saveAssetControlType(req.user.tenantId, body, tx));
+  }
+  @Post("asset-controls") createAssetControl(@Req() req: AuthenticatedRequest, @Body() body: CreateAssetControlDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "create", body.assetId, body,
+      tx => this.service.createAssetControl(req.user.tenantId, body, false, tx));
+  }
+  @Post("asset-controls/emergency") emergencyAssetControl(@Req() req: AuthenticatedRequest, @Body() body: EmergencyAssetControlDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "emergency", body.assetId, body,
+      tx => this.service.createAssetControl(req.user.tenantId, body, true, tx));
+  }
+  @Post("asset-controls/:id/extend") extendAssetControl(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: ExtendAssetControlDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "extend", id, body,
+      tx => this.service.changeAssetControl(req.user.tenantId, id, "extend", body, tx));
+  }
+  @Post("asset-controls/:id/cancel") cancelAssetControl(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: AssetControlCommandDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "cancel", id, body,
+      tx => this.service.changeAssetControl(req.user.tenantId, id, "cancel", body, tx));
+  }
+  @Post("asset-controls/:id/release") releaseAssetControl(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: AssetControlCommandDto) {
+    return this.assetControlApplication().execute(req.user.tenantId, req.user.id, "release", id, body,
+      tx => this.service.changeAssetControl(req.user.tenantId, id, "release", body, tx));
+  }
   @Get("work-orders") workOrders(@Req() req: AuthenticatedRequest, @Query("status") status?: string) {
     return this.service.listWorkOrders(req.user.tenantId, status as RentalWorkOrderStatus | undefined);
   }

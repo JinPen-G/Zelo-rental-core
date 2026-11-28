@@ -1,6 +1,6 @@
 /** Rental 原 HTTP schema 单源。保留历史宽泛字段，字段完整性缺口由接口贡献明确列出。 */
 import { STAFF_UPLOAD_OBSERVATION_SCHEMAS } from "@rental-os/shared";
-import { RENTAL_CURRENCY_CODES, RentalInventoryMode, RENTAL_LOCATION_TYPES, RENTAL_PRICING_UNIT_CODES, RENTAL_SERVICE_EXECUTION_ACTIONS, RENTAL_WORK_ORDER_TYPES } from "./contracts";
+import { RENTAL_CURRENCY_CODES, RentalInventoryMode, RENTAL_LOCATION_TYPES, RENTAL_PRICING_UNIT_CODES, RENTAL_SERVICE_EXECUTION_ACTIONS, RENTAL_WORK_ORDER_TYPES, RENTAL_WORK_ORDER_STATUSES } from "./contracts";
 import type {
   InitiateRentalFundingRequest,
   RefundRentalServiceRequest,
@@ -16,6 +16,7 @@ import { ENTERPRISE_COMPONENT_SCHEMAS } from "./http-openapi-enterprise-schemas"
 import { ENTERPRISE_ORDER_DELEGATION_SCHEMAS } from "./http-openapi-enterprise-order-delegation-schemas";
 import { RENTAL_ORDER_COMPONENT_SCHEMAS } from "./http-openapi-rental-order-schemas";
 import { RENTAL_ASSET_SCHEDULE_SCHEMAS } from "./http-openapi-asset-schedule";
+import { RENTAL_ASSET_CONTROL_SCHEMAS } from "./http-openapi-asset-controls";
 import { RENTAL_ORDER_DOCUMENT_COMPONENT_SCHEMAS } from "./http-openapi-rental-order-document-schemas";
 import { RENTAL_PAYMENT_COMPONENT_SCHEMAS } from "./http-openapi-rental-payment-schemas";
 import { JOBS_OPENAPI_SCHEMAS } from "@rental-os/platform-server/jobs";
@@ -28,6 +29,7 @@ import { adminContainerRadiusInput, adminControlRadiusInput, storedAdminRadiusSc
 
 export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
   ...RENTAL_ASSET_SCHEDULE_SCHEMAS,
+  ...RENTAL_ASSET_CONTROL_SCHEMAS,
   ...JOBS_OPENAPI_SCHEMAS,
   ...NOTIFICATIONS_OPENAPI_SCHEMAS,
   ...STAFF_UPLOAD_OBSERVATION_SCHEMAS,
@@ -1946,6 +1948,15 @@ export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
     { timeStamp: stringSchema, nonceStr: stringSchema, package: stringSchema, signType: { type: "string", enum: ["RSA"] }, paySign: stringSchema },
     ["timeStamp", "nonceStr", "package", "signType", "paySign"], false
   ),
+  RentalWorkOrder: objectOf({ id: stringSchema, tenantId: stringSchema, workspaceId: stringSchema, workNo: stringSchema,
+    type: { type: "string", enum: [...RENTAL_WORK_ORDER_TYPES] }, status: { type: "string", enum: [...RENTAL_WORK_ORDER_STATUSES] },
+    dispositionId: stringSchema, orderId: stringSchema, inspectionId: stringSchema, itemGroupId: stringSchema, locationId: stringSchema,
+    assetId: stringSchema, quantity: numberSchema, assigneeId: stringSchema, assigneeName: stringSchema,
+    assetControl: objectOf({ id: stringSchema, status: { type: "string", enum: ["active", "cancelled", "released"] },
+      startAt: { type: "string", format: "date-time" }, releaseRequiresAcceptance: booleanSchema }, ["id", "status", "startAt", "releaseRequiresAcceptance"], false),
+    reason: stringSchema, result: stringSchema, attachments: arrayOf(stringSchema), startedAt: stringSchema, submittedAt: stringSchema,
+    reviewedAt: stringSchema, reviewedBy: stringSchema, reviewReason: stringSchema, createdBy: stringSchema, createdAt: stringSchema, updatedAt: stringSchema
+  }, ["id", "tenantId", "workspaceId", "workNo", "type", "status", "itemGroupId", "locationId", "quantity", "reason", "attachments", "createdBy", "createdAt", "updatedAt"]),
   RentalWorkOrderAsset: objectOf({ id: stringSchema, assetNo: stringSchema, itemGroupName: stringSchema,
     locationId: stringSchema, locationName: stringSchema, status: { type: "string", enum: ["available", "maintenance"] },
     updatedAt: { type: "string", format: "date-time" }

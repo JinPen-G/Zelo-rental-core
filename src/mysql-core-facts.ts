@@ -54,6 +54,10 @@ import { readRentalFulfillmentAdmission } from "./mysql-fulfillment-admission";
 import { bufferedRentalPeriod, peakReservedQuantity, reservedRentalPeriod } from "./occupancy";
 import type { RentalAssetSchedule, RentalAssetScheduleQuery } from "./asset-schedule";
 import { readRentalAssetSchedule } from "./mysql-asset-schedule";
+import { RentalAssetControlRepository } from "./mysql-asset-controls";
+import { readAssetControlReservations, readAssetControls, readWorkOrderControlSources } from "./mysql-asset-control-read";
+import type { CreateRentalAssetControlRequest, EmergencyRentalAssetControlRequest, ExtendRentalAssetControlRequest,
+  RentalAssetControlCommand, SaveRentalAssetControlTypeRequest } from "./asset-controls";
 import { rentalOrderDueAt } from "./carrier-shipment";
 import { rentalOrderListSort } from "./mysql-order-list-sort";
 import { allocateRentalOrderNumber } from "./mysql-order-number";
@@ -75,6 +79,7 @@ const JsonNull = objectEnumValues.instances.JsonNull as unknown as typeof Prisma
 
 /** 参与可用量计算的预占。表上直接带 startAt/endAt，因此不必回连订单。 */
 export interface ActiveReservationRow {
+  source?: "asset_control";
   orderId?: string;
   assetIds?: string[];
   itemGroupId: string;
@@ -307,6 +312,13 @@ export interface RentalCoreFactStore<TTransaction extends RentalCoreFactTransact
   lockInventoryTargets(tenantId: string, locationId: string, targets: InventoryLockTarget[], tx: TTransaction): Promise<void>;
   activeReservations(tenantId: string, tx?: TTransaction): Promise<ActiveReservationRow[]>;
   readAssetSchedule?: RentalCoreFactRepository<TTransaction>["readAssetSchedule"];
+  assetControlTypes?: RentalCoreFactRepository<TTransaction>["assetControlTypes"];
+  saveAssetControlType?: RentalCoreFactRepository<TTransaction>["saveAssetControlType"];
+  listAssetControls?: RentalCoreFactRepository<TTransaction>["listAssetControls"];
+  assetControlHistory?: RentalCoreFactRepository<TTransaction>["assetControlHistory"];
+  assetControlConflicts?: RentalCoreFactRepository<TTransaction>["assetControlConflicts"];
+  createAssetControl?: RentalCoreFactRepository<TTransaction>["createAssetControl"];
+  changeAssetControl?: RentalCoreFactRepository<TTransaction>["changeAssetControl"];
   readAvailabilitySnapshot?(tenantId: string, workspaceId: string, query: RentalAvailabilitySnapshotQuery, tx?: TTransaction): Promise<RentalAvailabilitySnapshot>;
   /**
    * 对该地点下某商品组的资产行加排他锁，供配货使用。
@@ -537,6 +549,28 @@ function toWorkOrder(row: Prisma.RentalWorkOrderGetPayload<{}>): RentalWorkOrder
 export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransaction = RentalCoreFactTransaction> implements RentalCoreFactStore<TTransaction> {
   constructor(private readonly store: RentalCoreFactStorage<TTransaction>,
     private readonly contacts: RentalCoreFactContacts<TTransaction>) {}
+
+  private controlRepository() {
+    return new RentalAssetControlRepository(this.store, this.contacts, {
+      assetWhere: (tx, tenantId, workspaceId, assetId) => this.assetVisibilityWhere(tx, tenantId, workspaceId, assetId),
+      orderWhere: () => this.requestOrderVisibilityWhere(),
+      lockInventory: (tenantId, locationId, targets, tx) => this.lockInventoryTargets(tenantId, locationId, targets, tx),
+      reservations: (tenantId, tx) => this.activeReservations(tenantId, tx),
+      assignees: (tenantId, locationId, tx) => this.listWorkOrderAssignees(tenantId, locationId, tx),
+      createWork: (work, tx, controlId) => this.upsertWorkOrder(work, tx, controlId)
+    });
+  }
+  assetControlTypes(tenantId: string) { return this.controlRepository().types(tenantId); }
+  saveAssetControlType(tenantId: string, input: SaveRentalAssetControlTypeRequest, tx: TTransaction) { return this.controlRepository().saveType(tenantId, input, tx); }
+  listAssetControls(tenantId: string, assetId?: string) { return this.controlRepository().list(tenantId, assetId); }
+  assetControlHistory(tenantId: string, id: string) { return this.controlRepository().history(tenantId, id); }
+  assetControlConflicts(tenantId: string, id: string) { return this.controlRepository().conflicts(tenantId, id); }
+  createAssetControl(tenantId: string, input: CreateRentalAssetControlRequest | EmergencyRentalAssetControlRequest, emergency: boolean, tx: TTransaction) {
+    return this.controlRepository().create(tenantId, input, emergency, tx);
+  }
+  changeAssetControl(tenantId: string, id: string, action: "extend" | "cancel" | "release", input: RentalAssetControlCommand | ExtendRentalAssetControlRequest, tx: TTransaction) {
+    return this.controlRepository().change(tenantId, id, action, input, tx);
+  }
 
   /** Separate frozen inspection reference transport, with the same original
    * parent visibility. Missing history never falls back to mutable templates. */
@@ -1310,7 +1344,8 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
               WHERE workspaceId = ${workspaceId} AND assetId = ${change.assetId} AND tenantId = ${order.tenantId}
                 AND status IN ('pending', 'in_progress', 'pending_review') FOR UPDATE`)
           ]);
-          if (dispositions.length || workOrders.length) targetStatus = "MAINTENANCE";
+          const controls = await readAssetControls(client, order.tenantId, workspaceId, [change.assetId]);
+          if (dispositions.length || workOrders.some(work => !controls.some(control => control.workOrderId === work.id))) targetStatus = "MAINTENANCE";
         }
         const updated = await client.rentalAsset.updateMany({
           where: { id: change.assetId, tenantId: order.tenantId, workspaceId, status: before.status },
@@ -1558,7 +1593,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
         } }
       }
     });
-    return rows.map((row) => ({
+    const reservations: ActiveReservationRow[] = rows.map((row) => ({
       orderId: row.orderId,
       assetIds: row.order.allocations
         .filter((allocation) => allocation.orderLineId === row.orderLineId && (!allocation.itemGroupId || allocation.itemGroupId === row.itemGroupId))
@@ -1568,6 +1603,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       quantity: Math.max(0, row.quantity - row.releasedQuantity),
       ...reservedRentalPeriod(iso(row.startAt), iso(row.endAt), row.status, row.order.ruleSnapshot as unknown as RentalRuleConfig, now)
     }));
+    return [...reservations, ...await readAssetControlReservations(client, tenantId, workspaceId)];
   }
 
   /** Availability needs complete facts, not a silently truncated inventory.
@@ -1633,9 +1669,12 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     }
     if (!isDeepStrictEqual(identity, this.contacts.getRequestIdentity()) || await this.contacts.resolveWorkspaceId(client, tenantId) !== workspaceId)
       throw new ForbiddenException('库存读取身份或范围变化');
-    return { reservations: reservations.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId,
+    const controls = await readAssetControlReservations(client, tenantId, workspaceId, assets.map(row => row.id));
+    if (!isDeepStrictEqual(identity, this.contacts.getRequestIdentity()) || await this.contacts.resolveWorkspaceId(client, tenantId) !== workspaceId)
+      throw new ForbiddenException('库存读取身份或范围变化');
+    return { reservations: [...reservations.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId,
       quantity: Math.max(0, row.quantity - row.releasedQuantity),
-      ...reservedRentalPeriod(iso(row.startAt), iso(row.endAt), row.status, row.order.ruleSnapshot as unknown as RentalRuleConfig, at) })),
+      ...reservedRentalPeriod(iso(row.startAt), iso(row.endAt), row.status, row.order.ruleSnapshot as unknown as RentalRuleConfig, at) })), ...controls],
       assets: assets.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId, status: lower<RentalAssetStatus>(row.status) })),
       stocks: stocks.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId,
         onHandQuantity: row.onHandQuantity, maintenanceQuantity: row.maintenanceQuantity })) };
@@ -1829,7 +1868,9 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
               FORCE INDEX (rental_work_orders_asset_status_idx)
               WHERE workspaceId = ${workspaceId} AND assetId = ${asset.id} AND tenantId = ${asset.tenantId}
                 AND status IN ('pending', 'in_progress', 'pending_review') FOR UPDATE`);
-            if (dispositions.length || workOrders.length) throw new ConflictException("资产仍有未完成的归还处置或养护工单，不能通过资料维护恢复可租");
+            const controls = await readAssetControls(tx, asset.tenantId, workspaceId, [asset.id]);
+            if (dispositions.length || workOrders.some(work => !controls.some(control => control.workOrderId === work.id)))
+              throw new ConflictException("资产仍有未完成的归还处置或养护工单，不能通过资料维护恢复可租");
           }
           await tx.rentalAsset.update({ where: { id: asset.id }, data: { ...data, attributes: activeWrite.attributes as Prisma.InputJsonValue, serialNo: activeWrite.serialNo ?? null } });
         } else {
@@ -2588,7 +2629,9 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
           WHERE tenantId = ${tenantId} AND workspaceId = ${workspaceId} AND assetId = ${row.assetId}
             AND status IN ('pending', 'in_progress', 'pending_review') FOR UPDATE`)
       ]);
-      if (independentWork.length) throw new ConflictException("该资产仍有独立养护工单，不能结束最后恢复入口");
+      const controls = await readAssetControls(client, tenantId, workspaceId, [row.assetId]);
+      if (independentWork.some(work => !controls.some(control => control.workOrderId === work.id)))
+        throw new ConflictException("该资产仍有独立养护工单，不能结束最后恢复入口");
       remainingBlocks = blocks;
     }
     const updatedCount = await client.rentalStockDisposition.updateMany({
@@ -2636,12 +2679,16 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
 
   async listWorkOrders(tenantId: string, status?: RentalWorkOrderStatus, tx?: TTransaction): Promise<RentalWorkOrder[]> {
     const client = tx ?? this.store;
+    const identity = structuredClone(this.contacts.getRequestIdentity()), locations = structuredClone(this.contacts.getRequestLocationIds());
     const workspaceId = await this.contacts.resolveWorkspaceId(client, tenantId);
     const rows = await client.rentalWorkOrder.findMany({
       where: { tenantId, workspaceId, ...(status ? { status } : {}), ...this.workOrderVisibilityWhere() },
       orderBy: { createdAt: "desc" }
     });
-    return rows.map(toWorkOrder);
+    const result = rows.map(toWorkOrder), sources = await readWorkOrderControlSources(client, tenantId, workspaceId, result);
+    if (!isDeepStrictEqual(identity, this.contacts.getRequestIdentity()) || !isDeepStrictEqual(locations, this.contacts.getRequestLocationIds())
+      || await this.contacts.resolveWorkspaceId(client, tenantId) !== workspaceId) throw new ForbiddenException("工单读取身份或范围已变化");
+    return result.map(work => sources.has(work.id) ? { ...work, assetControl: sources.get(work.id) } : work);
   }
 
   private workOrderVisibilityWhere(): Prisma.RentalWorkOrderWhereInput {
@@ -2788,7 +2835,8 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       });
   }
 
-  async upsertWorkOrder(workOrder: RentalWorkOrder, tx?: TTransaction): Promise<RentalWorkOrder> {
+  async upsertWorkOrder(workOrder: RentalWorkOrder, tx?: TTransaction, controlId?: string): Promise<RentalWorkOrder> {
+    if (controlId && !tx) throw new ConflictException("管控工单必须沿创建管控的同一事务提交");
     if (!tx) return this.store.$transaction(client => this.upsertWorkOrder(workOrder, client), { isolationLevel: "ReadCommitted" });
     const client = tx;
     // 独立养护工单没有关联订单，仍须在资产/处置锁之前取得同一父门禁。
@@ -2796,6 +2844,11 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
     if (!workOrder.orderId) await lockRentalBusinessTenant(client, workOrder.tenantId);
     if (workOrder.orderId) await this.lockOrder(workOrder.tenantId, workOrder.orderId, client);
     const workspaceId = await this.contacts.resolveWorkspaceId(client, workOrder.tenantId);
+    const control = controlId ? (await readAssetControls(client, workOrder.tenantId, workspaceId, workOrder.assetId ? [workOrder.assetId] : [])).find(row => row.id === controlId) : undefined;
+    if (controlId && (!control || control.workOrderId !== workOrder.id || control.assetId !== workOrder.assetId
+      || control.itemGroupId !== workOrder.itemGroupId || control.locationId !== workOrder.locationId || control.status !== "active"
+      || !control.policy.requiresWorkOrder || control.policy.workOrderType !== workOrder.type || workOrder.orderId || workOrder.dispositionId
+      || workOrder.status !== "pending" || control.createdBy !== workOrder.createdBy)) throw new ConflictException("管控原工单关联无效");
     if (!workOrder.orderId && !workOrder.dispositionId) {
       // 普通独立养护与新订单共用空间→型号资产锁，避免容量检查与新预占交错。
       const scope = await client.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM business_workspaces
@@ -2805,7 +2858,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
         [{ itemGroupId: workOrder.itemGroupId, inventoryMode: RentalInventoryMode.Serialized }], client);
     }
     const assets = await this.lockAssetRows(client, workOrder.tenantId, workspaceId, workOrder.assetId ? [workOrder.assetId] : []);
-    if (!workOrder.orderId && !workOrder.dispositionId) {
+    if (!workOrder.orderId && !workOrder.dispositionId && !control) {
       if (!workOrder.assetId || workOrder.quantity !== 1 || workOrder.status !== "pending"
         || workOrder.workspaceId !== workspaceId || workOrder.createdBy !== this.contacts.getRequestUserId()) {
         throw new ConflictException("独立养护的资产、状态或当前账号来源不一致");
@@ -2890,7 +2943,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       }
     });
     const asset = workOrder.assetId ? assets.get(workOrder.assetId) : undefined;
-    if (asset && !["DISABLED", "MAINTENANCE", "INSPECTION"].includes(asset.status)
+    if (!control && asset && !["DISABLED", "MAINTENANCE", "INSPECTION"].includes(asset.status)
       && ["pending", "in_progress", "pending_review"].includes(workOrder.status)) {
       const updated = await client.rentalAsset.updateMany({ where: { id: asset.id, tenantId: workOrder.tenantId,
         workspaceId, status: asset.status }, data: { status: "MAINTENANCE" } });
@@ -2900,7 +2953,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
         source: workOrder.orderId ? "order" : "manual", sourceId: workOrder.orderId ?? workOrder.id,
         reason: workOrder.reason, operator: workOrder.createdBy });
     }
-    if (asset?.status === "MAINTENANCE" && !workOrder.orderId && !workOrder.dispositionId
+    if (!control && asset?.status === "MAINTENANCE" && !workOrder.orderId && !workOrder.dispositionId
       && await this.independentWorkOrderOwnsAssetHold(client, workOrder.tenantId, workspaceId, asset.id)) {
       // 后续独立养护可接手同一工单来源的隔离；不能接管资料维护或归还处置施加的限制。
       await appendAssetStatusHistory(client, { tenantId: workOrder.tenantId, workspaceId, assetId: asset.id,
@@ -2935,6 +2988,9 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
   private async restoreIndependentWorkOrderAsset(client: TTransaction, row: Prisma.RentalWorkOrderGetPayload<{}>, operator: string) {
     if (!row.assetId || row.orderId || row.dispositionId) return;
     const { tenantId, workspaceId, assetId } = row;
+    // 管控工单只提供验收事实，释放由原管控动作单独提交，不能接管其他养护的状态限制。
+    const controls = await readAssetControls(client, tenantId, workspaceId, [assetId]);
+    if (controls.some(control => control.workOrderId === row.id)) return;
     const asset = (await this.lockAssetRows(client, tenantId, workspaceId, [assetId])).get(assetId)!;
     if (asset.status !== "MAINTENANCE") return;
     const [work, dispositions, allocations] = await Promise.all([
@@ -2949,7 +3005,8 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       client.rentalAllocation.findMany({ where: { assetId, status: { in: IN_USE_ALLOCATION_STATES },
         order: { tenantId, workspaceId } }, select: { id: true } })
     ]);
-    if (work.length || dispositions.length || allocations.length
+    // 管控工单的阻租独立于资产状态；不能使已验收的旧养护隔离永远无法解除。
+    if (work.some(work => !controls.some(control => control.workOrderId === work.id)) || dispositions.length || allocations.length
       || !await this.independentWorkOrderOwnsAssetHold(client, tenantId, workspaceId, assetId, true)) return;
     const changed = await client.rentalAsset.updateMany({ where: { id: assetId, tenantId, workspaceId, status: "MAINTENANCE" }, data: { status: "AVAILABLE" } });
     if (changed.count !== 1) throw new ConflictException("独立养护验收时资产状态已变化");
@@ -3008,6 +3065,9 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
         throw new ConflictException("养护工单来源已变化，请重新读取后处理");
       }
       const now = new Date();
+      const linkedControls = row.assetId ? await readAssetControls(client, tenantId, workspaceId, [row.assetId], true) : [];
+      if (action === "start" && linkedControls.some(control => control.workOrderId === row.id && Date.parse(control.startAt) > now.getTime()))
+        throw new ConflictException("未来管控尚未开始，不能提前进入处理并影响原车辆履约");
       let from = row.status;
       let to: string;
       const data: Record<string, unknown> = {};
@@ -3043,6 +3103,8 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       } else {
         if (!["pending", "in_progress", "pending_review"].includes(row.status)) throw new ConflictException("当前工单状态不能取消");
         if (!input.reason?.trim()) throw new ConflictException("取消工单必须填写原因");
+        if (linkedControls.some(control => control.workOrderId === row.id && control.policy.releaseRequiresAcceptance))
+          throw new ConflictException("此工单承担管控原验收；未来管控从原取消入口处理，已生效管控须完成验收后解除");
         to = "cancelled";
         data.reviewedAt = now;
         data.reviewedBy = operator;

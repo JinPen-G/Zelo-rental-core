@@ -2,6 +2,7 @@
 import { STAFF_UPLOAD_OBSERVATION_HTTP } from "@rental-os/shared";
 import { RENTAL_EXCHANGE_INSPECTION_OPERATIONS } from "./http-openapi-rental-exchange-inspection-preparation.schemas";
 import { RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS } from "./http-openapi-integration-operations";
+import { RENTAL_ASSET_CONTROL_OPERATIONS } from "./http-openapi-asset-controls";
 import { ENTERPRISE_COMPONENT_SCHEMAS } from "./http-openapi-enterprise-schemas";
 
 import { CATEGORY_PREPARATION_PREVIEW_SCHEMA, CATEGORY_PREPARATION_BATCH_READ_SCHEMA, CATEGORY_PREPARATION_BATCH_REQUEST_SCHEMA, CATEGORY_PREPARATION_ENTITY_PAGE_SCHEMA, CATEGORY_PREPARATION_REQUEST_SCHEMA, CATEGORY_PREPARATION_SAVE_RESULT_SCHEMA, CATEGORY_CREATION_REQUEST_SCHEMA, CATEGORY_CREATION_PREVIEW_REQUEST_SCHEMA, CATEGORY_CREATED_VERSION_SCHEMA, CATEGORY_CREATION_PREVIEW_SCHEMA, CATEGORY_CREATION_RECEIPT_SCHEMA, CATEGORY_ADOPTION_REQUEST_SCHEMA, CATEGORY_ADOPTION_RESULT_SCHEMA, CATEGORY_ADOPTION_RECEIPT_SCHEMA } from "./http-openapi-category-governance-schemas";
@@ -697,7 +698,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   },
   {
     method: "get", path: "/api/rental/v1/work-orders", tag: "RentalCore", operationId: "listRentalWorkOrders",
-    summary: "List maintenance work orders", permissions: ["rental-core:maintenance:view"], responseSchema: "GenericObject",
+    summary: "List authorized maintenance work orders with their original control source", permissions: ["rental-core:maintenance:view"], responseSchema: { type: "array", items: { $ref: "#/components/schemas/RentalWorkOrder" } },
     parameters: [queryParam("status")]
   },
   {
@@ -1457,5 +1458,6 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
       options: { type: "array", maxItems: 100, items: objectOf({ categoryCode: rentalCategoryCodeSchema, name: { type: "string", maxLength: 100 }, nameEn: { type: "string", maxLength: 100 },
         versionId: { type: "string", maxLength: 191 }, versionLabel: { type: "string", maxLength: 64 }, recommended: booleanSchema, defaultWorkspaceName: { type: "string", maxLength: 100 } },
       ["categoryCode", "name", "recommended", "defaultWorkspaceName"], false) } }, ["structureVersion", "source", "truncated", "options"], false) },
-  ...RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS
+  ...RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS,
+  ...RENTAL_ASSET_CONTROL_OPERATIONS
 ];

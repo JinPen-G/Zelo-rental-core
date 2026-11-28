@@ -4003,6 +4003,11 @@ const ENGLISH = {
   "三组圆角独立调整；留空沿用统一圆角，圆形与胶囊控件保留原形态。": "Adjust each group separately. Leave blank to use the shared radius. Circles and pills keep their shape.",
   "第一行是默认计价单位。": "The first row sets the default billing unit.",
   "已预占或维修隔离的库存不可直接扣减。": "Reserved or quarantined stock cannot be deducted directly.",
+  "人工管控关联工单": "Work order linked to an asset control",
+  "未来管控从开始时点办理。验收完成后仍须解除原管控，预计结束不会自动恢复可租；其他限制继续保留。": "Future controls can be processed from their start time. After acceptance, release the original control explicitly. The planned end does not restore availability; other restrictions remain.",
+  "验收完成后仍须解除原管控，其他限制继续保留。": "After acceptance, release the original control explicitly. Other restrictions remain.",
+  "查看原管控": "View original control",
+  "管控开始时间": "Control starts",
 };
 
 export const rentalAdminMessages: AdminMessages = {
