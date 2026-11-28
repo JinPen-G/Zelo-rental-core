@@ -8,7 +8,7 @@ import { ActionButton, Alert, App, Button, DataTableRowActions, DataTableText, F
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { Pencil } from "lucide-react";
 import { businessDateKey } from "@rental-os/rental-core/business-day";
-import { marketingWindowLabels } from "./MarketingQualificationFields";
+import { marketingAudienceLabels, marketingWindowLabels } from "./MarketingQualificationFields";
 import { resolveCorePageLocation } from "@rental-os/core-contracts";
 import { rentalPagePermissions } from "@rental-os/rental-core/permissions";
 import { RENTAL_PRICING_UNIT_LABELS, type RentalMarketingPlan, type RentalMarketingPlanVersion, type RentalMarketingPricingPolicy,
@@ -19,6 +19,7 @@ import { MarketingPlanEditor, marketingActionLabels, marketingStatusLabels, mark
 import { useMarketingOperation, type MarketingAction } from "./marketing-operation";
 import { useOrderEditor } from "../orders/useOrderEditor";
 import { MarketingQuotePreview } from "./MarketingQuotePreview";
+import { detailFulfillmentLabels } from "../orders/orderDetailPresentation";
 
 const editPermissions = [{ resource: "marketing", action: "edit" }, { resource: "marketing", action: "manage" }, { resource: "price", action: "manage" }];
 const publishPermissions = [{ resource: "marketing", action: "publish" }];
@@ -29,6 +30,11 @@ const pricingReadPermissions = [...pricePermissions, { resource: "order", action
 const legacyReadPermissions = [...pricePermissions, { resource: "marketing", action: "manage" }, { resource: "order", action: "view" }];
 const actionLabels = { publish: "发布方案", pause: "暂停方案", end: "结束方案", change_policy: "切换空间策略" };
 const policyLabels = { legacy: "旧优惠模式", single_rule_v1: "单规则最低价" };
+// 未取得营业时区时保留原带偏移时点，不能悄悄用浏览器时区解释经营记录。
+const marketingTime = (value: string | undefined, locale: string, timeZone?: string) => {
+  if (!value || !/T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(value) || !Number.isFinite(Date.parse(value))) return undefined;
+  return timeZone ? new Date(value).toLocaleString(locale, { timeZone }) : value;
+};
 const errorText = (error: unknown) => {
   const value = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
   return typeof value === "string" ? value : error instanceof Error ? error.message : "操作失败，请保留输入后重试";
@@ -81,7 +87,7 @@ function LegacyImport({ open, nonce, rows, disabled, onSave, onClose, onExited, 
 
 function MarketingVersion({ version, timeZone }: { version: RentalMarketingPlanVersion; timeZone?: string }) {
   const { t, locale } = useLocale();
-  const at = (value?: string) => value ? timeZone ? new Date(value).toLocaleString(locale, { timeZone }) : value : t("未设置");
+  const at = (value?: string) => value ? marketingTime(value, locale, timeZone) ?? value : t("未设置");
   const qualification = (value: RentalMarketingPlanVersion["qualification"]) => value && <RecordFacts items={[
     ...(["activityWindow", "bookingWindow", "rentalWindow"] as const).map((key, index) => ({ key, label: Object.values(marketingWindowLabels)[index],
       value: value[key] ? `${at(value[key]?.from)} ～ ${at(value[key]?.to)}` : t("未设置") })),
@@ -90,10 +96,11 @@ function MarketingVersion({ version, timeZone }: { version: RentalMarketingPlanV
     { key: "advance", label: "提前预订小时", value: value.advanceBookingHours ? `${value.advanceBookingHours.minimum ?? "—"}～${value.advanceBookingHours.maximum ?? "—"}` : t("未设置") },
     { key: "pickup", label: "适用领取地点", value: ids(value.fulfillmentLocationIds) },
     { key: "return", label: "适用归还地点", value: ids(value.returnLocationIds) },
-    { key: "modes", label: "适用履约方式", value: ids(value.fulfillmentModes) },
-    { key: "source", label: "受信下单来源", value: ids(value.audiences) }
+    { key: "modes", label: "适用履约方式", value: ids(value.fulfillmentModes, detailFulfillmentLabels) },
+    { key: "source", label: "受信下单来源", value: ids(value.audiences, marketingAudienceLabels) }
   ]} />;
-  const ids = (values?: string[]) => values?.length ? values.join(" · ") : t("全部");
+  const ids = (values?: string[], labels?: Record<string, string>) => values?.length
+    ? values.map(value => labels?.[value] ? t(labels[value]) : value).join(" · ") : t("全部");
   const dayTypes = (values?: Array<keyof typeof marketingDayLabels>) => values?.length ? values.map(value => t(marketingDayLabels[value])).join(" · ") : t("全部");
   return <>
     {qualification(version.qualification)}
@@ -260,9 +267,11 @@ function MarketingWorkspace() {
         {!history.isError && <Table rowKey="id" dataSource={history.data?.events ?? []} pagination={false} columns={[
           { title: t("修订"), dataIndex: "revision" }, { title: t("动作"), dataIndex: "action", render: (value: MarketingAction) => t(value === "save_draft" ? "保存草稿" : actionLabels[value]) },
           { title: t("发布版本"), dataIndex: "publishedVersion" }, { title: t("操作者"), dataIndex: "actorUserId" },
-          { title: t("原因"), dataIndex: "reason" }, { title: t("时间"), dataIndex: "at", render: value => new Date(value).toLocaleString(locale) },
-        ]} expandable={{ rowExpandable: row => Boolean(row.publishedVersion && history.data?.versions.some(version => version.version === row.publishedVersion)),
-          expandedRowRender: row => { const version = history.data?.versions.find(item => item.version === row.publishedVersion); return version ? <MarketingVersion version={version} timeZone={timeZone} /> : null; } }} />}
+          { title: t("原因"), dataIndex: "reason" }, { title: timeZone ? t("时间（{zone}）", { zone: timeZone }) : t("时间（原始时区）"), dataIndex: "at",
+            render: value => marketingTime(value, locale, timeZone) ?? t("原记录未提供有效时点") },
+        ]} expandable={{ rowExpandable: row => Boolean(row.publishedVersion),
+          expandedRowRender: row => { const version = history.data?.versions.find(item => item.version === row.publishedVersion); return version
+            ? <MarketingVersion version={version} timeZone={timeZone} /> : <Alert type="warning" title={t("原发布版本未返回，请重新读取操作记录")} />; } }} />}
       </QueryState> },
     ]} /> : <Alert type="info" title={t("当前范围内未找到营销方案")} /> : <>
       <QueryState loading={policy.isPending} error={policy.error} onRetry={refresh}>

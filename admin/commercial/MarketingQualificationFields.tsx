@@ -7,6 +7,7 @@ import { detailFulfillmentLabels } from "../orders/orderDetailPresentation";
 import { marketingDateBinding, marketingInstantValid } from "./marketing-date";
 
 export const marketingWindowLabels = { activity: "活动有效期", booking: "下单时间窗", rental: "完整用租时间窗" };
+export const marketingAudienceLabels = { operator: "运营端", staff: "员工端", client: "客户渠道" };
 export function MarketingQualificationFields({ prefix, parent, timeZone, locations, original }: {
   prefix: Array<string | number>; parent: string[]; timeZone?: string;
   locations?: Array<{ value: string; label: string }>; original?: RentalMarketingQualification;
@@ -46,6 +47,6 @@ export function MarketingQualificationFields({ prefix, parent, timeZone, locatio
     <Col xs={24} md={12}><Form.Item name={name("fulfillmentModes")} label={t("适用履约方式")}><Select mode="multiple" showSearch={false}
       options={RENTAL_FULFILLMENT_MODES.map(value => ({ value, label: t(detailFulfillmentLabels[value] ?? value) }))} /></Form.Item></Col>
     <Col xs={24} md={12}><Form.Item name={name("audiences")} label={t("受信下单来源")}><Select mode="multiple" showSearch={false}
-      options={[{ value: "operator", label: t("运营端") }, { value: "staff", label: t("员工端") }, { value: "client", label: t("客户渠道") }]} /></Form.Item></Col>
+      options={Object.entries(marketingAudienceLabels).map(([value, label]) => ({ value, label: t(label) }))} /></Form.Item></Col>
   </Row>;
 }
