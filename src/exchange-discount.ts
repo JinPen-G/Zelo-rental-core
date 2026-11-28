@@ -2,7 +2,8 @@ import { ConflictException } from "@nestjs/common";
 import { isDeepStrictEqual } from "node:util";
 import type { RentalOrderChange, RentalOrderExchangeExecutionBasis, RentalOrderExchangePricingSegment,
   RentalQuoteDiscountEvaluation, RentalQuoteSnapshotV1 } from "./contracts";
-import { selectDiscountPlans } from "./discount-selection";
+import { selectDiscountPlans, selectMarketingRule, RentalMarketingSelectionError } from "./discount-selection";
+import { originalMarketingPlan, isSingleRuleEvaluation, assertSingleRuleEvaluation } from "./marketing-quote-history";
 import { roundMoney } from "./money";
 
 type LinePricing = NonNullable<RentalOrderExchangeExecutionBasis["linePricing"]>;
@@ -11,6 +12,11 @@ type LinePricing = NonNullable<RentalOrderExchangeExecutionBasis["linePricing"]>
  * not select new promotions; downstream coupon/member layers keep separate receipts. */
 export function originalExchangeDiscount(quote: RentalQuoteSnapshotV1, workspaceId: string): RentalQuoteDiscountEvaluation {
   const rows = quote.discountEvaluations.filter(row => row.applied && row.appliesTo === "rental" && row.discountAmount > 0);
+  if (quote.pricingContext?.marketing) {
+    if (quote.request.lines.length !== 1 || rows.length !== 1 || !originalMarketingPlan(quote, workspaceId))
+      throw new ConflictException("原单规则营销换货需要唯一完整订单行及采用规则");
+    return structuredClone(rows[0]);
+  }
   const evaluation = rows[0], plan = evaluation?.planSnapshot, line = quote.request.lines[0];
   if (rows.length !== 1 || quote.request.lines.length !== 1 || !line || !plan || plan.tenantId !== quote.tenantId
     || plan.categoryCode !== quote.categoryCode || plan.id !== evaluation.planId || plan.version !== evaluation.planVersion
@@ -193,14 +199,49 @@ export function splitSegmentDiscount(segment: RentalOrderExchangePricingSegment,
 }
 
 export function sameExchangeDiscount(left: RentalQuoteDiscountEvaluation, right: RentalQuoteDiscountEvaluation): boolean {
+  if (isSingleRuleEvaluation(left) || isSingleRuleEvaluation(right)) return isSingleRuleEvaluation(left) && isSingleRuleEvaluation(right)
+    && isDeepStrictEqual([left.planId, left.planVersion, left.workspaceId, left.ruleId, left.ruleVersion, left.marketingPlanSnapshot, left.ruleSnapshot],
+      [right.planId, right.planVersion, right.workspaceId, right.ruleId, right.ruleVersion, right.marketingPlanSnapshot, right.ruleSnapshot]);
   return isDeepStrictEqual([left.planId, left.planVersion, left.workspaceId, left.appliesTo, left.planSnapshot],
     [right.planId, right.planVersion, right.workspaceId, right.appliesTo, right.planSnapshot]);
+}
+
+/** 全租期固定租价和封顶只授予一次。已履行段保持原减免，只计算剩余段还能使用的部分。 */
+function replacementMarketing(evaluation: RentalQuoteDiscountEvaluation, segment: RentalOrderExchangePricingSegment,
+  retained: readonly RentalOrderExchangePricingSegment[], quote: RentalQuoteSnapshotV1) {
+  if (!isSingleRuleEvaluation(evaluation)) throw new ConflictException("原营销策略类型不一致");
+  assertSingleRuleEvaluation(evaluation);
+  const original = quote.pricingContext?.marketing?.rentalLines[0];
+  if (!original || quote.request.lines.length !== 1 || original.quantity !== segment.quantity
+    || original.pricingUnit !== segment.rate.unit
+    || retained.some(row => !row.discountBenefit || !sameExchangeDiscount(evaluation, row.discountBenefit)))
+    throw new ConflictException("原单规则营销剩余期缺少数量或已履行减免依据");
+  const gross = roundMoney(segment.amount + retained.reduce((sum, row) => sum + row.amount, 0));
+  const consumed = roundMoney(retained.reduce((sum, row) => sum + row.discountBenefit!.discountAmount, 0));
+  try {
+    const result = selectMarketingRule([{ ...structuredClone(evaluation.marketingPlanSnapshot), rules: [structuredClone(evaluation.ruleSnapshot)] }], {
+      tenantId: quote.tenantId, workspaceId: evaluation.workspaceId, categoryCode: quote.categoryCode,
+      membershipEligibility: quote.membershipSnapshot ? "member" : "not_member", customerType: quote.request.customerType,
+      bases: { rental: gross, fulfillment: 0, service: 0 }, minimumSpendBase: gross,
+      itemGroupIds: [segment.itemGroupId], pricingGroupIds: segment.pricingGroupId ? [segment.pricingGroupId] : [],
+      rentalLines: [{ id: segment.orderLineId, itemGroupId: segment.itemGroupId, pricingGroupId: segment.pricingGroupId,
+        amount: gross, quantity: segment.quantity, pricingUnit: segment.rate.unit, billableUnits: original.billableUnits }],
+      rentalStartAt: quote.request.startAt, dayTypes: new Set(quote.pricingContext!.marketing!.dayTypes),
+      qualification: structuredClone(quote.pricingContext!.marketing!.qualification)
+    });
+    return { amount: Math.min(segment.amount, Math.max(0, roundMoney(result.discountByTarget.rental - consumed))),
+      eligible: result.evaluations.length === 1 && result.evaluations[0].eligibility.every(row => row.passed) };
+  } catch (error) {
+    if (error instanceof RentalMarketingSelectionError) throw new ConflictException(error.message);
+    throw error;
+  }
 }
 
 /** Reuse the original selector for eligibility, scope and money calculation.
  * Performed amounts only satisfy original order thresholds and consume caps. */
 export function replacementDiscount(evaluation: RentalQuoteDiscountEvaluation, segment: RentalOrderExchangePricingSegment,
   retained: readonly RentalOrderExchangePricingSegment[], quote: RentalQuoteSnapshotV1): number {
+  if (isSingleRuleEvaluation(evaluation)) return replacementMarketing(evaluation, segment, retained, quote).amount;
   const original = evaluation.planSnapshot!;
   const consumed = roundMoney(retained.reduce((sum, row) => sum + row.discountBenefit!.discountAmount, 0));
   const plan = { ...structuredClone(original),
@@ -221,6 +262,7 @@ export function replacementDiscount(evaluation: RentalQuoteDiscountEvaluation, s
  * selector's eligibility evidence without changing a billed reduction. */
 export function replacementDiscountEligible(evaluation: RentalQuoteDiscountEvaluation, segment: RentalOrderExchangePricingSegment,
   retained: readonly RentalOrderExchangePricingSegment[], quote: RentalQuoteSnapshotV1): boolean {
+  if (isSingleRuleEvaluation(evaluation)) return replacementMarketing(evaluation, segment, retained, quote).eligible;
   const plan = evaluation.planSnapshot!;
   const result = selectDiscountPlans([structuredClone(plan)], {
     bases: { rental: segment.amount, fulfillment: 0, service: 0 },
@@ -291,14 +333,21 @@ export function assertExchangeDiscountPricing(pricing: LinePricing): void {
   if (receipt.version !== 1 || [...pricing.previousSegments, ...pricing.segments].some(row => row.discountLayers !== undefined)) {
     throw new ConflictException("原优惠营销收据版本不一致");
   }
-  const evaluation = receipt.evaluation, plan = evaluation?.planSnapshot;
+  const evaluation = receipt.evaluation;
+  const marketing = evaluation && isSingleRuleEvaluation(evaluation) ? evaluation : undefined;
+  if (marketing) assertSingleRuleEvaluation(marketing);
+  const plan = marketing?.marketingPlanSnapshot ?? evaluation?.planSnapshot;
+  const maximum = marketing ? marketing.ruleSnapshot.action.maximumDiscount : evaluation?.planSnapshot?.maximumDiscount;
+  const fixedMaximum = marketing
+    ? ["fixed_amount", "threshold_amount"].includes(marketing.ruleSnapshot.action.type) ? marketing.ruleSnapshot.action.value : undefined
+    : evaluation?.planSnapshot?.discountType !== "percentage" ? evaluation?.planSnapshot?.discountValue : undefined;
   if (receipt.version !== 1 || !plan || !evaluation.applied || evaluation.appliesTo !== "rental" || plan.appliesTo !== "rental"
     || plan.id !== evaluation.planId || plan.version !== evaluation.planVersion || !evaluation.workspaceId
     || [receipt.originalReduction, receipt.replacementReduction, receipt.originalNetAmount, receipt.replacementNetAmount].some(value => !Number.isFinite(value) || value < 0)
     || roundMoney(pricing.originalAmount - receipt.originalReduction) !== receipt.originalNetAmount
     || roundMoney(pricing.replacementAmount - receipt.replacementReduction) !== receipt.replacementNetAmount
-    || plan.maximumDiscount !== undefined && (receipt.originalReduction > plan.maximumDiscount || receipt.replacementReduction > plan.maximumDiscount)
-    || plan.discountType !== "percentage" && (receipt.originalReduction > plan.discountValue || receipt.replacementReduction > plan.discountValue)) {
+    || maximum !== undefined && (receipt.originalReduction > maximum || receipt.replacementReduction > maximum)
+    || fixedMaximum !== undefined && (receipt.originalReduction > fixedMaximum || receipt.replacementReduction > fixedMaximum)) {
     throw new ConflictException("原优惠营销净额与毛租金或规则不一致");
   }
   for (const [segments, total] of [[pricing.previousSegments, receipt.originalReduction], [pricing.segments, receipt.replacementReduction]] as const) {

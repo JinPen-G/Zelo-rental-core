@@ -3483,6 +3483,241 @@ export type RentalDiscountTarget = (typeof RENTAL_DISCOUNT_TARGETS)[number];
 export const RENTAL_DISCOUNT_TYPES = ["percentage", "fixed_amount", "threshold_amount"] as const;
 export type RentalDiscountType = (typeof RENTAL_DISCOUNT_TYPES)[number];
 
+/** 新营销策略显式声明版本；没有此标识的历史报价仍按原叠加/会员策略解释。 */
+export const RENTAL_SINGLE_MARKETING_RULE_POLICY = "single_rule_v1" as const;
+export const RENTAL_MARKETING_PRICING_POLICIES = ["legacy", RENTAL_SINGLE_MARKETING_RULE_POLICY] as const;
+export interface RentalMarketingPricingPolicy {
+  tenantId: string;
+  workspaceId: string;
+  policy: (typeof RENTAL_MARKETING_PRICING_POLICIES)[number];
+  /** 尚未显式切换时为legacy/0，须由持久读口确认无记录。 */
+  revision: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+export interface ChangeRentalMarketingPricingPolicyRequest {
+  operationId: string;
+  expectedRevision: number;
+  policy: RentalMarketingPricingPolicy["policy"];
+  changeReason: string;
+}
+/** 下单仅取得当前策略下可指定的方案身份；不开放营销草稿、配置或替代报价资格判断。 */
+export interface RentalQuoteMarketingOptions {
+  policy: RentalMarketingPricingPolicy["policy"];
+  policyRevision: number;
+  plans: Array<{ id: string; name: string; version: string }>;
+}
+export interface RentalMarketingOperationRejection {
+  status: "rejected";
+  operationId: string;
+  action: RentalMarketingPlanEvent["action"] | "change_policy";
+  planId?: string;
+  expectedRevision: number;
+  message: string;
+}
+export type RentalMarketingPricingPolicyReceipt = { status: "unknown" } | RentalMarketingOperationRejection | {
+  status: "committed"; operationId: string; result: RentalMarketingPricingPolicy;
+};
+export const RENTAL_MARKETING_RULE_ACTIONS = [...RENTAL_DISCOUNT_TYPES, "fixed_price"] as const;
+export const RENTAL_MARKETING_DURATION_UNITS = ["hour", "shift", "day_24h", "calendar_day", "night", "week", "month"] as const;
+export interface RentalMarketingRentalDuration {
+  /** 与原基础计价行使用相同单位及已计数量，不由营销另算日界。 */
+  unit: (typeof RENTAL_MARKETING_DURATION_UNITS)[number];
+  minimum?: number;
+  maximum?: number;
+}
+
+/** 绝对时间边界包含首尾；日内时段按经营空间营业时区、起含止不含，跨午夜时结束小于开始。 */
+export interface RentalMarketingTimeRange { from?: string; to?: string }
+export interface RentalMarketingQualification {
+  activityWindow?: RentalMarketingTimeRange;
+  bookingWindow?: RentalMarketingTimeRange;
+  /** 完整请求租期须在此范围内；原effectiveFrom/effectiveTo仍只约束租期开始。 */
+  rentalWindow?: RentalMarketingTimeRange;
+  bookingTime?: RentalTimeWindow;
+  rentalStartTime?: RentalTimeWindow;
+  advanceBookingHours?: { minimum?: number; maximum?: number };
+  fulfillmentLocationIds?: string[];
+  returnLocationIds?: string[];
+  fulfillmentModes?: RentalFulfillmentMode[];
+  /** 原认证分面，不把客户网站与小程序猜成两个可信渠道。 */
+  audiences?: Array<"operator" | "staff" | "client">;
+}
+/** 服务端原报价冻结的条件输入；请求体不得提供此对象。 */
+export interface RentalMarketingQualificationSnapshot {
+  version: "rental-marketing-qualification-1";
+  evaluatedAt: string;
+  rentalStartAt: string;
+  rentalEndAt: string;
+  timeZone: string;
+  fulfillmentLocationId: string;
+  returnLocationId: string;
+  fulfillmentMode: RentalFulfillmentMode;
+  audience?: "operator" | "staff" | "client";
+}
+
+/** 规则条件是方案公共范围内的进一步限制，不能覆盖或扩大方案范围。 */
+export interface RentalMarketingRuleConditions {
+  minimumSpend?: number;
+  customerScope?: RentalDiscountPlan["customerScope"];
+  applicableItemGroupIds?: string[];
+  applicablePricingGroupIds?: string[];
+  applicableDayTypes?: RentalDayType[];
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  rentalDuration?: RentalMarketingRentalDuration;
+  qualification?: RentalMarketingQualification;
+}
+
+/** 百分比10表示减免10%。fixed_price为每件标的完整请求租期固定租金，
+ * 只乘标的数量一次；必须指定租期单位/范围，不替代未确定或事后使用量费用。 */
+export interface RentalMarketingRule {
+  id: string;
+  version: string;
+  name: string;
+  status: "enabled" | "disabled";
+  priority: number;
+  conditions: RentalMarketingRuleConditions;
+  action: {
+    type: (typeof RENTAL_MARKETING_RULE_ACTIONS)[number];
+    value: number;
+    thresholdAmount?: number;
+    maximumDiscount?: number;
+  };
+}
+
+/** 已发布规则集合。规则只作用命中租金行，按整单租金比较；不同规则不拼价。 */
+export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
+  "id" | "tenantId" | "categoryCode" | "code" | "name" | "status" | "version" |
+  "minimumSpend" | "customerScope" | "applicableItemGroupIds" | "applicablePricingGroupIds" |
+  "applicableDayTypes" | "priority" | "effectiveFrom" | "effectiveTo" | "createdAt" | "updatedAt"> {
+  pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  workspaceId: string;
+  appliesTo: "rental";
+  /** 对客文案随发布版本及报价冻结；缺省名称沿原name，说明缺省时不补造。 */
+  customerDisplayName?: string;
+  customerDescription?: string;
+  qualification?: RentalMarketingQualification;
+  /** 由显式旧方案转换保存的原版本；后续编辑不得改写此来源。 */
+  legacySource?: { importedAt: string; plan: RentalDiscountPlan };
+  rules: RentalMarketingRule[];
+}
+
+export type RentalMarketingPlanStatus = "draft" | "enabled" | "paused" | "ended";
+
+export interface RentalMarketingScheduleQuery {
+  /** 经营空间营业日期，包含首尾日期，最多93天。 */
+  from: string;
+  to: string;
+  status?: RentalMarketingPlanStatus;
+  dayType?: RentalDayType;
+  windowKind?: "activity" | "booking" | "rental";
+}
+export interface RentalMarketingSchedule {
+  tenantId: string;
+  workspaceId: string;
+  timeZone: string;
+  from: string;
+  to: string;
+  rows: Array<{
+    id: string;
+    date: string;
+    dayType: RentalDayType;
+    planId: string;
+    planName: string;
+    planCode: string;
+    planStatus: RentalMarketingPlanStatus;
+    planVersion: string;
+    revision: number;
+    ruleId: string;
+    ruleName: string;
+    ruleVersion: string;
+    ruleStatus: "enabled" | "disabled";
+    /** 发布状态与活动、下单、用租时间条件分开观察；不代表整单满足资格。 */
+    versionKind: "draft" | "published";
+    publishedAt?: string;
+    orderTimeWindow: "not_configured" | "configured";
+    windowKind: "activity" | "booking" | "rental";
+    windowFrom?: string;
+    windowTo?: string;
+    clockWindows: RentalTimeWindow[];
+    /** 完整用租期的终点也须满足；rentalStartTo仍是原开始时点上限。 */
+    rentalEndTo?: string;
+    rentalStartFrom: string;
+    rentalStartTo?: string;
+    visibleFrom: string;
+    visibleTo: string;
+    /** 仅该营业日的条件观察；不能代替整个租期及客群/商品的正式营销命中。 */
+    dayCondition: "allowed" | "excluded" | "not_evaluated";
+  }>;
+}
+
+/** 草稿与对客生效正文分开保存；编辑草稿不会改变 published 的原版本。 */
+export interface RentalMarketingPlan {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  categoryCode: RentalCategoryCode;
+  code: string;
+  status: RentalMarketingPlanStatus;
+  revision: number;
+  draft?: RentalMarketingPlanVersion;
+  published?: RentalMarketingPlanVersion;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveRentalMarketingPlanDraftRequest extends Omit<RentalMarketingPlanVersion,
+  "id" | "tenantId" | "workspaceId" | "categoryCode" | "status" | "version" | "rules" | "createdAt" | "updatedAt" | "legacySource"> {
+  id?: string;
+  /** 同一提交意图的稳定原操作号；未知结果仅查询原收据，不换号自动重发。 */
+  operationId: string;
+  /** 新建为0；修改必须是本次读取到的原修订，不由服务端静默补齐。 */
+  expectedRevision: number;
+  rules: Array<Omit<RentalMarketingRule, "version">>;
+  changeReason: string;
+}
+
+/** 只生成一份草稿，不改旧方案、发布状态或空间策略。原源版本须在同事务锁内复验。 */
+export interface ImportRentalMarketingPlanRequest {
+  operationId: string;
+  expectedRevision: 0;
+  sourcePlanId: string;
+  sourceVersion: string;
+  changeReason: string;
+}
+
+export interface ChangeRentalMarketingPlanStatusRequest {
+  operationId: string;
+  expectedRevision: number;
+  changeReason: string;
+}
+
+export interface RentalMarketingPlanEvent {
+  id: string;
+  planId: string;
+  revision: number;
+  action: "save_draft" | "publish" | "pause" | "end";
+  publishedVersion?: string;
+  actorUserId: string;
+  reason: string;
+  at: string;
+}
+
+export interface RentalMarketingPlanHistory {
+  versions: RentalMarketingPlanVersion[];
+  events: RentalMarketingPlanEvent[];
+}
+
+/** 当前有读取权限的原操作者核对自己的原操作；无收据不代表失败或可重做。 */
+export type RentalMarketingPlanOperationReceipt = { status: "unknown" } | RentalMarketingOperationRejection | {
+  status: "committed";
+  operationId: string;
+  action: RentalMarketingPlanEvent["action"];
+  planId: string;
+  revision: number;
+};
+
 export interface RentalDiscountPlan {
   id: string;
   tenantId: string;
@@ -3540,6 +3775,11 @@ export const RENTAL_DISCOUNT_SKIP_REASONS = [
   "no_chargeable_target",
   "exclusive_group_lost",
   "not_stackable_with_applied",
+  "lower_marketing_price_available",
+  "same_price_lower_priority",
+  "rule_not_enabled",
+  "rental_duration_mismatch",
+  "qualification_mismatch",
   "zero_discount"
 ] as const;
 export type RentalDiscountSkipReason = (typeof RENTAL_DISCOUNT_SKIP_REASONS)[number];
@@ -3560,7 +3800,7 @@ export interface RentalQuoteDiscountEvaluation {
   /** 方案所属经营空间。营销权益按空间隔离，快照必须能证明用的是本空间的方案。 */
   workspaceId: string;
   appliesTo: RentalDiscountTarget;
-  discountType: RentalDiscountType;
+  discountType: (typeof RENTAL_MARKETING_RULE_ACTIONS)[number];
   priority: number;
   exclusiveGroup?: string;
   stackableWithOtherPlans: boolean;
@@ -3586,6 +3826,21 @@ export interface RentalQuoteDiscountEvaluation {
   maximumDiscount?: number;
   /** 是否被最大优惠金额截断。 */
   capped: boolean;
+}
+
+/** 新策略解释携带完整方案和规则；旧解释/AI投影保留原合同，不能补造这些依据。 */
+export interface RentalMarketingQuoteDiscountEvaluation extends Omit<RentalQuoteDiscountEvaluation, "discountType"> {
+  /** 本次营销发布版本的客户说明，历史展示不得回读当前配置。 */
+  planDescription?: string;
+  discountType: (typeof RENTAL_MARKETING_RULE_ACTIONS)[number];
+  pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  marketingPlanSnapshot: RentalMarketingPlanVersion;
+  ruleSnapshot: RentalMarketingRule;
+  ruleId: string;
+  ruleVersion: string;
+  /** 各候选共用的原租金总额与用券前候选租金，不以覆盖范围不同的小计比较。 */
+  comparisonRentalAmount: number;
+  candidateRentalAmount: number;
 }
 
 /**
@@ -4495,6 +4750,30 @@ export interface SendRentalNotificationRequest {
   templateId: string;
   recipient: string;
   variables: Record<string, unknown>;
+}
+
+/** 同源金额试算结果，不是报价凭据，不能用于下单或资源占用。 */
+export interface RentalMarketingQuotePreview {
+  kind: "rental_marketing_quote_preview";
+  tenantId: string;
+  workspaceId: string;
+  calculatedAt: string;
+  pricingPolicy: "legacy" | "single_rule_v1";
+  policyRevision?: number;
+  timeZone: string;
+  currency: RentalCurrency;
+  rentalAmount: number;
+  discountAmount: number;
+  couponAmount: number;
+  serviceAmount: number;
+  fulfillmentAmount: number;
+  payableAmount: number;
+  marketing?: NonNullable<RentalQuoteSnapshotV1["pricingContext"]>["marketing"];
+  evaluations: Array<RentalQuoteDiscountEvaluation | RentalMarketingQuoteDiscountEvaluation>;
+  couponEvaluation?: RentalQuoteSnapshotV1["couponEvaluation"];
+  chargeLines: RentalQuoteSnapshotV1["chargeLines"];
+  /** 不执行能力准入Hook、服务容量维护或任何资源预留；正式报价/下单仍复核。 */
+  admission: "not_checked";
 }
 
 export interface RentalQuoteRequest {
@@ -5553,6 +5832,8 @@ export interface RentalWorkOrder {
   quantity: number;
   assigneeId?: string;
   assigneeName?: string;
+  /** 仅投影本工单的原管控来源；工单完成不代表这条管控已解除。 */
+  assetControl?: { id: string; status: "active" | "cancelled" | "released"; startAt: string; releaseRequiresAcceptance: boolean };
   reason: string;
   result?: string;
   attachments: string[];
@@ -5572,6 +5853,14 @@ export interface RentalWorkOrderAssignee {
   displayName: string;
 }
 
+/** 独立养护表单的受权资产投影；不包含资产扩展属性或客户/设备资料。 */
+export type RentalWorkOrderAsset = Pick<RentalAsset, "id" | "assetNo" | "itemGroupName" | "locationId" | "locationName" | "status" | "updatedAt">;
+
+/** 只证明原独立创建是否已有收据；工单当前状态仍从原详情读取。 */
+export type RentalWorkOrderCreationReceipt =
+  | { status: "unknown" }
+  | { status: "committed"; operationId: string; assetId: string; workOrderId: string };
+
 export interface RentalWorkOrderHistoryEntry {
   id: string;
   action: string;
@@ -5581,7 +5870,11 @@ export interface RentalWorkOrderHistoryEntry {
 }
 
 export interface CreateRentalWorkOrderRequest {
-  dispositionId: string;
+  /** 归还处置或独立资产二选一；原归还处置请求保持兼容。 */
+  dispositionId?: string;
+  assetId?: string;
+  /** 独立创建必填；同一提交意图保留原键，未知结果不得换键重发。 */
+  operationId?: string;
   type: RentalWorkOrderType;
   assigneeId?: string;
   reason?: string;
@@ -6303,7 +6596,30 @@ export type RentalOrderExtensionStatus = "pending_payment" | "effective" | "canc
  * 一次续租 / 延期（需求 4.6.9）。append-only，不可编辑——它是"这段时间按什么价延长的"
  * 的唯一凭据，改它等于改历史账。
  */
+export interface RentalMarketingPricingLine {
+  id: string;
+  itemGroupId: string;
+  pricingGroupId?: string;
+  amount: number;
+  quantity: number;
+  pricingUnit: RentalPricingUnit;
+  billableUnits: number;
+}
+export interface RentalMarketingPricingSnapshot {
+  policy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  policyRevision: number;
+  baseRentalAmount: number;
+  marketingRentalAmount: number;
+  selected?: { planId: string; planVersion: string; ruleId: string; ruleVersion: string };
+  rentalLines: RentalMarketingPricingLine[];
+  dayTypes: RentalDayType[];
+  /** 老快照缺省时不补当前时钟、身份或地点；带新条件却缺依据必须拒绝复算。 */
+  qualification?: RentalMarketingQualificationSnapshot;
+}
+
 export interface RentalRepricingContext {
+  /** 与原pricingContext一起持久化。缺省是历史旧策略，不取当前空间配置补写。 */
+  marketing?: RentalMarketingPricingSnapshot;
   /** 小时转日租/逾时所需的同版本24小时日价，不能事后读取现价。 */
   dayRates?: RentalPricingRate[];
   timeZone: string;

@@ -1,7 +1,9 @@
 /** Rental 原 HTTP 操作单源。宿主挂载、当前权限、事务与原收据仍由原实现裁定。 */
 import { STAFF_UPLOAD_OBSERVATION_HTTP } from "@rental-os/shared";
 import { RENTAL_EXCHANGE_INSPECTION_OPERATIONS } from "./http-openapi-rental-exchange-inspection-preparation.schemas";
+import { RENTAL_MARKETING_OPERATIONS } from "./http-openapi-marketing-schemas";
 import { RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS } from "./http-openapi-integration-operations";
+import { RENTAL_ASSET_CONTROL_OPERATIONS } from "./http-openapi-asset-controls";
 import { ENTERPRISE_COMPONENT_SCHEMAS } from "./http-openapi-enterprise-schemas";
 
 import { CATEGORY_PREPARATION_PREVIEW_SCHEMA, CATEGORY_PREPARATION_BATCH_READ_SCHEMA, CATEGORY_PREPARATION_BATCH_REQUEST_SCHEMA, CATEGORY_PREPARATION_ENTITY_PAGE_SCHEMA, CATEGORY_PREPARATION_REQUEST_SCHEMA, CATEGORY_PREPARATION_SAVE_RESULT_SCHEMA, CATEGORY_CREATION_REQUEST_SCHEMA, CATEGORY_CREATION_PREVIEW_REQUEST_SCHEMA, CATEGORY_CREATED_VERSION_SCHEMA, CATEGORY_CREATION_PREVIEW_SCHEMA, CATEGORY_CREATION_RECEIPT_SCHEMA, CATEGORY_ADOPTION_REQUEST_SCHEMA, CATEGORY_ADOPTION_RESULT_SCHEMA, CATEGORY_ADOPTION_RECEIPT_SCHEMA } from "./http-openapi-category-governance-schemas";
@@ -187,6 +189,7 @@ function enterpriseWorkflowOperations(): ContractOperation[] {
 }
 
 export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
+  ...RENTAL_MARKETING_OPERATIONS,
   { method: "get", path: "/api/platform/system-rules", tag: "Platform", operationId: "getSystemRules",
     summary: "Read original tenant system rules; SaaS access remains denied", permissions: ["system:params:manage"], responseSchema: "SystemRulesConfig" },
   { method: "put", path: "/api/platform/system-rules/{sectionKey}", tag: "Platform", operationId: "saveSystemRuleSection",
@@ -654,6 +657,16 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
     summary: "List serialized rental assets", permissions: ["rental-core:asset:view"], responseSchema: "GenericObject"
   },
   {
+    method: "get", path: "/api/rental/v1/asset-schedule", tag: "RentalCore", operationId: "readRentalAssetSchedule",
+    summary: "按当前资产权限读取原库存排班、未配车预占和容量；订单/工单来源另核当前权限与对象范围",
+    permissions: ["rental-core:asset:view", "rental-core:asset:manage"], responseSchema: "RentalAssetSchedule",
+    parameters: [{ name: "startAt", in: "query", required: true, schema: { type: "string", format: "date-time" } },
+      { name: "endAt", in: "query", required: true, schema: { type: "string", format: "date-time", description: "半开区间，不超过93天" } },
+      queryParam("locationId"), queryParam("itemGroupId"), queryParam("assetId"), queryParam("keyword", { type: "string", maxLength: 100 }),
+      queryParam("status", { type: "string", enum: ["available", "reserved", "rented", "inspection", "maintenance", "disabled"] }),
+      queryParam("page", { type: "integer", minimum: 1, maximum: 999999 })]
+  },
+  {
     method: "get", path: "/api/rental/v1/assets/{id}/status-history", tag: "RentalCore", operationId: "listRentalAssetStatusHistory",
     summary: "List serialized asset status history", permissions: ["rental-core:asset:view"], responseSchema: "GenericObject"
   },
@@ -697,7 +710,7 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   },
   {
     method: "get", path: "/api/rental/v1/work-orders", tag: "RentalCore", operationId: "listRentalWorkOrders",
-    summary: "List maintenance work orders", permissions: ["rental-core:maintenance:view"], responseSchema: "GenericObject",
+    summary: "List authorized maintenance work orders with their original control source", permissions: ["rental-core:maintenance:view"], responseSchema: { type: "array", items: { $ref: "#/components/schemas/RentalWorkOrder" } },
     parameters: [queryParam("status")]
   },
   {
@@ -707,7 +720,21 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
   },
   {
     method: "post", path: "/api/rental/v1/work-orders", tag: "RentalCore", operationId: "createRentalWorkOrder",
-    summary: "Create maintenance work order", permissions: ["rental-core:maintenance:manage"], requestSchema: "GenericObject", responseSchema: "GenericObject"
+    summary: "Create a return-disposition or independent asset maintenance work order", permissions: ["rental-core:maintenance:manage"], requestSchema: "CreateRentalWorkOrderRequest", responseSchema: "GenericObject"
+  },
+  {
+    method: "get", path: "/api/rental/v1/work-order-assets", tag: "RentalCore", operationId: "listRentalWorkOrderAssets",
+    summary: "List scoped assets for independent maintenance without private attributes", permissions: ["rental-core:maintenance:manage"],
+    responseSchema: { type: "array", items: { $ref: "#/components/schemas/RentalWorkOrderAsset" } }
+  },
+  {
+    method: "get", path: "/api/rental/v1/work-order-creation-receipt", tag: "RentalCore", operationId: "readRentalWorkOrderCreationReceipt",
+    summary: "按原操作号读取本人独立养护创建收据；当前工单范围仍须可读，unknown 不表示可重发",
+    permissions: ["rental-core:maintenance:view"], responseSchema: "RentalWorkOrderCreationReceipt",
+    parameters: [
+      { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 128 } },
+      { name: "assetId", in: "query", required: true, schema: { type: "string", minLength: 1, maxLength: 191 } }
+    ]
   },
   {
     method: "put", path: "/api/rental/v1/work-orders/{id}/assign", tag: "RentalCore", operationId: "assignRentalWorkOrder",
@@ -1449,5 +1476,6 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
       options: { type: "array", maxItems: 100, items: objectOf({ categoryCode: rentalCategoryCodeSchema, name: { type: "string", maxLength: 100 }, nameEn: { type: "string", maxLength: 100 },
         versionId: { type: "string", maxLength: 191 }, versionLabel: { type: "string", maxLength: 64 }, recommended: booleanSchema, defaultWorkspaceName: { type: "string", maxLength: 100 } },
       ["categoryCode", "name", "recommended", "defaultWorkspaceName"], false) } }, ["structureVersion", "source", "truncated", "options"], false) },
-  ...RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS
+  ...RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS,
+  ...RENTAL_ASSET_CONTROL_OPERATIONS
 ];

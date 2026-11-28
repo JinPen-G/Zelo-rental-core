@@ -23,6 +23,7 @@ import type {
   RentalDocumentType,
   RentalCustomerCoupon,
   RentalDiscountPlan,
+  RentalQuoteMarketingOptions,
   RentalFulfillmentLocation,
   RentalFundingAmountRequest,
   RentalFundingBalance,
@@ -80,6 +81,7 @@ export function createRentalOrderApi(request: AdminRuntime["request"]) {
     locations: (options?: ReadOptions) => request<RentalFulfillmentLocation[]>("/rental/v1/locations", readOptions(options)),
     pricingPlans: (options?: ReadOptions) => request<RentalPricingPlanV1[]>("/rental/v1/pricing-plans", readOptions(options)),
     discountPlans: (options?: ReadOptions) => request<RentalDiscountPlan[]>("/rental/v1/discount-plans", readOptions(options)),
+    quoteMarketingOptions: (options?: ReadOptions) => request<RentalQuoteMarketingOptions>("/rental/v1/quote-marketing-options", readOptions(options)),
     valueAddedServices: (options?: ReadOptions) => request<RentalValueAddedService[]>("/rental/v1/value-added-services", readOptions(options)),
     customerCoupons: (customerId?: string, options?: ReadOptions) => request<RentalCustomerCoupon[]>("/rental/v1/customer-coupons", {
       ...readOptions(options), params: { customerId }

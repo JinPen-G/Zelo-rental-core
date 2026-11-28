@@ -41,6 +41,7 @@ import {
   membershipBenefitScopeMatches,
   defaultRentalNoShowRule,
   type GrantRentalRewardRequest,
+  type RentalMarketingQuotePreview,
   type ImportRentalCalendarRequest,
   type RentalCalendarBusinessStatus,
   type RentalBusinessHours,
@@ -82,6 +83,8 @@ import {
   type RentalCustomerCoupon,
   type RentalDayType,
   type RentalDiscountPlan,
+  type RentalMarketingPlanVersion,
+  type RentalQuoteMarketingOptions,
   type RentalFulfillmentLocation,
   type RentalFulfillmentOperator,
   type RentalItemGroup,
@@ -163,7 +166,14 @@ import { applyPriceAdjustment, assertNoDatetimeOverrideOverlap, assertNoPeriodic
 import { assertTimeBasedOverdueSupported, billedRentalHours, rentalPricingStrategy, rentalPricingStrategyReference } from "./pricing";
 import { categoryPricingRuleError } from "./category-pricing-rule-compatibility";
 import { lockActiveCategoryBinding, type CategoryWriteBinding } from "./mysql-category-write";
-import { allocateDiscount, selectDiscountPlans } from "./discount-selection";
+import { allocateDiscount, selectDiscountPlans, selectMarketingRule, RentalMarketingSelectionError,
+  type RentalMarketingContext } from "./discount-selection";
+import { assertMarketingPricingPolicy } from "./mysql-marketing-pricing-policy";
+import { originalMarketingPlan, isSingleRuleEvaluation } from "./marketing-quote-history";
+import type { RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest, RentalMarketingPricingLine, RentalMarketingQualificationSnapshot } from "./contracts";
+import { assertMarketingAuthority, type RentalMarketingAction } from "./marketing-plan";
+import type { SaveRentalMarketingPlanDraftRequest, ImportRentalMarketingPlanRequest, ChangeRentalMarketingPlanStatusRequest, RentalMarketingScheduleQuery } from "./contracts";
+import { buildMarketingSchedule, marketingScheduleRange } from "./marketing-schedule";
 import { resolveQuoteServices, resolveExchangeServices } from "./service-catalog";
 import { applyPricingGroupSecurityRateOverrides, computeSecurityAmounts, type SecurityLineInput, type RentalPricingSecurityRateOverride, validateSecurityRateCoverage, validateSecurityRules } from "./security-deposit";
 import { hasOriginalRentalCurrency, roundMoney } from "./money";
@@ -219,6 +229,9 @@ interface RentalBusinessState {
   categoryCode: RentalCategoryCode;
   pricingPlans: RentalPricingPlanV1[];
   discountPlans: RentalDiscountPlan[];
+  /** 仅来自当前发布配置读取；缺失不能解释为确定没有适用营销。 */
+  marketingPlans?: RentalMarketingPlanVersion[];
+  marketingPricingPolicy?: RentalMarketingPricingPolicy;
   services: RentalValueAddedService[];
   calendars: RentalCalendarYear[];
   ruleVersions: RentalRuleVersion[];
@@ -612,6 +625,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         // 使快照在读路径上静默胜出。
         state.pricingPlans = config.pricingPlans;
         state.discountPlans = config.discountPlans;
+        state.marketingPlans = config.marketingPlans;
+        state.marketingPricingPolicy = config.marketingPricingPolicy;
         state.services = config.services;
         state.calendars = config.calendars;
         state.ruleVersions = config.ruleVersions;
@@ -711,7 +726,9 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       state.notificationLogs = notifications;
       // Only notification copies are changed. Keep the original writer and
       // other configuration/financial fields; no new save/cleanup operation.
-      await this.stateRepository.saveBusinessState(tenantId, workspaceId, { ...state, notificationLogs: notifications });
+      // 多规则发布正文只从规范化版本表读取，不扩充旧恢复快照的权威集合。
+      const { marketingPlans: _marketingPlans, marketingPricingPolicy: _marketingPricingPolicy, ...legacyState } = state;
+      await this.stateRepository.saveBusinessState(tenantId, workspaceId, { ...legacyState, notificationLogs: notifications });
     }
   }
 
@@ -2166,6 +2183,124 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
   }
 
   listDiscountPlans(tenantId: string, context: BusinessContext) { return this.state(tenantId, context).discountPlans; }
+
+  async quoteMarketingOptions(tenantId: string, context: BusinessContext): Promise<RentalQuoteMarketingOptions> {
+    context = structuredClone(context);
+    const workspaceId = this.workspaceOf(tenantId), fingerprint = requestFingerprint(getRequestIdentity());
+    const current = () => {
+      const identity = getRequestIdentity();
+      if (!identity?.userId || identity.tenantId !== tenantId || identity.workspaceId !== workspaceId
+        || identity.isSaasAdmin || identity.audience === "client" || fingerprint !== requestFingerprint(identity)
+        || !(identity.isPlatformAdmin || ["rental-os:order:operate", "rental-os:order:create"].some(code => hasEffectivePermission(identity.permissions ?? [], code))))
+        throw new ForbiddenException("当前空间下单方案读取权限已变化");
+    };
+    current();
+    if (!context.categoryVersionId || context.categoryAdoptionRevision === undefined || !this.configStore.loadWorkspaceSnapshot)
+      throw new ServiceUnavailableException("下单方案缺少完整当前配置依据");
+    const config = await this.configStore.loadWorkspaceSnapshot(tenantId, workspaceId,
+      { categoryVersionId: context.categoryVersionId, adoptionRevision: context.categoryAdoptionRevision });
+    current();
+    if (config.tenantId !== tenantId || config.workspaceId !== workspaceId || config.categoryCode !== context.category.code || !config.marketingPricingPolicy)
+      throw new ConflictException("下单方案配置范围或策略不可用");
+    assertMarketingPricingPolicy(config.marketingPricingPolicy, { tenantId, workspaceId });
+    const policy = config.marketingPricingPolicy;
+    if (policy.policy === "single_rule_v1" && !config.marketingPlans) throw new ServiceUnavailableException("下单方案缺少完整发布版本");
+    return { policy: policy.policy, policyRevision: policy.revision,
+      plans: (policy.policy === "single_rule_v1" ? config.marketingPlans! : config.discountPlans)
+        .filter(plan => plan.status === "enabled").map(({ id, name, version }) => ({ id, name, version })) };
+  }
+
+  private marketingScope(tenantId: string, context: BusinessContext, action: "read" | RentalMarketingAction) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId), categoryCode: context.category.code };
+    assertMarketingAuthority(getRequestIdentity(), scope, action);
+    return scope;
+  }
+
+  async listMarketingPlans(tenantId: string, context: BusinessContext) {
+    const scope = this.marketingScope(tenantId, context, "read");
+    if (!this.configStore.listMarketingPlans) throw new ServiceUnavailableException("营销方案持久读取不可用");
+    return this.configStore.listMarketingPlans(scope);
+  }
+
+  async marketingSchedule(tenantId: string, context: BusinessContext, input: RentalMarketingScheduleQuery) {
+    const scope = this.marketingScope(tenantId, context, "read"), identity = requestFingerprint(getRequestIdentity());
+    const query = structuredClone(input), timeZone = context.settings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE;
+    const range = marketingScheduleRange(query, timeZone);
+    await this.refreshWorkspaceContext(tenantId, context);
+    const calendars = structuredClone(this.calendarsForDateRange(tenantId, context, range.startAt, range.endAt));
+    const plans = await this.listMarketingPlans(tenantId, context);
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (identity !== requestFingerprint(getRequestIdentity())) throw new ConflictException("活动日程读取期间身份已变化");
+    return buildMarketingSchedule(scope, plans, query, timeZone, this.dayTypesForRange(calendars, range.startAt, range.endAt, timeZone));
+  }
+
+  async readMarketingPricingPolicy(tenantId: string) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId) };
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (!this.configStore.readMarketingPricingPolicy) throw new ServiceUnavailableException("营销策略持久读取不可用");
+    return this.configStore.readMarketingPricingPolicy(scope);
+  }
+  async marketingPricingPolicyOperation(tenantId: string, operationId: string) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId) };
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (!this.configStore.marketingPricingPolicyOperation) throw new ServiceUnavailableException("营销策略原操作读取不可用");
+    return this.configStore.marketingPricingPolicyOperation(scope, operationId);
+  }
+  async changeMarketingPricingPolicy(tenantId: string, context: BusinessContext, input: ChangeRentalMarketingPricingPolicyRequest) {
+    input = structuredClone(input);
+    const scope = this.marketingScope(tenantId, context, "publish");
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    if (!binding || !this.configStore.changeMarketingPricingPolicy) throw new ServiceUnavailableException("营销策略写入或品类依据不可用");
+    return this.configStore.changeMarketingPricingPolicy(scope, binding, input);
+  }
+
+  async marketingPlanHistory(tenantId: string, context: BusinessContext, id: string) {
+    const scope = this.marketingScope(tenantId, context, "read");
+    if (!this.configStore.marketingPlanHistory) throw new ServiceUnavailableException("营销版本历史读取不可用");
+    return this.configStore.marketingPlanHistory(scope, id);
+  }
+
+  async marketingPlanOperation(tenantId: string, action: RentalMarketingAction, operationId: string) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId) };
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (!this.configStore.marketingPlanOperation) throw new ServiceUnavailableException("营销原操作读取不可用");
+    return this.configStore.marketingPlanOperation(scope, action, operationId);
+  }
+
+  async saveMarketingPlanDraft(tenantId: string, context: BusinessContext, input: SaveRentalMarketingPlanDraftRequest) {
+    input = structuredClone(input);
+    const scope = this.marketingScope(tenantId, context, "save_draft");
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销草稿持久化或品类依据不可用");
+    return this.configStore.writeMarketingPlan(scope, binding, "save_draft", input, input.id);
+  }
+
+  async importLegacyMarketingPlan(tenantId: string, context: BusinessContext, input: ImportRentalMarketingPlanRequest) {
+    input = structuredClone(input);
+    const scope = this.marketingScope(tenantId, context, "save_draft");
+    const identity = requestFingerprint(getRequestIdentity());
+    const readSource = () => {
+      const current = getRequestIdentity();
+      if (identity !== requestFingerprint(current) || !(current?.isPlatformAdmin
+        || ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:view"].some(code => hasEffectivePermission(current?.permissions ?? [], code))))
+        throw new ForbiddenException("转换旧方案仍需原优惠方案读取权");
+    };
+    readSource();
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    readSource();
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("旧方案转换缺少原配置事务或品类依据");
+    const result = await this.configStore.writeMarketingPlan(scope, binding, "save_draft", input);
+    readSource(); return result;
+  }
+
+  async changeMarketingPlanStatus(tenantId: string, context: BusinessContext, id: string,
+    action: Exclude<RentalMarketingAction, "save_draft">, input: ChangeRentalMarketingPlanStatusRequest) {
+    input = structuredClone(input);
+    const scope = this.marketingScope(tenantId, context, action);
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销发布持久化或品类依据不可用");
+    return this.configStore.writeMarketingPlan(scope, binding, action, input, id);
+  }
 
   async saveDiscountPlan(tenantId: string, context: BusinessContext, input: SaveRentalDiscountPlanRequest) {
     const binding = await this.categoryConfigurationBinding(tenantId, context);
@@ -4406,6 +4541,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       }
       const state = this.cachedState(tenantId, context, workspaceId);
       Object.assign(state, { pricingPlans: structuredClone(snapshot.pricingPlans), discountPlans: structuredClone(snapshot.discountPlans),
+        marketingPlans: snapshot.marketingPlans === undefined ? undefined : structuredClone(snapshot.marketingPlans),
+        marketingPricingPolicy: snapshot.marketingPricingPolicy === undefined ? undefined : structuredClone(snapshot.marketingPricingPolicy),
         services: structuredClone(snapshot.services), calendars: structuredClone(snapshot.calendars), ruleVersions: structuredClone(snapshot.ruleVersions),
         notificationTemplates: structuredClone(snapshot.notificationTemplates), configPersisted: true });
       return consume(state);
@@ -5775,12 +5912,42 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
    * an entire history is neither a configuration read nor a new quote basis. */
   private captureQuoteConfiguration(state: RentalBusinessState, couponId?: string): RentalBusinessState {
     return { ...state, ...structuredClone({ pricingPlans: state.pricingPlans,
-      discountPlans: state.discountPlans, services: state.services, calendars: state.calendars,
+      discountPlans: state.discountPlans, marketingPlans: state.marketingPlans, marketingPricingPolicy: state.marketingPricingPolicy,
+      services: state.services, calendars: state.calendars,
       ruleVersions: state.ruleVersions, notificationTemplates: state.notificationTemplates,
       customerCoupons: state.customerCoupons.filter(row => row.id === couponId) }) };
   }
 
   async createQuote(tenantId: string, context: BusinessContext, input: RentalQuoteRequest, preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
+    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
+    return this.quoteFromCurrentConfiguration(tenantId, context, input, "commit", preResolvedDeliveryAddress, original, beforePersist);
+  }
+
+  /** 正式报价同一计算链的只读投影。不得产生可下单报价、补初始化配置、维护容量或写能力审计。 */
+  async previewMarketingQuote(tenantId: string, context: BusinessContext, input: RentalQuoteRequest): Promise<RentalMarketingQuotePreview> {
+    const scope = this.marketingScope(tenantId, context, "read"), identity = requestFingerprint(getRequestIdentity());
+    const assertCurrent = () => {
+      assertMarketingAuthority(getRequestIdentity(), scope, "read");
+      const current = getRequestIdentity();
+      if (identity !== requestFingerprint(current) || !(current?.isPlatformAdmin
+        || ["rental-os:order:operate", "rental-os:order:create"].some(code => hasEffectivePermission(current?.permissions ?? [], code))))
+        throw new ForbiddenException("营销试算需要当前空间原报价权限");
+    };
+    assertCurrent();
+    const quote = await this.quoteFromCurrentConfiguration(tenantId, context, input, "preview");
+    assertCurrent();
+    const marketing = quote.pricingContext?.marketing;
+    return { kind: "rental_marketing_quote_preview", tenantId, workspaceId: scope.workspaceId, calculatedAt: quote.createdAt,
+      pricingPolicy: marketing?.policy ?? "legacy", policyRevision: marketing?.policyRevision,
+      timeZone: quote.pricingContext!.timeZone, currency: quote.currency!, rentalAmount: quote.rentalAmount,
+      discountAmount: quote.discountAmount, couponAmount: quote.couponAmount, serviceAmount: quote.serviceAmount,
+      fulfillmentAmount: quote.fulfillmentAmount, payableAmount: quote.payableAmount, marketing,
+      evaluations: quote.discountEvaluations, couponEvaluation: quote.couponEvaluation, chargeLines: quote.chargeLines,
+      admission: "not_checked" };
+  }
+
+  private async quoteFromCurrentConfiguration(tenantId: string, context: BusinessContext, input: RentalQuoteRequest,
+    mode: "commit" | "preview", preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
     original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
     // Capture one caller intent before the first configuration/identity wait.
     // Later caller edits cannot change the original key, customer, quantities,
@@ -5811,11 +5978,11 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       }
     }
     const persisted = await quoteConfigurationContext.run({ owner: this, tenantId, workspaceId, state }, () =>
-      this.createQuoteFromConfiguration(tenantId, context, input, sourceSnapshot, preResolvedDeliveryAddress, original, beforePersist));
+      this.createQuoteFromConfiguration(tenantId, context, input, sourceSnapshot, preResolvedDeliveryAddress, original, beforePersist, mode));
     // The calculation copy never becomes the current configuration cache.
     // A later refresh may have replaced it while this quote awaited persistence.
     const current = this.states.get(workspaceId);
-    if (current?.categoryCode === persisted.categoryCode && !current.quotes.some(row => row.id === persisted.id)) {
+    if (mode === "commit" && current?.categoryCode === persisted.categoryCode && !current.quotes.some(row => row.id === persisted.id)) {
       current.quotes.unshift(persisted);
     }
     return persisted;
@@ -5823,7 +5990,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
 
   private async createQuoteFromConfiguration(tenantId: string, context: BusinessContext, input: RentalQuoteRequest,
     sourceSnapshot: ReturnType<typeof currentQuoteSource>, preResolvedDeliveryAddress?: RentalDeliveryAddressSnapshot,
-    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>) {
+    original?: RentalQuoteOriginalOperation, beforePersist?: (native: TTransaction) => Promise<void>, mode: "commit" | "preview" = "commit") {
     let categoryVersionId: string | undefined;
     let categoryAdoptionRevision: number | undefined;
     if (this.categoryResolver) {
@@ -5851,6 +6018,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     // 再等一个无关的保存动作来触发持久化。MySQL 路径在报价前补落计划与首版，
     // 仍由 resolveSpaceRates 对所有后续报价执行不可变版本校验。
     if (this.prisma && (process.env.PLATFORM_DATA_SOURCE ?? "mysql").toLowerCase() === "mysql" && !state.configPersisted) {
+      if (mode === "preview") throw new ConflictException("经营配置尚未发布，试算不能初始化价格或配置");
       await this.persistBusinessConfig(tenantId, state);
       state.configPersisted = true;
       // Preserve the original lazy-save marker only for the same configuration;
@@ -5930,6 +6098,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const pricingGroups = new Map((context.pricingGroups ?? []).map((group) => [group.id, group]));
     const chargeLines: RentalQuoteSnapshotV1["chargeLines"] = [];
     const rentalLineAmounts: Record<string, number> = {};
+    const marketingRentalLines: RentalMarketingPricingLine[] = [];
     let rentalAmount = 0;
     // 押金模式来自**已发布规则**而非当前设置：规则快照要随订单固化，
     // 用实时设置会让同一张报价在设置改动后复算出不同押金。
@@ -6003,6 +6172,9 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       }
       rentalAmount += amount;
       rentalLineAmounts[targetId] = roundMoney((rentalLineAmounts[targetId] ?? 0) + amount);
+      marketingRentalLines.push({ id: targetId, itemGroupId: group.id, pricingGroupId: pricingGroup?.id,
+        amount, quantity: line.quantity, pricingUnit: rate.unit,
+        billableUnits: rate.unit === "hour" ? priced.units * (rate.hourGranularityMinutes ?? 60) / 60 : priced.units });
       // 拷贝而非引用：当前没有任何路径会就地改这些费率对象（savePricingPlan 是重建数组），
       // 因此**变异测试证明不了**这行的必要性——它是廉价的防御，防的是将来出现就地修改。
       // 真正让历史报价可复算的是"报价自带费率快照"这件事本身，那一条有断言覆盖。
@@ -6070,7 +6242,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const serviceSnapshots = serviceResolution.snapshots;
     // 报价只做可用性检查，不写预留。权威预留发生在下单事务中；否则客户只是试算
     // 就会长期占住操作员、安装工位或指定配送时段。
-    await this.serviceCapacities?.assertAvailableForQuote(tenantId, serviceSnapshots);
+    // 原正式报价包含到期容量维护；试算只比较价格，不能借只读入口释放既有预留。
+    if (mode === "commit") await this.serviceCapacities?.assertAvailableForQuote(tenantId, serviceSnapshots);
     const pendingServiceLines: RentalQuoteSnapshotV1["chargeLines"] = serviceSnapshots.map((snapshot) => ({
       code: `service:${snapshot.serviceCode}`,
       name: snapshot.serviceName,
@@ -6133,7 +6306,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     // 无从表达），又按优先级而不是**实际减免最大**择一——需求点名禁止后者。
     // 最低消费按「商品租金 + 使用量费用」的优惠前金额判定（使用量已并入 rentalAmount），
     // 不含履约费、增值服务、押金、预授权与异常费用。
-    const discountSelection = selectDiscountPlans(state.discountPlans, {
+    const discountContext = {
       bases: { rental: rentalAmount, fulfillment: fulfillmentAmount, service: serviceAmount },
       minimumSpendBase: rentalAmount,
       customerType: input.customerType,
@@ -6150,7 +6323,37 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       rentalStartAt: input.startAt,
       workspaceId: this.workspaceOf(tenantId),
       requestedPlanId: input.discountPlanId
-    });
+    };
+    if (this.configStore.loadWorkspaceSnapshot && !state.marketingPricingPolicy)
+      throw new ServiceUnavailableException("空间营销策略尚未由持久配置读取器核定");
+    if (state.marketingPricingPolicy) assertMarketingPricingPolicy(state.marketingPricingPolicy,
+      { tenantId, workspaceId: this.workspaceOf(tenantId) });
+    const usesSingleRule = state.marketingPricingPolicy?.policy === "single_rule_v1";
+    const marketingQualification: RentalMarketingQualificationSnapshot = {
+      version: "rental-marketing-qualification-1", evaluatedAt: stamp(), timeZone: quoteTimeZone,
+      rentalStartAt: input.startAt, rentalEndAt: input.endAt, fulfillmentMode: input.fulfillmentMode,
+      fulfillmentLocationId: input.fulfillmentLocationId, returnLocationId: input.returnLocationId ?? input.fulfillmentLocationId,
+      audience: sourceSnapshot?.audience
+    };
+    const marketingSelection = usesSingleRule ? (() => {
+      if (!state.marketingPlans) throw new ServiceUnavailableException("新营销策略缺少完整已发布规则读取结果");
+      try { return selectMarketingRule(state.marketingPlans, { ...discountContext, tenantId,
+        categoryCode: context.category.code,
+        itemGroupIds: [...new Set(discountContext.itemGroupIds)], pricingGroupIds: [...new Set(discountContext.pricingGroupIds)],
+        rentalLines: marketingRentalLines,
+        qualification: marketingQualification,
+        membershipEligibility: resolvedMembership ? "member" : input.customerId && !this.memberships ? "unavailable" : "not_member" }); }
+      catch (error) {
+        if (error instanceof RentalMarketingSelectionError) {
+          if (error.code === "requested_plan_unavailable") throw new ConflictException(error.message);
+          throw new ServiceUnavailableException(error.message);
+        }
+        throw error;
+      }
+    })() : undefined;
+    const discountSelection = marketingSelection ? { ...marketingSelection, applied: marketingSelection.selected
+      ? [{ id: marketingSelection.selected.planId, stackableWithCoupon: true }] : [] }
+      : selectDiscountPlans(state.discountPlans, discountContext);
     if (input.discountPlanId && !discountSelection.applied.some((item) => item.id === input.discountPlanId)) {
       const rejected = discountSelection.evaluations.find((row) => row.planId === input.discountPlanId);
       throw new ConflictException(
@@ -6165,6 +6368,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     );
     for (const evaluation of discountSelection.evaluations) {
       if (!evaluation.applied) continue;
+      const description = isSingleRuleEvaluation(evaluation) ? evaluation.planDescription : undefined;
       chargeLines.push({
         code: `discount:${evaluation.planCode}`,
         name: evaluation.planName,
@@ -6173,7 +6377,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         sourceId: evaluation.planId,
         sourceVersion: evaluation.planVersion,
         // 明细直接带上作用对象、基数与公式：客服解释优惠不必再去翻方案配置。
-        detail: `作用于${evaluation.appliesTo}；基数 ${evaluation.base}；${evaluation.formula}`
+        detail: `${description ? `${description}；` : ""}作用于${evaluation.appliesTo}；基数 ${evaluation.base}；${evaluation.formula}`
       });
     }
     const customerCoupon = input.customerCouponId ? this.customerCoupon(state, input.customerCouponId) : undefined;
@@ -6427,7 +6631,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       const targetId = line.pricingGroupId ?? line.itemGroupId!;
       return [targetId, Math.max(0, (rentalLineAmounts[targetId] ?? 0) - (discountSelection.rentalLineDiscounts[targetId] ?? 0) - (couponEvaluation?.rentalAllocations?.[targetId] ?? 0))];
     }));
-    const rentalMembershipBenefit = chooseMembershipBenefit("rental_discount", "rental", rentalMembershipBases);
+    const rentalMembershipBenefit = usesSingleRule ? { amount: 0, allocations: {} as Record<string, number> }
+      : chooseMembershipBenefit("rental_discount", "rental", rentalMembershipBases);
     if (rentalMembershipBenefit.amount > 0) {
       discountAmount = roundMoney(discountAmount + rentalMembershipBenefit.amount);
       chargeLines.push({
@@ -6444,7 +6649,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       snapshot.serviceId,
       Math.max(0, snapshot.amount - (snapshot.discountAllocatedAmount ?? 0) - (snapshot.couponAllocatedAmount ?? 0))
     ]));
-    const serviceMembershipBenefit = chooseMembershipBenefit("service_benefit", "service", serviceMembershipBases);
+    const serviceMembershipBenefit = usesSingleRule ? { amount: 0, allocations: {} as Record<string, number> }
+      : chooseMembershipBenefit("service_benefit", "service", serviceMembershipBases);
     if (serviceMembershipBenefit.amount > 0) {
       discountAmount = roundMoney(discountAmount + serviceMembershipBenefit.amount);
       for (const snapshot of serviceSnapshots) {
@@ -6561,6 +6767,11 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       calendarSnapshot,
       calendarWarnings,
       pricingContext: { timeZone: quoteTimeZone, legacyDayTypeMultipliers: context.settings.pricing.holidayPricingEnabled, calendars: structuredClone(calendars),
+        ...(marketingSelection ? { marketing: { policy: marketingSelection.pricingPolicy,
+          policyRevision: state.marketingPricingPolicy!.revision, baseRentalAmount: marketingSelection.baseRentalAmount,
+          marketingRentalAmount: marketingSelection.marketingRentalAmount, selected: marketingSelection.selected,
+          qualification: structuredClone(marketingQualification),
+          rentalLines: structuredClone(marketingRentalLines), dayTypes: [...quotedDayTypes] as RentalDayType[] } } : {}),
         dayRates: structuredClone(planRates.filter(row => row.unit === "day_24h" && hitRates.some(hit => pricingTargetId(hit) === pricingTargetId(row)))) },
       depositAmount,
       preAuthAmount,
@@ -6604,10 +6815,11 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     };
     // Review P1-5：判定结果必须写进报价并返回，否则「需转接环」这类风险虽被发现，
     // 用户却无从知道要确认什么，下单侧也只能凭空重构一遍判断。
-    quote.capabilityDecisions = await this.runQuoteHook(tenantId, context, quote);
+    if (mode === "commit") quote.capabilityDecisions = await this.runQuoteHook(tenantId, context, quote);
     const expectedBinding = categoryVersionId && categoryAdoptionRevision !== undefined
       ? { categoryVersionId, adoptionRevision: categoryAdoptionRevision } : undefined;
     if (!isDeepStrictEqual(sourceSnapshot, currentQuoteSource(tenantId))) throw new ConflictException('报价期间创建身份或空间已变化');
+    if (mode === "preview") return quote;
     let persisted = quote;
     if (original) {
       if (!this.factStore.saveQuoteForOriginalOperation) throw new ServiceUnavailableException('报价原操作持久化不可用');
@@ -8012,7 +8224,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         if (!sameExchangeMembership(original, pricing.membershipPricing!.benefit)) return undefined;
       }
       if (hasCouponPricing) {
-        const original = originalExchangeCoupon(quote), pricing = exchangeBasis(membershipReceipt!)!.linePricing!;
+        const original = originalExchangeCoupon(quote, this.workspaceOf(tenantId)), pricing = exchangeBasis(membershipReceipt!)!.linePricing!;
         assertExchangeCouponPricing(pricing);
         if (!sameExchangeCoupon(original, pricing.couponPricing!.coupon)) return undefined;
       }
@@ -8858,6 +9070,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     // 全租期的**逐行**租金。限定商品的优惠方案、券适用范围与会员权益基数都按行判定，
     // 只给总额会让这三者退化：方案失效、券扩大到整单、会员减免整体消失。
     const fullRentalLineAmounts: Record<string, number> = {};
+    const fullMarketingLines: RentalMarketingPricingLine[] = [];
     let totalBillableUnits = 0;
     let originalBillableUnits = 0;
 
@@ -8889,6 +9102,9 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         };
         fullRentalAmount = roundMoney(fullRentalAmount + preservedAmount);
         fullRentalLineAmounts[target] = roundMoney((fullRentalLineAmounts[target] ?? 0) + preservedAmount);
+        fullMarketingLines.push({ id: target, itemGroupId: line.itemGroupId, pricingGroupId: line.pricingGroupId,
+          amount: preservedAmount, quantity: line.quantity, pricingUnit: rate.unit,
+          billableUnits: originalQuote.pricingContext?.marketing?.rentalLines.find(row => row.id === target)?.billableUnits ?? rate.minimumUnits });
         chargeLines.push({
           code: `rental:${target}:consumable`,
           name: `${group.name}（一次性耗材原订单金额）`,
@@ -8928,6 +9144,9 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       });
       fullRentalAmount = roundMoney(fullRentalAmount + full.amount);
       fullRentalLineAmounts[target] = roundMoney((fullRentalLineAmounts[target] ?? 0) + full.amount);
+      fullMarketingLines.push({ id: target, itemGroupId: line.itemGroupId, pricingGroupId: line.pricingGroupId,
+        amount: full.amount, quantity: line.quantity, pricingUnit: rate.unit,
+        billableUnits: rate.unit === "hour" ? full.units * (rate.hourGranularityMinutes ?? 60) / 60 : full.units });
       totalBillableUnits += full.units;
       const originalCarrierDue = carrierRepricing && args.order.actualRentalStartAt
         ? new Date(Date.parse(args.order.actualRentalStartAt) + Date.parse(args.order.endAt) - Date.parse(args.order.startAt)).toISOString()
@@ -9004,12 +9223,13 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const preAuthDelta = lineCancellation ? preAuthDeltaRaw : Math.max(0, preAuthDeltaRaw);
     const fullServiceAmount = roundMoney(originalQuote.serviceAmount + previous.reduce((sum, row) => sum + row.serviceAmount, 0) + serviceAmount);
     // 只复算原订单已采用的优惠，不引入后续新活动，不再次锁券/核销。
-    const originalPlans = (originalQuote.discountEvaluations ?? []).filter((row) => row.applied).map((row) => {
+    const adoptedMarketingPlan = originalMarketingPlan(originalQuote, this.workspaceOf(tenantId));
+    const originalPlans = originalQuote.pricingContext?.marketing ? [] : (originalQuote.discountEvaluations ?? []).filter((row) => row.applied).map((row) => {
       const snapshot = row.planSnapshot ?? state.discountPlans.find((plan) => plan.id === row.planId && plan.version === row.planVersion);
       if (!snapshot) throw new ConflictException("旧订单缺少原优惠规则快照且该方案已改版，请先人工核价；不能按当前优惠续租");
       return structuredClone(snapshot);
     });
-    const discounts = selectDiscountPlans(originalPlans, {
+    const repricingDiscountContext = {
       bases: { rental: fullRentalAmount, service: fullServiceAmount, fulfillment: originalQuote.fulfillmentAmount },
       minimumSpendBase: fullRentalAmount, customerType: args.customerType, hasCustomer: Boolean(originalQuote.membershipSnapshot),
       itemGroupIds: args.lines.map((row) => row.itemGroupId),
@@ -9022,7 +9242,24 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         return { id, itemGroupId: row.itemGroupId, pricingGroupId: row.pricingGroupId, amount: fullRentalLineAmounts[id] ?? 0 };
       }),
       dayTypes: new Set(calendarSnapshot.map((row) => row.dayType)), rentalStartAt: pricingStartAt, workspaceId: this.workspaceOf(tenantId)
-    });
+    };
+    const repricedMarketing = originalQuote.pricingContext?.marketing ? (() => {
+      try { return selectMarketingRule(adoptedMarketingPlan ? [adoptedMarketingPlan] : [], {
+        ...repricingDiscountContext, tenantId, categoryCode: originalQuote.categoryCode,
+        membershipEligibility: originalQuote.membershipSnapshot ? "member" : "not_member",
+        qualification: originalQuote.pricingContext?.marketing?.qualification ? { ...structuredClone(originalQuote.pricingContext.marketing.qualification),
+          rentalStartAt: pricingStartAt, rentalEndAt: args.newEndAt } : undefined,
+        itemGroupIds: [...new Set(repricingDiscountContext.itemGroupIds)],
+        pricingGroupIds: [...new Set(repricingDiscountContext.pricingGroupIds)], rentalLines: fullMarketingLines,
+        dayTypes: new Set(this.dayTypesForRange(fullCalendars, pricingStartAt, args.newEndAt, timeZone))
+      }); } catch (error) {
+        if (error instanceof RentalMarketingSelectionError) throw new ConflictException(error.message);
+        throw error;
+      }
+    })() : undefined;
+    const discounts = repricedMarketing ? { ...repricedMarketing, applied: repricedMarketing.selected
+      ? [{ id: repricedMarketing.selected.planId, stackableWithCoupon: true }] : [] }
+      : selectDiscountPlans(originalPlans, repricingDiscountContext);
     const planDiscountAmount = roundMoney(Object.values(discounts.discountByTarget).reduce((sum, value) => sum + value, 0));
     const oldCoupon = originalQuote.couponEvaluation;
     let fullCouponAmount = 0;
@@ -9190,7 +9427,15 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       priceVersionId: originalQuote.priceVersionId,
       priceVersion: originalQuote.priceVersion ?? originalQuote.pricingPlanVersion,
       pricingSnapshot: {
-        method: "original_version_difference", context: pricingContext, previousPayableAmount, recalculatedPayableAmount,
+        method: "original_version_difference", context: { ...pricingContext,
+          ...(repricedMarketing ? { marketing: { policy: repricedMarketing.pricingPolicy,
+            policyRevision: originalQuote.pricingContext!.marketing!.policyRevision,
+            baseRentalAmount: repricedMarketing.baseRentalAmount, marketingRentalAmount: repricedMarketing.marketingRentalAmount,
+            selected: repricedMarketing.selected, rentalLines: structuredClone(fullMarketingLines),
+            qualification: originalQuote.pricingContext?.marketing?.qualification ? { ...structuredClone(originalQuote.pricingContext.marketing.qualification),
+              rentalStartAt: pricingStartAt, rentalEndAt: args.newEndAt } : undefined,
+            dayTypes: this.dayTypesForRange(fullCalendars, pricingStartAt, args.newEndAt, timeZone) as RentalDayType[] } } : {}) },
+        previousPayableAmount, recalculatedPayableAmount,
         ...(!lineCancellation ? { balanceBasis: { version: 1 as const,
           approvedReductionExtensionIds: previous.filter(row => row.pricingSnapshot?.refundReview?.status === "approved").map(row => row.id).sort() } } : {}),
         recalculatedRentalAmount: fullRentalAmount, rentalLineAmounts: structuredClone(fullRentalLineAmounts), recalculatedServiceAmount: fullServiceAmount,
@@ -9344,7 +9589,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       if (discountBenefit) {
         let reduction = replacementDiscount(discountBenefit, replacement, segments, originalQuote);
         const originalTail = remaining.length === 1 ? remaining[0] : undefined;
-        if (discountBenefit.planSnapshot!.discountType === "percentage" && originalTail?.discountBenefit
+        if (discountBenefit.discountType === "percentage" && originalTail?.discountBenefit
           && originalTail.amount === replacement.amount && originalTail.billableUnits === replacement.billableUnits
           && originalTail.rate.unit === replacement.rate.unit
           && replacementDiscountEligible(discountBenefit, replacement, segments, originalQuote)
@@ -9440,7 +9685,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       if (originalMarketing !== Boolean(pricing.discountPricing) || originalCoupon !== Boolean(pricing.couponPricing)
         || originalMember !== Boolean(pricing.membershipPricing)
         || pricing.discountPricing && !sameExchangeDiscounts(originalExchangeDiscounts(quote, this.workspaceOf(quote.tenantId)), exchangeDiscountEvaluations(pricing.discountPricing))
-        || pricing.couponPricing && !sameExchangeCoupon(pricing.couponPricing.coupon, originalExchangeCoupon(quote))
+        || pricing.couponPricing && !sameExchangeCoupon(pricing.couponPricing.coupon, originalExchangeCoupon(quote, this.workspaceOf(quote.tenantId)))
         || pricing.membershipPricing && !sameExchangeMembership(pricing.membershipPricing.benefit, originalExchangeMembership(quote, this.workspaceOf(quote.tenantId)))) {
         throw new ConflictException("原优惠逐层身份与最初报价来源不一致");
       }
@@ -9496,7 +9741,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
           if (marketing.length === 1) expected[0].discountBenefit = segmentDiscount(marketing[0], expected[0], marketing[0].discountAmount);
           else expected[0].discountLayers = segmentDiscountLayers(marketing, expected[0]);
         }
-        if (pricing.couponPricing) expected[0].couponBenefit = segmentCoupon(originalExchangeCoupon(quote), expected[0], quote.couponAmount);
+        if (pricing.couponPricing) expected[0].couponBenefit = segmentCoupon(originalExchangeCoupon(quote, this.workspaceOf(quote.tenantId)), expected[0], quote.couponAmount);
         if (pricing.membershipPricing) {
           const member = originalExchangeMembership(quote, this.workspaceOf(quote.tenantId));
           expected[0].membershipBenefit = segmentMembership(member, expected[0], member.appliedAmount);
@@ -9804,7 +10049,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const singleDiscountSource = args.order.lines.length === 1 && originalQuote.request.lines.length === 1
       && (preserveExtendedBenefits || !args.previousExtensions?.some(row => row.status === "effective")) && originalRentalPlans.length > 0;
     const discountNeeded = Boolean(priorDiscountPricing?.discountPricing || originalRentalPlans.length > 0
-      && (args.priceBasis === "replacement_current_price" || singleDiscountSource && originalRentalPlans.every(row => row.planSnapshot)));
+      && (args.priceBasis === "replacement_current_price" || singleDiscountSource && originalRentalPlans.every(row => row.planSnapshot || isSingleRuleEvaluation(row))));
     let discountBenefits: RentalQuoteSnapshotV1["discountEvaluations"] = [];
     if (discountNeeded) {
       if (!singleDiscountSource) throw new ConflictException("原优惠营销多行或续租的联合来源尚不可核实");
@@ -9865,7 +10110,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         }
         const originalSegment = previousSegments[0];
         if (originalQuote.couponEvaluation?.appliesTo === "rental" && originalQuote.couponAmount > 0) {
-          const coupon = originalExchangeCoupon(originalQuote);
+          const coupon = originalExchangeCoupon(originalQuote, this.workspaceOf(tenantId));
           originalSegment.couponBenefit = segmentCoupon(coupon, originalSegment, coupon.discountAmount);
         }
         originalSegment.membershipBenefit = segmentMembership(membershipBenefit, originalSegment, membershipBenefit.appliedAmount);
@@ -9874,7 +10119,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     const priorCouponPricing = priorMembershipPricing?.executionBasis?.linePricing;
     const singleCouponSource = args.order.lines.length === 1 && originalQuote.request.lines.length === 1
       && (preserveExtendedBenefits || !args.previousExtensions?.some(row => row.status === "effective"))
-      && originalRentalPlans.every(row => Boolean(row.planSnapshot));
+      && originalRentalPlans.every(row => Boolean(row.planSnapshot) || isSingleRuleEvaluation(row));
     const couponNeeded = Boolean(priorCouponPricing?.couponPricing || originalQuote.couponEvaluation?.appliesTo === "rental"
       && originalQuote.couponAmount > 0 && (args.priceBasis === "replacement_current_price"
         || singleCouponSource && Array.isArray(originalQuote.couponEvaluation.applicableItemGroupIds)));
@@ -9882,10 +10127,10 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     if (couponNeeded) {
       if (args.order.lines.length !== 1 || originalQuote.request.lines.length !== 1
         || !preserveExtendedBenefits && args.previousExtensions?.some(row => row.status === "effective")
-        || originalRentalPlans.some(row => !row.planSnapshot)) {
+        || originalRentalPlans.some(row => !row.planSnapshot && !isSingleRuleEvaluation(row))) {
         throw new ConflictException("原优惠券与多营销、多行或续租的联合分段来源尚不可核实");
       }
-      couponBenefit = originalExchangeCoupon(originalQuote);
+      couponBenefit = originalExchangeCoupon(originalQuote, this.workspaceOf(tenantId));
       if (this.discountAmount(couponBenefit.runningBase, couponBenefit.discountType, couponBenefit.discountValue,
         couponBenefit.maximumDiscount) !== couponBenefit.discountAmount) throw new ConflictException("原优惠券金额与冻结规则不一致");
       if (priorCouponPricing) {

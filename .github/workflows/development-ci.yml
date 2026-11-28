@@ -216,12 +216,12 @@ jobs:
           assert.equal(lock.postCapability.length, 1);
           const names = fs.readdirSync(path.join(deployment, 'migrations'), { withFileTypes: true })
             .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
-          assert.equal(names.length, 18);
+          assert.equal(names.length, 21);
           assert.equal(names.at(-1), 'post-capability.rental.rental.20261127000000-ai-extension');
           assert.ok(fs.statSync(path.join(root, 'apps/rental-api/dist-ai/ai-fresh-main.js')).size > 0);
           assert.ok(fs.statSync(path.join(root, 'apps/rental-api/dist-ai/ai-fresh-initialize.js')).size > 0);
           assert.ok(!fs.existsSync(path.join(root, 'packages/rental-mcp-host')));
-          console.log('固定双仓 v2 开发包：18 份原迁移、完整 v2 锁及实际启动入口回读通过；不可发布。');
+          console.log('固定双仓 v2 开发包：21 份原迁移、完整 v2 锁及实际启动入口回读通过；不可发布。');
           NODE
           # Assemble Web as in release-prepare-pair, keeping the tested source projection intact.
           mkdir "$task/fresh/web"
@@ -416,7 +416,7 @@ jobs:
           node "$prisma" migrate status --schema apps/rental-api/prisma-deployment/schema.prisma
           curl -fsS --max-time 5 http://127.0.0.1:3093/api/health > /dev/null
           curl -fsS --max-time 5 http://127.0.0.1:5193/api/health > /dev/null
-          echo 'v2 固定宿主使用原 18 条迁移账重启成功。'
+          echo 'v2 固定宿主使用原 21 条迁移账重启成功。'
       - name: 保留 Web 构建与 HTTP 验证证明
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

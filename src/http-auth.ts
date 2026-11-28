@@ -4,6 +4,7 @@ import { ForbiddenException, UnauthorizedException, type CanActivate, type Execu
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { SystemUserRow } from "@rental-os/platform-contracts";
 import { RentalCategoryCode, type RentalCapability } from "./contracts";
+import { ASSET_CONTROL_READ_CODES } from "./asset-controls";
 import type { RentalAuthService } from "./auth-service";
 import type { ClientAuthService } from "./mysql-client-auth";
 import type { ClientApiRateLimitService } from "./mysql-client-rate-limit";
@@ -18,6 +19,7 @@ import type { RentalGuardContracts } from "./auth-guard-contracts";
 import { createRentalStaffPolicy } from "./staff-api-policy";
 import { rentalClientLocationId } from "./client-location-selection";
 import { createRentalPlatformAiPolicy } from "./platform-ai-access-policy";
+import { RENTAL_MARKETING_READ_PERMISSIONS, RENTAL_MARKETING_EDIT_PERMISSIONS, RENTAL_MARKETING_PUBLISH_PERMISSIONS } from "./marketing-plan";
 export type RentalGuardDatabase = Pick<PrismaClient, "organizationUnit" | "rentalFulfillmentLocation" | "rentalOrder" | "rentalAsset"
   | "rentalWorkOrder" | "rentalStockDisposition" | "fileUploadSession" | "customerProfile" | "customerCorporateMembership">;
 export interface RentalAuthorizationGuard extends CanActivate {
@@ -812,6 +814,17 @@ function requiredPermissions(method: string, path: string) {
   if (path === "/rental/v1/coupon-templates" || path.startsWith("/rental/v1/coupon-templates/")) {
     return ["rental-os:marketing:manage", "rental-os:price:manage"];
   }
+  if (path === "/rental/v1/marketing-pricing-policy" || path.startsWith("/rental/v1/marketing-pricing-policy/")) {
+    return method === "GET" ? [...RENTAL_MARKETING_READ_PERMISSIONS] : [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
+  }
+  // 试算复用原报价对象范围；业务服务还要求当前营销读取权，不能单凭营销权读客户资格。
+  if (path === "/rental/v1/marketing-plans/preview") return ["rental-os:order:operate", "rental-os:order:create"];
+  if (path === "/rental/v1/marketing-plans" || path.startsWith("/rental/v1/marketing-plans/")) {
+    if (method === "GET") return [...RENTAL_MARKETING_READ_PERMISSIONS];
+    if (/\/(publish|pause|end)$/u.test(path)) return [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
+    return [...RENTAL_MARKETING_EDIT_PERMISSIONS];
+  }
+  if (path === "/rental/v1/quote-marketing-options") return ["rental-os:order:operate", "rental-os:order:create"];
   if (path.startsWith("/rental/v1/discount-plans") || path.startsWith("/rental/v1/customer-coupons")) {
     return method === "GET" ? ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:view"] : ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:operate"];
   }
@@ -839,7 +852,17 @@ function requiredPermissions(method: string, path: string) {
   if (path === "/rental/v1/item-groups" || path.startsWith("/rental/v1/item-groups/")) {
     return method === "GET" ? ["rental-core:catalog:view", "rental-core:catalog:manage", "rental-os:order:view", "rental-os:order:create"] : ["rental-core:catalog:manage"];
   }
+  if (path === "/rental/v1/asset-control-types") return method === "GET" ? [...ASSET_CONTROL_READ_CODES] : ["rental-core:asset:control:configure"];
+  if (path === "/rental/v1/asset-control-options" || path === "/rental/v1/asset-control-assignees") return [...ASSET_CONTROL_READ_CODES];
+  if (path.startsWith("/rental/v1/asset-control-operations/")) return [...ASSET_CONTROL_READ_CODES];
+  if (path === "/rental/v1/asset-controls" || path.startsWith("/rental/v1/asset-controls/")) {
+    if (method === "GET") return [...ASSET_CONTROL_READ_CODES];
+    return [path === "/rental/v1/asset-controls/emergency" ? "rental-core:asset:control:emergency" : "rental-core:asset:control:manage"];
+  }
   if (path === "/rental/v1/work-order-assignees") return ["rental-core:maintenance:view"];
+  if (path === "/rental/v1/work-order-creation-receipt") return ["rental-core:maintenance:view"];
+  if (path === "/rental/v1/asset-schedule") return ["rental-core:asset:view", "rental-core:asset:manage"];
+  if (path === "/rental/v1/work-order-assets") return ["rental-core:maintenance:manage"];
   if (path === "/rental/v1/work-orders" || path.startsWith("/rental/v1/work-orders/")) {
     if (method === "GET") return ["rental-core:maintenance:view"];
     if (/\/review$/u.test(path)) return ["rental-core:maintenance:review"];
@@ -1595,7 +1618,7 @@ class RentalApiAuthGuard implements CanActivate {
       throw new ForbiddenException("受限地点范围账号不能新建履约地点；请由租户管理员授权或创建");
     }
 
-    if (ownScope && ["/rental/v1/quotes", "/rental/v1/orders"].includes(path) && request.method.toUpperCase() === "POST") {
+    if (ownScope && ["/rental/v1/quotes", "/rental/v1/marketing-plans/preview", "/rental/v1/orders"].includes(path) && request.method.toUpperCase() === "POST") {
       await this.assertOwnBookingCustomers(body, user, workspaceId, scope);
     }
 
@@ -1603,7 +1626,7 @@ class RentalApiAuthGuard implements CanActivate {
     if (path === "/rental/v1/orders" && request.method.toUpperCase() === "POST") {
       if (locationRestricted && typeof body.fulfillmentLocationId !== "string") throw new ForbiddenException("当前账号创建订单必须指定已授权的履约地点");
       ensureLocations([body.fulfillmentLocationId, ...(body.returnLocationId ? [body.returnLocationId] : [])]);
-    } else if (path === "/rental/v1/quotes" && request.method.toUpperCase() === "POST") {
+    } else if (["/rental/v1/quotes", "/rental/v1/marketing-plans/preview"].includes(path) && request.method.toUpperCase() === "POST") {
       if (locationRestricted && typeof body.fulfillmentLocationId !== "string") throw new ForbiddenException("当前账号报价必须指定已授权的履约地点");
       ensureLocations([body.fulfillmentLocationId, ...(body.returnLocationId ? [body.returnLocationId] : [])]);
     } else if (orderMatch && orderMatch[1] !== "expire-pending" && orderMatch[1] !== "reconcile-pickup-overdue") {

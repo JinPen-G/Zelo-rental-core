@@ -6,6 +6,8 @@ export interface RentalWorkOrderPageContext {
   /** 来自当前会话、经营空间及权限快照，用于既有查询和浏览器看板布局隔离。 */
   scopeKey: string;
   currentScopeKey: () => string | undefined;
+  /** 宿主验证后的租户/空间/用户稳定键，刷新后定位原操作；不是会话代次或授权。 */
+  operationScopeKey?: string;
   permissions: {
     manage: boolean;
     review: boolean;

@@ -376,9 +376,23 @@ class RentalPricingGroupTierInputDto implements RentalPricingTier {
 }
 
 export class CreateRentalWorkOrderDto implements CreateRentalWorkOrderRequest {
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  dispositionId!: string;
+  @MaxLength(191)
+  dispositionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
+  assetId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  operationId?: string;
 
   @IsIn(RENTAL_WORK_ORDER_TYPES)
   type!: CreateRentalWorkOrderRequest["type"];

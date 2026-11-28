@@ -6,6 +6,20 @@ import type {
   RentalCouponTemplate,
   RentalCustomerCoupon,
   RentalDiscountPlan,
+  RentalMarketingPlan,
+  RentalMarketingQuotePreview,
+  RentalMarketingSchedule,
+  RentalMarketingScheduleQuery,
+  RentalQuoteRequest,
+  RentalMarketingPricingPolicy,
+  RentalMarketingPricingPolicyReceipt,
+  ChangeRentalMarketingPricingPolicyRequest,
+  RentalMarketingPlanHistory,
+  RentalMarketingPlanOperationReceipt,
+  RentalMarketingPlanEvent,
+  SaveRentalMarketingPlanDraftRequest,
+  ImportRentalMarketingPlanRequest,
+  ChangeRentalMarketingPlanStatusRequest,
   RentalPriceAdjustmentPlan,
   RentalPriceAdjustmentPreviewRow,
   RentalPriceVersion,
@@ -35,6 +49,8 @@ export function createRentalCommercialApi(
   const catalog = createRentalCatalogApi(request, requestImage);
   return {
     profile: orders.profile,
+    bookingMembers: orders.bookingMembers,
+    bookingOptions: orders.bookingOptions,
     businessSettings: orders.businessSettings,
     itemGroups: orders.itemGroups,
     pricingGroups: orders.pricingGroups,
@@ -100,6 +116,31 @@ export function createRentalCommercialApi(
         data.id ? `/rental/v1/discount-plans/${data.id}` : "/rental/v1/discount-plans",
         { method: data.id ? "put" : "post", data },
       ),
+    marketingPlans: (options?: ReadOptions) => request<RentalMarketingPlan[]>("/rental/v1/marketing-plans", readOptions(options)),
+    marketingSchedule: (params: RentalMarketingScheduleQuery, options?: ReadOptions) =>
+      request<RentalMarketingSchedule>("/rental/v1/marketing-plans/schedule", { params, ...readOptions(options) }),
+    previewMarketingQuote: (data: RentalQuoteRequest, options?: ReadOptions) =>
+      request<RentalMarketingQuotePreview>("/rental/v1/marketing-plans/preview", { method: "post", data, ...readOptions(options), retryAuthentication: false }),
+    marketingPricingPolicy: (options?: ReadOptions) => request<RentalMarketingPricingPolicy>("/rental/v1/marketing-pricing-policy", readOptions(options)),
+    marketingPricingPolicyOperation: (operationId: string, options?: ReadOptions) =>
+      request<RentalMarketingPricingPolicyReceipt>(`/rental/v1/marketing-pricing-policy/operations/${encodeURIComponent(operationId)}`, readOptions(options)),
+    changeMarketingPricingPolicy: (input: ChangeRentalMarketingPricingPolicyRequest) =>
+      request<RentalMarketingPricingPolicy>("/rental/v1/marketing-pricing-policy", { method: "put", data: input, retryAuthentication: false }),
+    marketingPlanHistory: (id: string, options?: ReadOptions) =>
+      request<RentalMarketingPlanHistory>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/history`, readOptions(options)),
+    marketingPlanOperation: (operationId: string, action: RentalMarketingPlanEvent["action"], options?: ReadOptions) =>
+      request<RentalMarketingPlanOperationReceipt>(`/rental/v1/marketing-plans/operations/${encodeURIComponent(operationId)}`,
+        { params: { action }, ...readOptions(options) }),
+    importLegacyMarketingPlan: (data: ImportRentalMarketingPlanRequest) => request<RentalMarketingPlan>("/rental/v1/marketing-plans/import-legacy", { method: "post", data, retryAuthentication: false }),
+    saveMarketingPlanDraft: (data: SaveRentalMarketingPlanDraftRequest) => request<RentalMarketingPlan>(
+      data.id ? `/rental/v1/marketing-plans/${encodeURIComponent(data.id)}/draft` : "/rental/v1/marketing-plans",
+      { method: data.id ? "put" : "post", data, retryAuthentication: false }),
+    publishMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/publish`, { method: "post", data, retryAuthentication: false }),
+    pauseMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/pause`, { method: "post", data, retryAuthentication: false }),
+    endMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/end`, { method: "post", data, retryAuthentication: false }),
     saveValueAddedService: (data: SaveRentalValueAddedServiceRequest) =>
       request<RentalValueAddedService>(
         data.id ? `/rental/v1/value-added-services/${data.id}` : "/rental/v1/value-added-services",

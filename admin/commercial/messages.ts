@@ -1,7 +1,9 @@
 /** Rental 商业界面的原英文词条，由宿主合并到公共 AdminUiProvider.messages。 */
 import type { AdminMessages } from "@rental-os/platform-admin/locale";
+import { marketingMessages } from "./marketing-messages";
 
 export const rentalCommercialMessages = {
+  ...marketingMessages,
   "{price}/天": "{price}/day",
   "平日": "Weekdays",
   "假日": "Weekends",

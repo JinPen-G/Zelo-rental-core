@@ -11,7 +11,7 @@ import { snapshotInspectionTemplate } from './inspection-template-snapshot';
 import { normalizeBusinessSettingsForCategory } from './business-settings';
 
 type BusinessConfiguration = Pick<TenantBusinessConfigSnapshot,
-  'pricingPlans' | 'discountPlans' | 'services' | 'calendars' | 'ruleVersions'>;
+  'pricingPlans' | 'discountPlans' | 'marketingPlans' | 'marketingPricingPolicy' | 'services' | 'calendars' | 'ruleVersions'>;
 type QuotePrice = { versionId: string; version: string; effectiveFrom: string; rates: RentalPricingRate[] };
 type ContextCollection = 'groups' | 'pricingGroups' | 'locations' | 'operators';
 /** 由应用组合提供同一仓储和调用方事务，不在事实仓储中重建数据库或事件适配。 */
@@ -55,6 +55,11 @@ export interface RentalQuoteConfigurationBasis {
 const sorted = <T extends { id: string }>(rows: readonly T[]): T[] => [...rows].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const businessHash = (value: BusinessConfiguration) => requestFingerprint({
   pricingPlans: sorted(value.pricingPlans), discountPlans: sorted(value.discountPlans), services: sorted(value.services),
+  // 完整发布规则集合参与同一事务复验。旧读口未观察与确实没有方案是不同证据；
+  // 草稿不进入生产读模型，发布、暂停、结束及规则集合变化才改变计价依据。
+  marketingPlans: value.marketingPlans === undefined ? null
+    : sorted(value.marketingPlans).map(plan => ({ ...plan, rules: sorted(plan.rules) })),
+  marketingPricingPolicy: value.marketingPricingPolicy ?? null,
   calendars: [...value.calendars].sort((a, b) => a.year - b.year || a.version.localeCompare(b.version)),
   ruleVersions: sorted(value.ruleVersions)
 });
@@ -127,7 +132,7 @@ export async function assertQuoteConfigurationBasis<TTransaction>(tx: TTransacti
   const configuration = await reader.loadBusiness(tenantId, workspaceId, current.binding, tx);
   if (configuration.tenantId !== tenantId || configuration.workspaceId !== workspaceId || configuration.categoryCode !== quote.categoryCode
     || basis.businessHash !== businessHash(configuration))
-    throw new ConflictException('报价期间价格计划、优惠、服务、日历或规则已变化，请重新准备');
+    throw new ConflictException('报价期间价格计划、营销方案、优惠、服务、日历或规则已变化，请重新准备');
   const price = await reader.readPrice(tenantId, workspaceId, quote.request.startAt, tx);
   if (!price || price.versionId !== quote.priceVersionId || price.version !== quote.priceVersion
     || basis.priceHash !== requestFingerprint(price))

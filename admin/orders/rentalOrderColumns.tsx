@@ -12,7 +12,7 @@ import { orderTimingNotice, plannedReturnAt, timeSpanParts } from "./orderListPr
 import styles from "./RentalOrdersPage.module.css";
 import { RentalOrderRowActions } from "./RentalOrderRowActions";
 import type { RentalOrderCustomerPreviewProps } from "./page-context";
-import type { OrderActionPermissions } from "./orderQuickActions";
+import { orderStatusLabels, type OrderActionPermissions } from "./orderQuickActions";
 import { orderStatusTone } from "./orderStatusSemantics";
 export { orderStatusTone } from "./orderStatusSemantics";
 
@@ -31,7 +31,7 @@ function OrderHeader(context: HeaderContext<RentalOrder, unknown>) {
   return context.column.columnDef.meta?.orderHeader?.(context);
 }
 
-export const orderStatusLabels: Record<string, string> = { draft: "软预占", reserved: "已确认", pickup_overdue: "待确认爽约", ready_for_pickup: "待交付", renting: "租赁中", return_inspection: "归还检查", settling: "待结算", completed: "已关闭", cancelled: "已取消", no_show: "已爽约" };
+export { orderStatusLabels } from "./orderQuickActions";
 
 // Domain semantics, not the demo's fictional active/queued/failed status machine.
 const orderStatusIcons: Record<string, LucideIcon> = {

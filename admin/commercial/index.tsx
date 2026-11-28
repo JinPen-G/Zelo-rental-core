@@ -4,6 +4,8 @@ import type { CoreRouteComponent } from "@rental-os/platform-admin/core";
 import { PricingGroupPage } from "./PricingGroupPage";
 import { RentalCommercialPage } from "./RentalCommercialPage";
 import { CouponPage } from "./CouponPage";
+import { RentalMarketingPage } from "./RentalMarketingPage";
+import { MarketingCalendarPage } from "./MarketingCalendarPage";
 import type { RentalCommercialPageContext } from "./page-context";
 import { RENTAL_COMMERCIAL_CORE_ID, RENTAL_COMMERCIAL_PAGES } from "./pages";
 
@@ -14,6 +16,7 @@ export { rentalCommercialMessages } from "./messages";
 export { PricingGroupPage } from "./PricingGroupPage";
 export { RentalCommercialPage, type RentalCommercialSection } from "./RentalCommercialPage";
 export { CouponPage } from "./CouponPage";
+export { RentalMarketingPage } from "./RentalMarketingPage";
 export { usePriceVersions, PRICE_VERSIONS_QUERY_KEY, priceVersionQueryKey } from "./usePriceVersions";
 export { toPricingGroupRequest, type PricingGroupFormValues } from "./pricing-group-initial-rate";
 
@@ -23,9 +26,11 @@ export function createRentalCommercialAdminContribution(
 ): CoreAdminContribution<CoreRouteComponent> {
   const Groups: CoreRouteComponent = () => <PricingGroupPage {...usePageContext()} />;
   const Pricing: CoreRouteComponent = () => <RentalCommercialPage {...usePageContext()} section="pricing" />;
-  const Discounts: CoreRouteComponent = () => (
+  const LegacyDiscounts: CoreRouteComponent = () => (
     <RentalCommercialPage {...usePageContext()} section="discounts" />
   );
+  const Discounts: CoreRouteComponent = () => <RentalMarketingPage {...usePageContext()} />;
+  const Calendar: CoreRouteComponent = () => <MarketingCalendarPage {...usePageContext()} />;
   const Coupons: CoreRouteComponent = () => <CouponPage {...usePageContext()} />;
   const Services: CoreRouteComponent = () => (
     <RentalCommercialPage {...usePageContext()} section="services" />
@@ -39,6 +44,9 @@ export function createRentalCommercialAdminContribution(
       { ...RENTAL_COMMERCIAL_PAGES.pricingVersions, component: Pricing },
       { ...RENTAL_COMMERCIAL_PAGES.pricingVersionDetail, component: Pricing },
       { ...RENTAL_COMMERCIAL_PAGES.discounts, component: Discounts },
+      { ...RENTAL_COMMERCIAL_PAGES.marketingPlanDetail, component: Discounts },
+      { ...RENTAL_COMMERCIAL_PAGES.legacyDiscounts, component: LegacyDiscounts },
+      { ...RENTAL_COMMERCIAL_PAGES.marketingCalendar, component: Calendar },
       { ...RENTAL_COMMERCIAL_PAGES.coupons, component: Coupons },
       { ...RENTAL_COMMERCIAL_PAGES.services, component: Services },
     ],

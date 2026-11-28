@@ -1,5 +1,6 @@
 import type { AiBookingSubmissionAcceptance, ClientCatalogLocation, ClientCatalogResponse, ClientCreateQuoteRequest, ClientDeliveryAddressView, EnterpriseOwnRentalPolicy, EnterpriseBookingApprovalView, EnterpriseApprovalOriginalResult, RentalCustomerCoupon, RentalFulfillmentMode, RentalQuoteSnapshotV1 } from "@rental-os/shared";
 import type { EnterpriseOrderDelegationRequestReference, EnterpriseOrderDelegationView } from "@rental-os/shared";
+import type { RentalMarketingQuoteDiscountEvaluation } from "@rental-os/shared";
 import { listAddresses } from "../../api/addresses";
 import { fetchEnterpriseRentalPolicies, fetchEnterpriseApprovals, requestEnterpriseApproval, submitEnterpriseApproval, readEnterpriseOperation, readEnterpriseApprovalResult, createEnterpriseOrder, readEnterpriseOrderOriginal } from "../../api/enterprise";
 import { issueEnterpriseOrderDelegation, readEnterpriseOrderDelegation, revokeEnterpriseOrderDelegation } from "../../api/enterprise";
@@ -1661,7 +1662,13 @@ Page({
       benefits.push({ key: `membership-${benefits.length}`, text: applied ? `${evaluation.planName}：${evaluation.detail}` : `${evaluation.planName}：${evaluation.skippedReason ?? "本次未适用"}`, applied });
     }
     for (const evaluation of quote.discountEvaluations ?? []) {
-      benefits.push({ key: `discount-${evaluation.planId}`, text: evaluation.applied ? `${evaluation.planName}：减 ${formatMoney(evaluation.discountAmount, currency || undefined)}` : `${evaluation.planName}：${evaluation.skipDetail ?? "未应用"}`, applied: evaluation.applied });
+      // 同一方案包含多个独立候选；使用原版本/规则身份，不能用planId覆盖其他候选。
+      const rule = "pricingPolicy" in evaluation && evaluation.pricingPolicy === "single_rule_v1"
+        ? evaluation as RentalMarketingQuoteDiscountEvaluation : undefined;
+      const label = rule ? `${evaluation.planName} / ${rule.ruleSnapshot?.name ?? "原规则资料缺失"}` : evaluation.planName;
+      const key = rule ? JSON.stringify(["marketing", evaluation.planId, evaluation.planVersion, rule.ruleId, rule.ruleVersion, benefits.length]) : `discount-${evaluation.planId}`;
+      const description = evaluation.applied && rule?.planDescription ? ` · ${rule.planDescription}` : "";
+      benefits.push({ key, text: evaluation.applied ? `${label}：减 ${formatMoney(evaluation.discountAmount, currency || undefined)}${description}` : `${label}：${evaluation.skipDetail ?? "未应用"}`, applied: evaluation.applied });
     }
     if (quote.couponEvaluation) {
       benefits.push({ key: `coupon-${quote.couponEvaluation.couponId}`, text: `优惠券 ${quote.couponEvaluation.templateName}：减 ${formatMoney(quote.couponEvaluation.discountAmount, currency || undefined)}`, applied: quote.couponEvaluation.discountAmount > 0 });

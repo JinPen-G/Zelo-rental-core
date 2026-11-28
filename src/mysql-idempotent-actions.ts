@@ -102,7 +102,7 @@ export class RentalIdempotentActionService<TTransaction extends RentalBusinessTe
 
   /** Read an original receipt only. Absence is unknown, never permission to run. */
   async readReceipt<T>(input: {
-    tenantId: string; action: string; key: string; orderId: string;
+    tenantId: string; action: string; key: string; orderId: string | null;
     replay: (response: unknown) => Promise<T | undefined>;
   }, tx?: TTransaction): Promise<T | undefined> {
     const read = async () => {

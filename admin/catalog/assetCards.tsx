@@ -46,6 +46,9 @@ export function assetCards({
   canView,
   edit,
   history,
+  detail,
+  schedule,
+  maintenance,
   fields = [],
   summaryFields = [],
   itemGroupLabel,
@@ -61,6 +64,9 @@ export function assetCards({
   canView: boolean;
   edit: (row: RentalAsset) => void;
   history: (row: RentalAsset) => void;
+  detail?: (row: RentalAsset) => void;
+  schedule?: (row: RentalAsset) => void;
+  maintenance?: (row: RentalAsset) => void;
   fields?: RentalAttributeDefinition[];
   summaryFields?: RentalAttributeDefinition[];
   itemGroupLabel?: string;
@@ -172,6 +178,9 @@ export function assetCards({
       ) : null,
     actions: (row, afterClose) => (
       <>
+        {detail && <Button variant="secondary" size="sm" onClick={() => afterClose(() => detail(row))}>
+          {t("查看详情")}
+        </Button>}
         {canManage && (
           <Button variant="secondary" size="sm" onClick={() => afterClose(() => edit(row))}>
             {t("编辑")}
@@ -182,6 +191,12 @@ export function assetCards({
             {t("状态历史")}
           </Button>
         )}
+        {schedule && <Button variant="secondary" size="sm" onClick={() => afterClose(() => schedule(row))}>
+          {t("查看排班")}
+        </Button>}
+        {maintenance && <Button variant="secondary" size="sm" onClick={() => afterClose(() => maintenance(row))}>
+          {t("养护工单")}
+        </Button>}
       </>
     ),
   };

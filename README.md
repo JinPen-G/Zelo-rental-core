@@ -84,6 +84,20 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 新报价的[配置组合依据](src/quote-configuration.ts)由报价服务捕获，在原事实事务内复核经营设置、商品与履约配置、价格计划、优惠、服务、日历、规则及不可变价格版本。[仓储组合](src/application-repositories.ts)通过 `mysql-business-facts` 正式出口的 `createRentalQuoteConfigurationReader` 复用同一配置仓储和调用方事务；自行装配事实仓储的宿主也须提供此读口。缺依据或读口时新报价不可保存，已有报价和原操作收据沿原历史事实读取，不重新采用当前配置。
 
+[营销选择](src/discount-selection.ts)提供 `selectMarketingRule` 和 `single_rule_v1` 合同：在同一基础租金上评估方案公共条件及多条规则，只选择一条最低价结果。规则作用于共同命中的租金行，其余行保留原价，按整单租金比较；例如A600+B400，仅A九折，结果940。支持比例、固定减免、满减及每件完整租期的固定租价，后者按数量只乘一次并要求原单位/租期条件。报价保存完整方案/规则版本、逐行金额及策略修订；旧策略仍使用原选择器和历史快照。
+
+`/api/rental/v1/marketing-plans` 提供读取、新建草稿，以及 `/:id/draft` 保存、`/:id/publish` 发布、`/:id/pause` 暂停、`/:id/end` 结束和 `/:id/history` 历史读取。编辑使用 `rental-os:marketing:edit`（兼容原营销/价格管理权），发布动作另需 `rental-os:marketing:publish`；页面准入不代替服务端复核。草稿、不可变发布版本和审计在原品类/空间锁事务中按 `expectedRevision` 提交，编辑草稿不改当前发布正文。见[仓储](src/mysql-marketing-plans.ts)与[开发数据迁移](prisma/README.md#迁移与历史)。
+
+营销写入同时要求稳定 `operationId`（1～128位字母、数字、下划线或短横线），通过原 Rental 幂等账与同一业务事务登记结果。同键同请求返回原提交正文，同键不同请求拒绝；后继发布、暂停或结束不覆盖旧操作结果。应答未知时使用 `GET /api/rental/v1/marketing-plans/operations/:operationId?action=save_draft|publish|pause|end` 只读核对。它要求当前营销读取权限及原租户/空间，按当前操作者定位本人原操作，仅返回已提交的方案ID/修订、原账已提交的 `rejected` 结论或 `unknown`，无收据不证明可重发。该入口未开放停用Core后的额外善后权限；报价链启用仍按下文边界核定。
+
+当前配置读取在原品类/空间锁及调用方事务中加载完整营销发布集合和空间策略；草稿不进入计价读模型。报价保存复核同一配置摘要，发布、暂停、规则或策略修订变化会使旧计算依据失效。旧适配没有提供观察时保持明确缺失，不等于已确认空集合；读取失败不回退缓存或原价。正式配置读取器须同时支持发布集合与策略观察。
+
+`GET/PUT /api/rental/v1/marketing-pricing-policy`读取/显式切换当前空间的`legacy`或`single_rule_v1`，切换需要独立发布权、原`operationId`、`expectedRevision`及原因。未切换空间继续旧模式；新策略只影响之后的新报价：基础租金→一个营销方案的一条规则→原优惠券，不再追加独立会员租金/服务折扣，资格、非金额权益与保证金风控保留。原券的范围、门槛、封顶和营销兼容权益保持。切换的本人原收据由`GET /api/rental/v1/marketing-pricing-policy/operations/:operationId`在当前营销读取权限下核对，未知结果保持`unknown`。
+
+原全租期重算消费[冻结的唯一营销规则](src/marketing-quote-history.ts)，为本次动作保存独立依据；独立新增时段继续原续租计价方式，不自动授予旧优惠。原支持的完整单行换货接入原规则、封顶及券的剩余额度，已履行段不改写，缺少完整联合来源的多行/后继情况仍拒绝自动推算。管理页面已接列表、规则草稿、发布历史、策略切换、同源只读试算与按营业日分组的活动日历；各端消费及完整页面验收仍须按实际环境核定。试算不产生下单凭据，日历不在页面重算命中或直接修改发布正文，见[商业后台](admin/commercial/README.md)。开发数据版本`0.1.3`追加空间策略及履历两表，旧方案/报价不回填、不自动转换；部署须固定兼容版本并核定增量迁移，见[数据说明](prisma/README.md#迁移与历史)。
+
+营销条件同时支持方案公共/规则细分的活动有效期、下单时间窗、完整用租窗、营业日内时段、提前预订小时、领取/归还地点、原履约方式及认证分面。新报价冻结服务端计价时点与原受权地点/来源，历史复算不读取当前条件补证；旧开始时点限制保持原语义。活动日历可分别浏览三类时间窗，按营业时区裁剪跨日及夏令时。管理端仅采集条件及展示原计算结果，见[商业后台说明](admin/commercial/README.md)。
+
 原客户预约来源通过服务器侧 `RentalOrderCreationParticipant` 参加同一次建单事务，在首个 Tenant 锁前取得来源会话权威，并在写入后复核原材料与自然期限；HTTP 请求不能提供参加者或批准。见[建单端口](src/order-confirmation-ports.ts)和[订单确认](src/mysql-order-confirmation.ts)。
 
 客户端渠道从有效空间身份投影权限；没有有效空间身份时只核租户原集成管理权，不将其他空间页面回退为租户权限。见[权限投影](src/permissions.ts)。
@@ -148,7 +162,7 @@ node tools/prepare-workspace.cjs --framework-repo "<底座目录>" --repository 
 
 开发快照可使用未打 Tag 的已提交源码。正式标准包继续通过底座的 `scripts/verify-rental-distribution.cjs --portable` 核对版本 Tag、发行来源、实际构建字节与归档摘要。旧 Tag 的根目录布局仍可读取，运行部署继续使用正式部署锁。
 
-独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)、[后台](workspace/apps/rental-admin)和 [Web 会话](workspace/packages/web-client/src/index.ts)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在组合工作区构建，原页面与设计规范保持。新装开发在带宿主的范围显式加 `--fresh-ai`，需要 23 条 MCP 数据计划时再加 `--mcp`；使用各自空库与原迁移账，旧库不能换锁直接采用。缺少真实 MCP 授权来源时不发布业务入口。声明缺件会中止，不从 Zelo 的旧业务目录补件。
+独立源码路径由 [rental.source.json](rental.source.json) 声明。`domain` 选择领域包，`host` 加入[普通业务 API](workspace/apps/rental-api/README.md)、[后台](workspace/apps/rental-admin)和 [Web 会话](workspace/packages/web-client/src/index.ts)，`full` 再加入[官网](workspace/apps/tenant-website)、[企业门户](workspace/apps/enterprise-portal)、[客户小程序](workspace/apps/miniprogram)和[员工小程序](workspace/apps/staff-miniprogram)。应用在组合工作区构建，原页面与设计规范保持。新装开发在带宿主的范围显式加 `--fresh-ai`，需要 MCP 数据计划时再加 `--mcp`；当前开发数据 `0.1.4` 分别使用完整的 21/26 条迁移，旧发行保留原固定链。使用各自空库与原迁移账，旧库不能换锁直接采用。缺少真实 MCP 授权来源时不发布业务入口。声明缺件会中止，不从 Zelo 的旧业务目录补件。
 
 归档内的 `development.workspace.json` 记录两仓提交、文件来源和摘要。组合从固定底座锁及[独立构建依赖锁](workspace.build-lock.json)核外部依赖；官网和企业门户仍使用各自锁定的 TypeScript，重叠固定依赖冲突直接拒绝。此文件供组合工具消费，解包后以生成的 `package-lock.json` 执行 `npm ci` 和 `npm run check:types`。构建不需要旧业务测试、私有资料、环境文件或作者生成物。
 

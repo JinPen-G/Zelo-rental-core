@@ -1,0 +1,266 @@
+/** 多规则营销持久化。复用业务配置仓储的原数据库、品类锁和事务；
+ * 原幂等账与草稿/版本/事件共用同一事务；原操作者在当前读取权限下核对旧结果，不迁移旧方案或计价。 */
+import { ConflictException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { sqltag as sql, join } from "@prisma/client/runtime/library";
+import { requestFingerprint } from "@rental-os/platform-contracts/request-fingerprint";
+import type { RequestIdentity } from "@rental-os/platform-server/request-identity";
+import type { RentalBusinessConfigurationTransaction, RentalBusinessConfigurationStorage, RentalBusinessConfigurationContacts } from "./business-configuration-storage";
+import type { CategoryWriteBinding } from "./configuration-basis";
+import type { ChangeRentalMarketingPlanStatusRequest, RentalMarketingPlan, RentalMarketingPlanEvent,
+  RentalMarketingPlanHistory, RentalMarketingPlanVersion, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest,
+  RentalDiscountPlan, ImportRentalMarketingPlanRequest } from "./contracts";
+import { assertMarketingPlan, RentalMarketingSelectionError } from "./discount-selection";
+import { assertMarketingAuthority, assertMarketingOperation, marketingEvent, prepareMarketingDraft, transitionMarketingPlan,
+  legacyMarketingPlanId, prepareLegacyMarketingImport,
+  type RentalMarketingAction, type RentalMarketingScope, type RentalMarketingOperationScope } from "./marketing-plan";
+import { RentalIdempotencyRepository } from "./mysql-idempotency";
+import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
+import { readRentalOriginalReceipt } from "./mysql-business-fence";
+import { executeMarketingCommand, readMarketingRejection } from "./marketing-command";
+
+type OperationResult = { actorUserId: string; action: RentalMarketingAction; operationId: string; result: RentalMarketingPlan };
+const operationAction = (action: RentalMarketingAction) => `marketing_plan.${action}`;
+const operationKey = (scope: RentalMarketingOperationScope, actorUserId: string, operationId: string) =>
+  requestFingerprint({ tenantId: scope.tenantId, workspaceId: scope.workspaceId, actorUserId, operationId });
+
+type PlanRow = Omit<RentalMarketingPlan, "draft" | "published" | "createdAt" | "updatedAt"> & {
+  draft: unknown; published: unknown; publishedVersion: string | null; createdAt: Date; updatedAt: Date;
+};
+const json = (value: unknown): unknown => typeof value === "string" ? JSON.parse(value) : value;
+const parseVersion = (value: unknown, row: Pick<PlanRow, "id" | "tenantId" | "workspaceId" | "categoryCode" | "code">): RentalMarketingPlanVersion => {
+  let parsed: RentalMarketingPlanVersion;
+  try { parsed = json(value) as RentalMarketingPlanVersion; assertMarketingPlan(parsed); }
+  catch (error) {
+    if (error instanceof SyntaxError || error instanceof RentalMarketingSelectionError)
+      throw new ServiceUnavailableException("持久营销版本或规则集合不可用");
+    throw error;
+  }
+  if (parsed.id !== row.id || parsed.tenantId !== row.tenantId || parsed.workspaceId !== row.workspaceId
+    || parsed.categoryCode !== row.categoryCode || parsed.code !== row.code) throw new ConflictException("营销版本与方案归属不一致");
+  return structuredClone(parsed);
+};
+function decodePlan(row: PlanRow): RentalMarketingPlan {
+  if (!Number.isSafeInteger(row.revision) || row.revision < 1 || !["draft", "enabled", "paused", "ended"].includes(row.status))
+    throw new ConflictException("营销方案修订或生命周期无效");
+  const draft = row.draft == null ? undefined : parseVersion(row.draft, row);
+  const published = row.published == null ? undefined : parseVersion(row.published, row);
+  if (draft && draft.status !== "draft" || published && (published.status !== "enabled" || published.version !== row.publishedVersion)
+    || Boolean(row.publishedVersion) !== Boolean(published) || row.status !== "draft" && !published
+    || row.status === "draft" && (published || !draft)) throw new ConflictException("营销草稿或原发布正文缺失");
+  return { id: row.id, tenantId: row.tenantId, workspaceId: row.workspaceId, categoryCode: row.categoryCode,
+    code: row.code, status: row.status, revision: row.revision, draft, published,
+    createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+}
+
+export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfigurationTransaction> {
+  constructor(private readonly database: RentalBusinessConfigurationStorage<Tx>,
+    private readonly contacts: RentalBusinessConfigurationContacts<Tx>,
+    private readonly readLegacy?: (tx: Tx, scope: RentalMarketingScope, id: string) => Promise<RentalDiscountPlan | undefined>) {}
+
+  private identity() { return this.contacts.getRequestIdentity() as Partial<RequestIdentity> | undefined; }
+
+  private operations(scope: RentalMarketingOperationScope) {
+    const records = new RentalIdempotencyRepository<Tx>(this.database, {
+      workspaceId: async (tenantId, tx) => {
+        const current = await this.contacts.resolveWorkspaceId(tx ?? this.database, tenantId);
+        if (tenantId !== scope.tenantId || current !== scope.workspaceId) throw new ConflictException("营销原操作经营空间已变化");
+        return current;
+      }
+    });
+    return { records, actions: new RentalIdempotentActionService<Tx>(this.database, records) };
+  }
+
+  private originalResult(value: unknown, scope: RentalMarketingOperationScope, actorUserId: string,
+    action: RentalMarketingAction, operationId: string, id?: string): OperationResult {
+    const saved = value as OperationResult | undefined, plan = saved?.result;
+    if (!saved || saved.actorUserId !== actorUserId || saved.action !== action || saved.operationId !== operationId
+      || !plan || plan.tenantId !== scope.tenantId || plan.workspaceId !== scope.workspaceId || id !== undefined && plan.id !== id
+      || typeof plan.createdAt !== "string" || !Number.isFinite(Date.parse(plan.createdAt))
+      || typeof plan.updatedAt !== "string" || !Number.isFinite(Date.parse(plan.updatedAt)))
+      throw new ConflictException("营销原操作收据与当前身份或对象不一致");
+    // 原提交正文来自同事务收据。后继暂停、结束或新草稿不能覆盖它，也不以当前规则补造。
+    const result = decodePlan({ ...plan, draft: plan.draft ?? null, published: plan.published ?? null,
+      publishedVersion: plan.published?.version ?? null, createdAt: new Date(plan.createdAt), updatedAt: new Date(plan.updatedAt) });
+    return { actorUserId, action, operationId, result };
+  }
+
+  async original(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string): Promise<RentalMarketingPlanOperationReceipt> {
+    scope = structuredClone(scope);
+    assertMarketingOperation(action, operationId);
+    const actorUserId = assertMarketingAuthority(this.identity(), scope, "read"), identity = requestFingerprint(this.identity());
+    const current = async () => {
+      assertMarketingAuthority(this.identity(), scope, "read");
+      if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId
+        || identity !== requestFingerprint(this.identity())) throw new ConflictException("营销原操作读取期间身份或空间已变化");
+    };
+    return readRentalOriginalReceipt(scope.tenantId, null, async () => {
+      await current();
+      const hit = await this.operations(scope).records.find(scope.tenantId, operationAction(action), operationKey(scope, actorUserId, operationId));
+      if (hit && (hit.orderId !== null || hit.status !== "succeeded")) throw new ConflictException("营销原操作收据状态或关联无效");
+      const rejected = hit ? readMarketingRejection(hit.response, { ...scope, actorUserId, action: operationAction(action) }, operationId) : undefined;
+      const original = hit && !rejected ? this.originalResult(hit.response, scope, actorUserId, action, operationId) : undefined;
+      await current();
+      if (rejected) return rejected;
+      return original ? { status: "committed", operationId, action, planId: original.result.id, revision: original.result.revision } : { status: "unknown" };
+    });
+  }
+  private async currentRows(tx: RentalBusinessConfigurationTransaction, scope: RentalMarketingScope, id?: string): Promise<PlanRow[]> {
+    return tx.$queryRaw<PlanRow[]>(sql`
+      SELECT p.*, v.snapshot AS published FROM rental_marketing_plans p
+      LEFT JOIN rental_marketing_plan_versions v ON v.tenantId = p.tenantId AND v.workspaceId = p.workspaceId
+        AND v.planId = p.id AND v.version = p.publishedVersion
+      WHERE p.tenantId = ${scope.tenantId} AND p.workspaceId = ${scope.workspaceId}
+        AND p.categoryCode = ${scope.categoryCode} ${id === undefined ? sql`` : sql`AND p.id = ${id}`}
+      ORDER BY p.updatedAt DESC, p.id ASC`);
+  }
+
+  async list(scope: RentalMarketingScope): Promise<RentalMarketingPlan[]> {
+    assertMarketingAuthority(this.identity(), scope, "read");
+    const identity = requestFingerprint(this.identity());
+    if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
+      throw new ConflictException("营销读取空间已变化");
+    const plans = (await this.currentRows(this.database, scope)).map(decodePlan);
+    assertMarketingAuthority(this.identity(), scope, "read");
+    if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销读取期间身份已变化");
+    return plans;
+  }
+
+  async history(scope: RentalMarketingScope, id: string): Promise<RentalMarketingPlanHistory> {
+    assertMarketingAuthority(this.identity(), scope, "read");
+    const identity = requestFingerprint(this.identity());
+    if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
+      throw new ConflictException("营销读取空间已变化");
+    const rows = await this.currentRows(this.database, scope, id);
+    if (!rows.length) throw new NotFoundException("营销方案不存在");
+    const current = decodePlan(rows[0]);
+    const [versions, events] = await Promise.all([
+      this.database.$queryRaw<Array<{ snapshot: unknown }>>(sql`SELECT snapshot FROM rental_marketing_plan_versions
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND planId = ${id} ORDER BY createdAt ASC, version ASC`),
+      this.database.$queryRaw<Array<Omit<RentalMarketingPlanEvent, "at"> & { createdAt: Date }>>(sql`
+        SELECT id, planId, revision, action, publishedVersion, actorUserId, reason, createdAt FROM rental_marketing_plan_events
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND planId = ${id} ORDER BY revision ASC`)
+    ]);
+    assertMarketingAuthority(this.identity(), scope, "read");
+    if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销历史读取期间身份已变化");
+    return { versions: versions.map(row => parseVersion(row.snapshot, current)),
+      events: events.map(({ createdAt, ...event }) => ({ ...event, publishedVersion: event.publishedVersion ?? undefined, at: createdAt.toISOString() })) };
+  }
+
+  /** 调用方持有原配置事务及品类/空间锁。只提供不可变发布正文与当前适用状态，
+   * 草稿不参加报价，不把运营管理权限施加给客户计价，也不从缓存补缺失版本。 */
+  async configuration(tx: Tx, scope: RentalMarketingScope): Promise<RentalMarketingPlanVersion[]> {
+    const rows = await this.currentRows(tx, scope);
+    if (rows.some(row => row.tenantId !== scope.tenantId || row.workspaceId !== scope.workspaceId
+      || row.categoryCode !== scope.categoryCode) || new Set(rows.map(row => row.id)).size !== rows.length)
+      throw new ConflictException("营销配置来源或方案身份不一致");
+    return rows.map(decodePlan).flatMap(plan => plan.published
+      ? [{ ...plan.published, status: plan.status === "enabled" ? "enabled" as const : "disabled" as const }]
+      : []);
+  }
+
+  private async validateReferences(tx: Tx, scope: RentalMarketingScope, version: RentalMarketingPlanVersion): Promise<void> {
+    const qualifications = [version.qualification, ...version.rules.map(rule => rule.conditions.qualification)];
+    const locationIds = [...new Set(qualifications.flatMap(row => [...(row?.fulfillmentLocationIds ?? []), ...(row?.returnLocationIds ?? [])]))];
+    if (locationIds.length) {
+      const identity = this.identity(), allowed = identity?.locationScope ?? (identity?.staffApi ? identity.staffLocationScope : undefined);
+      if (allowed?.mode === "selected" && locationIds.some(id => !allowed.locationIds.includes(id))
+        || !allowed && identity?.dataScope !== "all" && identity?.dataScope !== "own") throw new ConflictException("营销地点不在当前受权范围");
+      const rows = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_fulfillment_locations
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id IN (${join(locationIds)}) AND status = 'enabled'`);
+      if (rows.length !== locationIds.length || rows.some(row => !locationIds.includes(row.id))) throw new ConflictException("营销规则包含当前空间不可用的履约地点");
+    }
+    const itemIds = [...new Set([...version.applicableItemGroupIds, ...version.rules.flatMap(rule => rule.conditions.applicableItemGroupIds ?? [])])];
+    const pricingIds = [...new Set([...(version.applicablePricingGroupIds ?? []), ...version.rules.flatMap(rule => rule.conditions.applicablePricingGroupIds ?? [])])];
+    if (itemIds.length) {
+      const items = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_item_groups
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id IN (${join(itemIds)}) AND status = 'enabled'`);
+      if (items.length !== itemIds.length) throw new ConflictException("营销规则包含当前空间不可用的商品组");
+    }
+    if (pricingIds.length) {
+      const pricing = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_pricing_groups
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id IN (${join(pricingIds)}) AND status = 'enabled'`);
+      if (pricing.length !== pricingIds.length) throw new ConflictException("营销规则包含当前空间不可用的定价分组");
+    }
+  }
+
+  async write(scope: RentalMarketingScope, expectedBinding: CategoryWriteBinding, action: RentalMarketingAction,
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest | ImportRentalMarketingPlanRequest, id?: string): Promise<RentalMarketingPlan> {
+    // 锁等待前冻结请求，避免调用者在权限或配置读取期间改变待发布规则。
+    scope = structuredClone(scope);
+    expectedBinding = structuredClone(expectedBinding);
+    input = structuredClone(input);
+    assertMarketingOperation(action, input.operationId);
+    const actorUserId = assertMarketingAuthority(this.identity(), scope, action);
+    const identity = requestFingerprint(this.identity());
+    if (!expectedBinding?.categoryVersionId || !Number.isSafeInteger(expectedBinding.adoptionRevision))
+      throw new ServiceUnavailableException("营销写入缺少当前品类绑定依据");
+    if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
+      throw new ConflictException("营销写入空间已变化");
+    const { actions } = this.operations(scope);
+    const key = operationKey(scope, actorUserId, input.operationId);
+    const original = await executeMarketingCommand<OperationResult, Tx>(actions, input.operationId, { tenantId: scope.tenantId, action: operationAction(action), key, fallbackKey: key,
+      request: { tenantId: scope.tenantId, workspaceId: scope.workspaceId, actorUserId, action, id: id ?? null, input },
+      replay: async response => {
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId
+          || identity !== requestFingerprint(this.identity())) throw new ConflictException("营销回读期间身份或空间已变化");
+        return this.originalResult(response, scope, actorUserId, action, input.operationId, id);
+      }, run: async tx => {
+        await this.contacts.lockCategoryBinding(tx, scope.tenantId, scope.workspaceId, expectedBinding, scope.categoryCode);
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销写入期间身份已变化");
+        const rows = id ? await this.currentRows(tx, scope, id) : [];
+        if (id && !rows.length) throw new NotFoundException("营销方案不存在");
+        const current = rows[0] ? decodePlan(rows[0]) : undefined;
+        const at = new Date().toISOString();
+        let imported: RentalMarketingPlan | undefined;
+        if ("sourcePlanId" in input) {
+          if (action !== "save_draft" || id || !this.readLegacy) throw new ConflictException("旧方案转换入口或原读取器不可用");
+          if ((await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
+            WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id = ${legacyMarketingPlanId(scope, input.sourcePlanId)}`)).length)
+            throw new ConflictException("该旧方案已建立营销草稿，请沿原方案继续编辑");
+          const source = await this.readLegacy(tx, scope, input.sourcePlanId);
+          if (!source) throw new NotFoundException("当前空间的旧优惠方案不存在");
+          imported = prepareLegacyMarketingImport(scope, source, input, at);
+        }
+        const next = imported ?? (action === "save_draft"
+          ? prepareMarketingDraft(scope, { ...input as SaveRentalMarketingPlanDraftRequest, id }, current, at)
+          : current ? transitionMarketingPlan(current, action, input, at) : undefined);
+        if (!next) throw new NotFoundException("营销方案不存在");
+        if (action === "save_draft" || action === "publish") await this.validateReferences(tx, scope, action === "save_draft" ? next.draft! : next.published!);
+        const duplicate = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
+          WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND code = ${next.code} AND id <> ${next.id}`);
+        if (duplicate.length) throw new ConflictException("营销方案编码已存在");
+        const draft = next.draft ? JSON.stringify(next.draft) : null;
+        if (!current) {
+          await tx.$executeRaw(sql`INSERT INTO rental_marketing_plans
+            (tenantId, workspaceId, id, categoryCode, code, status, revision, draft, publishedVersion, createdAt, updatedAt)
+            VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${scope.categoryCode}, ${next.code}, ${next.status},
+              ${next.revision}, ${draft}, NULL, ${new Date(at)}, ${new Date(at)})`);
+        } else {
+          const count = await tx.$executeRaw(sql`UPDATE rental_marketing_plans SET status = ${next.status}, revision = ${next.revision},
+            draft = ${draft}, publishedVersion = ${next.published?.version ?? null}, updatedAt = ${new Date(at)}
+            WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id = ${next.id} AND revision = ${input.expectedRevision}`);
+          if (count !== 1) throw new ConflictException("营销方案修订已变化");
+        }
+        if (action === "publish") await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_versions
+          (tenantId, workspaceId, planId, version, snapshot, publishedBy, createdAt)
+          VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${next.published!.version},
+            ${JSON.stringify(next.published)}, ${actorUserId}, ${new Date(at)})`);
+        const event = marketingEvent(next, action, actorUserId, input);
+        await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_events
+          (tenantId, workspaceId, id, planId, revision, action, publishedVersion, actorUserId, reason, createdAt)
+          VALUES (${scope.tenantId}, ${scope.workspaceId}, ${event.id}, ${next.id}, ${next.revision}, ${action},
+            ${event.publishedVersion ?? null}, ${actorUserId}, ${event.reason}, ${new Date(at)})`);
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销提交前身份已变化");
+        return { actorUserId, action, operationId: input.operationId, result: next };
+      }
+    }, async () => {
+      assertMarketingAuthority(this.identity(), scope, action);
+      if (identity !== requestFingerprint(this.identity()) || await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
+        throw new ConflictException("营销原操作身份或空间已变化");
+    });
+    return original.result;
+  }
+}

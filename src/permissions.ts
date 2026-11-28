@@ -3,6 +3,7 @@
 import type { CoreManifest, CorePageDescriptor } from "@rental-os/core-contracts";
 import type { PermissionModule, SystemUserRow } from "@rental-os/platform-contracts";
 import { RENTAL_CORE_ID } from "./core-identity";
+import { ASSET_CONTROL_READ_CODES } from "./asset-controls";
 
 const legacyModules: PermissionModule[] = [
     {
@@ -13,6 +14,9 @@ const legacyModules: PermissionModule[] = [
         { code: "rental-core:catalog:manage", name: "通用商品目录管理" },
         { code: "rental-core:asset:view", name: "通用资产库存查看" },
         { code: "rental-core:asset:manage", name: "通用资产库存管理" },
+        { code: "rental-core:asset:control:manage", name: "人工管控处理", description: "新建、延期、取消与解除人工管控，保留原工单验收前置" },
+        { code: "rental-core:asset:control:configure", name: "人工管控类型配置" },
+        { code: "rental-core:asset:control:emergency", name: "紧急停租", description: "明确确认后记录不可用事实与待处理订单冲突，不自动取消、退款或调车" },
         { code: "rental-core:maintenance:view", name: "养护工单查看", description: "查看归还处置和养护工单" },
         { code: "rental-core:maintenance:manage", name: "养护工单处理", description: "创建、派工、开始和提交养护工单" },
         { code: "rental-core:maintenance:review", name: "养护工单验收", description: "审核养护结果并恢复库存可用状态" },
@@ -54,6 +58,9 @@ const legacyModules: PermissionModule[] = [
         { code: "rental-os:calendar:publish", name: "营业日历发布", description: "发布年度营业日历版本" },
         { code: "rental-os:calendar:view-history", name: "营业日历历史只读", description: "查看历史版本、发布差异、覆盖审计与报价命中的日历依据，不得修改" },
         { code: "rental-os:marketing:manage", name: "行销方案管理" },
+        { code: "rental-os:marketing:view", name: "营销方案读取" },
+        { code: "rental-os:marketing:edit", name: "营销草稿编辑", description: "保存营销方案及规则草稿，不含发布、暂停或结束" },
+        { code: "rental-os:marketing:publish", name: "营销方案发布", description: "发布完整规则版本、暂停或结束营销方案" },
         { code: "rental-os:station:view", name: "履约地点查看" },
         { code: "rental-os:station:manage", name: "履约地点管理" },
         { code: "rental-os:member:view", name: "会员查看" },
@@ -126,11 +133,20 @@ export const RENTAL_PAGE_ACCESS = {
   locations: workspace("rental-os:station:view", "履约地点"),
   "item-groups": workspace("rental-core:catalog:view", "商品目录"),
   assets: workspace("rental-core:asset:view", "资产与库存"),
+  "asset-schedule": workspace("rental-core:asset:view", "资产排班"),
+  "asset-detail": workspace("rental-core:asset:view", "资产详情"),
+  "asset-controls": page("asset-controls", "人工管控中心", "workspace", ASSET_CONTROL_READ_CODES),
   "pricing-groups": workspace("rental-os:price:manage", "定价分组"),
   pricing: workspace("rental-os:price:manage", "价格管理"),
   "pricing-versions": workspace("rental-os:price:manage", "价格版本"),
   "pricing-version-detail": workspace("rental-os:price:manage", "价格版本详情"),
-  discounts: workspace("rental-os:price:manage", "优惠方案"),
+  discounts: page("discounts", "营销方案", "workspace", ["rental-os:marketing:view", "rental-os:marketing:edit",
+    "rental-os:marketing:publish", "rental-os:marketing:manage", "rental-os:price:manage"]),
+  "marketing-plan-detail": page("marketing-plan-detail", "营销方案详情", "workspace", ["rental-os:marketing:view", "rental-os:marketing:edit",
+    "rental-os:marketing:publish", "rental-os:marketing:manage", "rental-os:price:manage"]),
+  "legacy-discounts": workspace("rental-os:price:manage", "旧优惠方案"),
+  "marketing-calendar": page("marketing-calendar", "营销活动日历", "workspace", ["rental-os:marketing:view", "rental-os:marketing:edit",
+    "rental-os:marketing:publish", "rental-os:marketing:manage", "rental-os:price:manage"]),
   coupons: workspace("rental-os:price:manage", "优惠券"),
   services: page("services", "增值服务页面", "workspace", ["rental-os:price:manage"]),
   governance: { ...page("governance", "品类与业务规则页面", "workspace", [
@@ -235,7 +251,8 @@ function scopedUser(input: RentalCorePermissionPrincipal, scope: RentalPermissio
   return user;
 }
 const hasOriginal = (user: SystemUserRow | undefined, code: string, scope: RentalPermissionScope): boolean => Boolean(user
-  && (scope !== "workspace" && user.isPlatformAdmin || user.permissions.includes("*") || user.permissions.includes(code)));
+  && (code === "rental-core:asset:control:emergency" ? user.permissions.includes(code)
+    : scope !== "workspace" && user.isPlatformAdmin || user.permissions.includes("*") || user.permissions.includes(code)));
 
 /** 一一映射原动作；Core 页面准入不能反向换成旧权限码，不能接受任意 rental:* 自授。 */
 export function rentalOriginalPermissionCode(code: string): string | undefined {

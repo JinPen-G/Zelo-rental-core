@@ -192,3 +192,29 @@ export function businessTimeOfDay(iso: string, timeZone: string): string {
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
   return `${get("hour")}:${get("minute")}`;
 }
+
+const localDateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+/** 日期控件只编辑营业当地挂钟值；传输仍用明确偏移的绝对时刻。 */
+export function businessLocalDateTime(instant: string, timeZone: string): string {
+  let formatter = localDateTimeFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit",
+      day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    localDateTimeFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(new Date(instant));
+  const part = (key: string) => parts.find(row => row.type === key)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+/** DST缺口没有解、回拨时可能两个解；调用者不能静默选择其中一个。 */
+export function businessInstantsFromLocal(value: string, timeZone: string): string[] {
+  if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(value)
+    || !isCalendarDateKey(value.slice(0, 10)) || !isValidTimeZone(timeZone)) return [];
+  const naive = Date.parse(`${value}Z`), offsets = new Set<number>();
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const at = naive + hours * 3_600_000;
+    offsets.add(Date.parse(`${businessLocalDateTime(new Date(at).toISOString(), timeZone)}Z`) - at);
+  }
+  return [...offsets].map(offset => new Date(naive - offset).toISOString())
+    .filter(at => businessLocalDateTime(at, timeZone) === value).sort();
+}

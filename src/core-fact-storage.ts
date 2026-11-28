@@ -19,7 +19,7 @@ export type RentalCoreFactTransaction = RentalCategoryWriteTransaction & {
   rentalOrderLine: Pick<Prisma.TransactionClient["rentalOrderLine"], "create" | "findUnique" | "update">;
   rentalReservation: Pick<Prisma.TransactionClient["rentalReservation"], "create" | "findMany" | "findUnique" | "update">;
   rentalStockLedgerEntry: Pick<Prisma.TransactionClient["rentalStockLedgerEntry"], "create" | "findFirst" | "findMany">;
-  rentalItemGroup: Pick<Prisma.TransactionClient["rentalItemGroup"], "findFirst">;
+  rentalItemGroup: Pick<Prisma.TransactionClient["rentalItemGroup"], "findFirst" | "findMany">;
   rentalFulfillmentLocation: Pick<Prisma.TransactionClient["rentalFulfillmentLocation"], "findFirst" | "findMany">;
   rentalStockBalance: Pick<Prisma.TransactionClient["rentalStockBalance"], "create" | "findFirst" | "findMany" | "findUnique" | "update" | "updateMany" | "upsert">;
   rentalStockDisposition: Pick<Prisma.TransactionClient["rentalStockDisposition"], "findFirst" | "findMany" | "updateMany" | "upsert">;
@@ -31,7 +31,7 @@ export type RentalCoreFactTransaction = RentalCategoryWriteTransaction & {
 
 export type RentalCoreFactStorage<TTransaction extends RentalCoreFactTransaction> = TTransaction & {
   $transaction<T>(run: (transaction: TTransaction) => Promise<T>,
-    options?: { isolationLevel: "ReadCommitted" }): Promise<T>;
+    options?: { isolationLevel: "ReadCommitted" | "RepeatableRead" }): Promise<T>;
 };
 
 export interface RentalCoreFactContacts<TTransaction extends RentalCoreFactTransaction>

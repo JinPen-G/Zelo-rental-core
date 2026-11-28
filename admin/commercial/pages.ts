@@ -40,9 +40,24 @@ export const RENTAL_COMMERCIAL_PAGES = {
   discounts: {
     id: "discounts",
     path: "/discounts",
-    title: { default: "优惠方案", translations: { "en-US": "Discounts" } },
+    title: { default: "营销方案", translations: { "en-US": "Marketing plans" } },
     permissions: rentalPagePermissions("discounts"),
     menu: { group: commercialGroup, order: 20 },
+  },
+  marketingPlanDetail: {
+    id: "marketing-plan-detail", path: "/discounts/plans/:planId", parent: "discounts",
+    title: { default: "营销方案详情", translations: { "en-US": "Marketing plan details" } },
+    permissions: rentalPagePermissions("marketing-plan-detail"),
+  },
+  legacyDiscounts: {
+    id: "legacy-discounts", path: "/discounts/legacy", parent: "discounts",
+    title: { default: "旧优惠方案", translations: { "en-US": "Legacy discounts" } },
+    permissions: rentalPagePermissions("legacy-discounts"),
+  },
+  marketingCalendar: {
+    id: "marketing-calendar", path: "/discounts/calendar", parent: "discounts",
+    title: { default: "营销活动日历", translations: { "en-US": "Marketing schedule" } },
+    permissions: rentalPagePermissions("marketing-calendar"),
   },
   coupons: {
     id: "coupons",

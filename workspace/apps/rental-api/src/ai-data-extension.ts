@@ -41,16 +41,21 @@ export const RENTAL_AI_EXTENSION_PREREQUISITES = {
   rental: { minInclusive: "0.1.0", maxExclusive: "0.1.2",
     initial: { id: "rental.20261119030000-initial", sha256: "59e69aadf4db0138561ec9233955941da32a2f27f576583bd7915b9f1a7d05ae" } }
 } as const;
-/** Version selects the release precondition, never a rewrite of the data version or SQL. */
-export function rentalAiExtensionPrerequisites(release: CorePlatformDataCapabilityRelease) {
+/** Keep old lock requirements intact; the additive operations data has its own
+ * bounded compatibility entry. Full migration hashes and physical plans remain mandatory. */
+export function rentalAiExtensionPrerequisites(release: CorePlatformDataCapabilityRelease, rentalDataVersion = "0.1.1") {
   if (release.id !== "ai-native" || release.data.version !== PUBLIC_AI_DATA_VERSION)
     throw new Error("Rental AI 扩展缺少已核的公共数据版本");
-  if (release.version === "0.2.0") return RENTAL_AI_EXTENSION_PREREQUISITES;
-  if (release.version === "0.2.2") return { ...RENTAL_AI_EXTENSION_PREREQUISITES,
-    publicAi: { minInclusive: "0.2.2", maxExclusive: "0.2.3" } } as const;
-  if (release.version === "0.2.4") return { ...RENTAL_AI_EXTENSION_PREREQUISITES,
-    publicAi: { minInclusive: "0.2.4", maxExclusive: "0.2.5" } } as const;
-  throw new Error("Rental AI 扩展不支持该公共数据发行");
+  const prerequisites = release.version === "0.2.0" ? RENTAL_AI_EXTENSION_PREREQUISITES
+    : release.version === "0.2.2" ? { ...RENTAL_AI_EXTENSION_PREREQUISITES,
+      publicAi: { minInclusive: "0.2.2", maxExclusive: "0.2.3" } } as const
+    : release.version === "0.2.4" ? { ...RENTAL_AI_EXTENSION_PREREQUISITES,
+      publicAi: { minInclusive: "0.2.4", maxExclusive: "0.2.5" } } as const : undefined;
+  if (!prerequisites) throw new Error("Rental AI 扩展不支持该公共数据发行");
+  if (isCoreVersionSupported(rentalDataVersion, RENTAL_AI_EXTENSION_PREREQUISITES.rental)) return prerequisites;
+  if (rentalDataVersion === "0.1.4") return { ...prerequisites,
+    rental: { ...prerequisites.rental, minInclusive: "0.1.4", maxExclusive: "0.1.5" } } as const;
+  throw new Error("Rental AI 扩展不支持该 Rental 数据版本");
 }
 
 const rentalRelations = {
@@ -186,7 +191,10 @@ export function composeRentalPublicAiPrismaSchema(base: string, ai: PublicAiData
 /** Observe the public tables with their selected keys and the Rental-owned
  * tables separately. Registration of the extension's receipt needs the host's
  * ordered deployment contract; physical evidence alone cannot mark it applied. */
-export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension: RentalAiDataExtension, release?: CorePlatformDataCapabilityRelease) {
+export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension: RentalAiDataExtension,
+  release?: CorePlatformDataCapabilityRelease, rentalDataVersion = "0.1.1") {
+  if (!release && !isCoreVersionSupported(rentalDataVersion, RENTAL_AI_EXTENSION_PREREQUISITES.rental))
+    throw new Error("Rental 新数据版本的 AI 物理计划缺少固定公共发行");
   assertRentalAiDataExtension(extension);
   const created = new Set<string>(), own: string[] = [], keys: MysqlForeignKeyExtension[] = [];
   for (const sql of mysqlMigrationStatements(extension.sql)) {
@@ -201,7 +209,7 @@ export function createRentalAiMysqlPlans(ai: PublicAiDataContribution, extension
     publicAi: createPublicAiMysqlDataPlan(ai, keys),
     extension: {
       installation: "fresh-public" as const, owner: extension.owner, migration: { ...RENTAL_AI_EXTENSION_MIGRATION },
-      prerequisites: structuredClone(release ? rentalAiExtensionPrerequisites(release) : RENTAL_AI_EXTENSION_PREREQUISITES), sql: extension.sql,
+      prerequisites: structuredClone(release ? rentalAiExtensionPrerequisites(release, rentalDataVersion) : RENTAL_AI_EXTENSION_PREREQUISITES), sql: extension.sql,
       readPhysical: (database: Pick<CoreHostSqlTransaction, "$queryRaw">) => readMysqlPhysicalData(database, expected, PUBLIC_AI_DATA_VERSION)
     }
   };
@@ -257,7 +265,7 @@ export function createFreshRentalAiDataObservation(input: {
 
   const { contribution } = readPublicAiDataPackage(input.publicAiFiles, release);
   const [publicMigration] = contribution.data.migrations;
-  const { publicAi, rental } = rentalAiExtensionPrerequisites(release);
+  const { publicAi, rental } = rentalAiExtensionPrerequisites(release, pin.manifest.data.version);
   const { initial, ...rentalVersion } = rental;
   const extensionSource = CoreSourceSchema.parse(input.extension.source);
   if (!isDeepStrictEqual(post.migration, { ...RENTAL_AI_EXTENSION_MIGRATION, source: extensionSource })
@@ -273,7 +281,7 @@ export function createFreshRentalAiDataObservation(input: {
     || !isDeepStrictEqual(input.rental.migrationNames, rentalNames))
     throw new Error("Rental AI 新装原账计划与固定底座或 Rental 不一致");
 
-  const ai = createRentalAiMysqlPlans(contribution, readRentalAiDataExtension(input.extension.files), release);
+  const ai = createRentalAiMysqlPlans(contribution, readRentalAiDataExtension(input.extension.files), release, pin.manifest.data.version);
   const capabilityPlans = [{ capabilityId: release.id, plan: ai.publicAi },
     ...(mcp && input.mcp ? [{ capabilityId: mcp.id, plan: input.mcp }] : [])];
   const basePlans = [input.platform, input.rental, ...capabilityPlans.map(item => item.plan)];
