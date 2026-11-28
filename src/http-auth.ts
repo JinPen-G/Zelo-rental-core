@@ -316,6 +316,7 @@ const originalOrderExecutionRoutes = new Set(([
 
 function requiredPermissions(method: string, path: string) {
   if (method.toUpperCase() === "GET" && path === "/rental/v1/contribution-access") return ["rental-os:order:operate"];
+  if (method.toUpperCase() === "GET" && path === "/rental/v1/contribution-page-access") return ["rental-os:order:view"];
   // Original inspection entry policy is shared with the staff Guard. The action
   // authority still checks the persisted order and pickup/return stage rights.
   const { basePath: recognitionBase, method: recognitionMethod, ...recognitionOperations } = AI_INSPECTION_RECOGNITION_TASK_HTTP_DRAFT;
@@ -1029,7 +1030,7 @@ class RentalApiAuthGuard implements CanActivate {
   async revalidateClientRead(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<RequestLike>();
     const path = matchableRequestPath(request.url), method = request.method.toUpperCase();
-    const get = /^\/client\/v1\/(?:auth\/(?:me|contribution-context)|catalog|my\/orders|orders\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190}(?:\/cancel-receipt|\/fee-items|\/payment-intents\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190})?|quotes\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190}|membership\/(?:corporates|booking-options)|profile(?:\/addresses)?)$/u;
+    const get = /^\/client\/v1\/(?:auth\/(?:me|contribution-context)|contribution-page-access|catalog|my\/orders|orders\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190}(?:\/cancel-receipt|\/fee-items|\/payment-intents\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190})?|quotes\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190}|membership\/(?:corporates|booking-options)|profile(?:\/addresses)?)$/u;
     const post = /^\/client\/v1\/(?:availability|orders\/[A-Za-z0-9][A-Za-z0-9._:-]{0,190}\/cancel\/preview)$/u;
     if (!(method === 'GET' && get.test(path) || method === 'POST' && post.test(path))) {
       throw new ForbiddenException('该接口不是已注册的客户端只读复验入口');

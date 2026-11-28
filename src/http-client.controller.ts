@@ -301,6 +301,15 @@ export class ClientApiController {
     return { allowed: true as const };
   }
 
+  /** 普通页面不借用动作权限或历史恢复声明；外层 Core 门禁与原本人列表范围同时成立。 */
+  @Get("contribution-page-access")
+  async contributionPageAccess(@Req() req: ClientRequest) {
+    const original = structuredClone(currentClient(req));
+    await this.api.listOrders(original, { page: 1, pageSize: 1 });
+    await this.revalidateContributionRead(req, original, "/api/client/v1/contribution-page-access");
+    return { allowed: true as const };
+  }
+
   @Get("orders/:id/cancel-receipt")
   async cancellationReceipt(@Req() req: ClientRequest, @Param("id") id: string) {
     const key = rentalHttpIdempotencyKey(req);

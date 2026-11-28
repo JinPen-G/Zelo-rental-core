@@ -203,6 +203,13 @@ export class RentalCoreController {
     if (!hasPermissionCode(req.user, "rental-os:order:operate")) throw new ForbiddenException("无订单操作权限");
     return { allowed: true as const };
   }
+  /** 只读普通页面准入：沿原订单查看及地点/dataScope 查询，不登记为历史善后。 */
+  @Get("contribution-page-access")
+  async contributionPageAccess(@Req() req: AuthenticatedRequest) {
+    if (!hasPermissionCode(req.user, "rental-os:order:view")) throw new ForbiddenException("无订单查看权限");
+    await this.service.queryOrders(req.user.tenantId, { page: 1, pageSize: 1 });
+    return { allowed: true as const };
+  }
   private readonly notificationLogger = new Logger(RentalCoreController.name);
   constructor(
     @Inject(RENTAL_HTTP_CORE) private readonly service: RentalHttpApplications["core"],

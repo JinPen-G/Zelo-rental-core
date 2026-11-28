@@ -131,16 +131,19 @@ export function createRentalContributionSession(audience: ClientAudience, option
   const action = audience === "client" ? "cancel" : "start";
   const access: ClientAccessPort = { async authorize(input, life) {
     if (input.coreId !== "rental" || !routes.includes(input.routeId) || input.actionId && input.actionId !== action
+      || !["page", "action", "original_receipt"].includes(input.purpose)
       || input.scope.principal.audience !== audience) return { status: "denied" };
     assertOwner(input.scope, life);
     try {
       const observed = await request<RentalClientContributionContext>("/auth/contribution-context", input.scope, life);
       const current = projection(observed);
       if (clientScopeKey(current.scope) !== clientScopeKey(input.scope)) { publish(current); throw new ClientError("stale"); }
-      // 历史读取走原订单读门禁；动作另核普通 Core 准入，停用时不以历史许可执行新动作。
-      await request(input.purpose === "action"
-        ? (audience === "client" ? "/contribution-access" : "/rental/v1/contribution-access")
-        : (audience === "client" ? "/orders?page=1&pageSize=1" : "/rental/v1/orders?page=1&pageSize=1"), input.scope, life);
+      // 普通页面只核读权但必须经过当前 Core 准入。原收据保留独立历史权限，
+      // 停用页面不能封死未知操作恢复，历史读取也不能反过来授权普通页面或动作。
+      const accessPath = input.purpose === "page" ? "/contribution-page-access"
+        : input.purpose === "action" ? "/contribution-access" : "/orders?page=1&pageSize=1";
+      const result = await request<{ allowed?: boolean }>(`${audience === "client" ? "" : "/rental/v1"}${accessPath}`, input.scope, life);
+      if (input.purpose !== "original_receipt" && result?.allowed !== true) return { status: "unavailable" };
       return { status: "allowed" };
     } catch (error) {
       life.assertCurrent();

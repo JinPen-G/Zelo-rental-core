@@ -30,7 +30,7 @@ const operations = createClientOperations(runtime, operationStore);
 
 客户不要求企业关系。取消沿原会员资格、订单归属、取消费与事务规则。员工要求原 `rental-os:order:view` 读权限及 `rental-os:order:operate` 动作权限，继续受租户、空间、地点和 dataScope 约束；员工分面仅允许带原键的 `start`，未连带开放完成、取消服务或退款。列表首期最多展示当前空间 50 笔，不包含跨空间操作和全量搜索。
 
-身份观察为 GET `/api/client/v1/auth/contribution-context`、`/api/staff/v1/auth/contribution-context`。它们从原 Auth/Guard 返回最小主体、空间、会话与权限指纹，不下发原 Session ID 或令牌。页面/收据每次沿原订单读门禁，动作还经 GET `/api/client/v1/contribution-access` 或 `/api/staff/v1/rental/v1/contribution-access` 复核普通 Core 准入；实际写入继续独立校验全部权限。读到历史结果不授予新业务权限。
+身份观察为 GET `/api/client/v1/auth/contribution-context`、`/api/staff/v1/auth/contribution-context`。它们从原 Auth/Guard 返回最小主体、空间、会话与权限指纹，不下发原 Session ID 或令牌。`access.authorize` 按三个目的分别走真实门禁：`page` 请求 GET `/api/client/v1/contribution-page-access` 或 `/api/staff/v1/rental/v1/contribution-page-access`，核当前普通 Core 准入及原本人/员工订单读权和范围，不要求 `canAct` 或 `order:operate`；`action` 请求原 `contribution-access`，复核普通 Core 与当前动作权；`original_receipt` 沿原历史订单读门禁，实际收据再核原操作和对象。普通页面停用不堵住独立善后读取，历史许可也不授权普通直达页。实际页面对象和业务写入继续独立校验原权限、归属与事务条件。
 
 原取消收据只查既有 `order.cancel` 账，要求当前本人订单和原记录都对应同一租户、订单及本人；缺记录返回 `unknown`，当前已取消状态不能替代原收据。员工复用原 `order.service-execution` 账及已存在的只读收据，完成后的原开始凭据仍按原 startAt 核验。原生 SDK 另提供 `createRentalMiniProgramOrdersApi().readCancellationReceipt`、`createRentalStaffOrdersApi().startServiceOccurrence/readServiceExecutionReceipt`。
 
