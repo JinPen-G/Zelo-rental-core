@@ -4,6 +4,10 @@
  * 倍率上界保护直接乘入金额的输入，字段覆盖门禁扫描本实际源码。 */
 import { RENTAL_CURRENCY_CODES, RENTAL_DISCOUNT_TARGETS, RENTAL_DISCOUNT_TYPES, RENTAL_FULFILLMENT_MODES, RENTAL_INSURANCE_PROVIDER_STATUSES, RENTAL_PAYMENT_METHOD_CODES, RENTAL_PRICING_UNIT_CODES, RENTAL_SECURITY_RISK_LEVELS, RENTAL_SERVICE_BILLING_UNITS, RENTAL_SERVICE_SELECTION_MODES, type RentalCurrency, type RentalDayType, type RentalDiscountTarget, type RentalInsuranceProviderStatus, type RentalPricingUnit, type RentalServiceMandatoryRule, type RentalServiceSelectionMode } from "./contracts";
 import type {
+  ChangeRentalMarketingPlanStatusRequest,
+  RentalMarketingRule,
+  RentalMarketingRuleConditions,
+  SaveRentalMarketingPlanDraftRequest,
   ApplyOfficialCalendarSourceRequest,
   PublishRentalCalendarRequest,
   RestoreRentalCalendarVersionRequest,
@@ -34,6 +38,7 @@ import type {
 } from "./contracts";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
@@ -594,6 +599,59 @@ export class SaveRentalPricingPlanDto implements SaveRentalPricingPlanRequest {
 }
 
 /* ---------- 优惠方案 ---------- */
+
+export class RentalMarketingRuleConditionsDto implements RentalMarketingRuleConditions {
+  @IsOptional() @IsNumber() @Min(0) minimumSpend?: number;
+  @IsOptional() @IsIn(CUSTOMER_SCOPES) customerScope?: RentalMarketingRuleConditions["customerScope"];
+  @IsOptional() @IsArray() @IsString({ each: true }) applicableItemGroupIds?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) applicablePricingGroupIds?: string[];
+  @IsOptional() @IsArray() @IsIn(DAY_TYPES, { each: true }) applicableDayTypes?: RentalDayType[];
+  @IsOptional() @IsISO8601() effectiveFrom?: string;
+  @IsOptional() @IsISO8601() effectiveTo?: string;
+}
+
+type MarketingRuleAction = RentalMarketingRule["action"];
+export class RentalMarketingRuleActionDto implements MarketingRuleAction {
+  @IsIn(DISCOUNT_TYPES) type!: RentalMarketingRule["action"]["type"];
+  @IsNumber() @Min(0) value!: number;
+  @IsOptional() @IsNumber() @Min(0) thresholdAmount?: number;
+  @IsOptional() @IsNumber() @Min(0) maximumDiscount?: number;
+}
+
+export class RentalMarketingRuleDraftDto implements Omit<RentalMarketingRule, "version"> {
+  @IsString() @IsNotEmpty() @MaxLength(191) id!: string;
+  @IsString() @IsNotEmpty() @MaxLength(191) name!: string;
+  @IsIn(ENABLE_STATUSES) status!: RentalMarketingRule["status"];
+  @IsInt() @Min(0) priority!: number;
+  @IsObject() @ValidateNested() @Type(() => RentalMarketingRuleConditionsDto) conditions!: RentalMarketingRuleConditionsDto;
+  @IsObject() @ValidateNested() @Type(() => RentalMarketingRuleActionDto) action!: RentalMarketingRuleActionDto;
+}
+
+/** 新保存合同不接受发布状态、版本或授权字段；它只保存草稿。 */
+export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanDraftRequest {
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(191) id?: string;
+  @IsInt() @Min(0) expectedRevision!: number;
+  @IsString() @IsNotEmpty() @MaxLength(191) code!: string;
+  @IsString() @IsNotEmpty() @MaxLength(191) name!: string;
+  @IsIn(["single_rule_v1"]) pricingPolicy!: "single_rule_v1";
+  @IsIn(["rental"]) appliesTo!: "rental";
+  @IsNumber() @Min(0) minimumSpend!: number;
+  @IsIn(CUSTOMER_SCOPES) customerScope!: SaveRentalMarketingPlanDraftRequest["customerScope"];
+  @IsArray() @IsString({ each: true }) applicableItemGroupIds!: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) applicablePricingGroupIds?: string[];
+  @IsArray() @IsIn(DAY_TYPES, { each: true }) applicableDayTypes!: RentalDayType[];
+  @IsInt() @Min(0) priority!: number;
+  @IsISO8601() effectiveFrom!: string;
+  @IsOptional() @IsISO8601() effectiveTo?: string;
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => RentalMarketingRuleDraftDto)
+  rules!: RentalMarketingRuleDraftDto[];
+  @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
+}
+
+export class ChangeRentalMarketingPlanStatusDto implements ChangeRentalMarketingPlanStatusRequest {
+  @IsInt() @Min(1) expectedRevision!: number;
+  @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
+}
 
 export class SaveRentalDiscountPlanDto implements SaveRentalDiscountPlanRequest {
   @IsOptional()

@@ -1,6 +1,7 @@
 /** Rental 原 HTTP 操作单源。宿主挂载、当前权限、事务与原收据仍由原实现裁定。 */
 import { STAFF_UPLOAD_OBSERVATION_HTTP } from "@rental-os/shared";
 import { RENTAL_EXCHANGE_INSPECTION_OPERATIONS } from "./http-openapi-rental-exchange-inspection-preparation.schemas";
+import { RENTAL_MARKETING_OPERATIONS } from "./http-openapi-marketing-schemas";
 import { RENTAL_INTEGRATION_LEDGER_HTTP_OPERATIONS } from "./http-openapi-integration-operations";
 import { ENTERPRISE_COMPONENT_SCHEMAS } from "./http-openapi-enterprise-schemas";
 
@@ -183,6 +184,7 @@ function enterpriseWorkflowOperations(): ContractOperation[] {
 }
 
 export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
+  ...RENTAL_MARKETING_OPERATIONS,
   { method: "get", path: "/api/platform/system-rules", tag: "Platform", operationId: "getSystemRules",
     summary: "Read original tenant system rules; SaaS access remains denied", permissions: ["system:params:manage"], responseSchema: "SystemRulesConfig" },
   { method: "put", path: "/api/platform/system-rules/{sectionKey}", tag: "Platform", operationId: "saveSystemRuleSection",

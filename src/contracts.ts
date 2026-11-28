@@ -3526,6 +3526,53 @@ export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
   rules: RentalMarketingRule[];
 }
 
+export type RentalMarketingPlanStatus = "draft" | "enabled" | "paused" | "ended";
+
+/** 草稿与对客生效正文分开保存；编辑草稿不会改变 published 的原版本。 */
+export interface RentalMarketingPlan {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  categoryCode: RentalCategoryCode;
+  code: string;
+  status: RentalMarketingPlanStatus;
+  revision: number;
+  draft?: RentalMarketingPlanVersion;
+  published?: RentalMarketingPlanVersion;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveRentalMarketingPlanDraftRequest extends Omit<RentalMarketingPlanVersion,
+  "id" | "tenantId" | "workspaceId" | "categoryCode" | "status" | "version" | "rules" | "createdAt" | "updatedAt"> {
+  id?: string;
+  /** 新建为0；修改必须是本次读取到的原修订，不由服务端静默补齐。 */
+  expectedRevision: number;
+  rules: Array<Omit<RentalMarketingRule, "version">>;
+  changeReason: string;
+}
+
+export interface ChangeRentalMarketingPlanStatusRequest {
+  expectedRevision: number;
+  changeReason: string;
+}
+
+export interface RentalMarketingPlanEvent {
+  id: string;
+  planId: string;
+  revision: number;
+  action: "save_draft" | "publish" | "pause" | "end";
+  publishedVersion?: string;
+  actorUserId: string;
+  reason: string;
+  at: string;
+}
+
+export interface RentalMarketingPlanHistory {
+  versions: RentalMarketingPlanVersion[];
+  events: RentalMarketingPlanEvent[];
+}
+
 export interface RentalDiscountPlan {
   id: string;
   tenantId: string;

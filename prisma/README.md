@@ -1,6 +1,6 @@
 # Rental 数据接入
 
-Rental 自己维护121个模型、5个枚举和6张由 raw SQL 仓储使用的换货工作流表。公共账号、角色、授权、配置与台账由底座维护，AI 模型属于可选 AI 模块。业务模型与换货迁移共同构成 Rental 的物理数据范围。[业务模型](schema.prisma) · [换货工作流迁移](migrations/20261125010000_rental_exchange_workflow/migration.sql)
+Rental 自己维护121个模型、5个枚举，以及由 raw SQL 仓储使用的6张换货工作流表和3张营销版本表。公共账号、角色、授权、配置与台账由底座维护，AI 模型属于可选 AI 模块。业务模型与原始迁移共同构成 Rental 的物理数据范围。[业务模型](schema.prisma) · [换货工作流迁移](migrations/20261125010000_rental_exchange_workflow/migration.sql) · [营销版本迁移](migrations/20261128010000_rental_marketing_rules/migration.sql)
 
 ## 组合新宿主
 
@@ -47,6 +47,10 @@ const platformData = createPublicPlatformDataPlan(rental.dataPlan.publicForeignK
 绑定的可读范围继续为 `>=0.1.0 <0.2.0`。在完整的新物理版本和两份迁移收据核定后，原 `dataVersion=0.1.0` 绑定仍沿原经营空间读取就绪状态，保留其授权、配置与绑定修订。部署准入另外要求观察版本等于本版 `0.1.1` 且完整迁移链匹配，未迁移库由该检查拒绝。
 
 旧 Rental `0.1.12` 实现的数据观察会拒绝新增的所属迁移。程序回退须使用经过实际兼容验证的版本，或由部署负责人按备份恢复方案处理数据库与程序组合，原可读范围声明不能作为升级后回退成功的依据。已有混合库的原七份迁移及数据继续沿原链核对，切换独立迁移链须另行核定。
+
+开发源码的数据版本 `0.1.2` 追加[营销版本迁移](migrations/20261128010000_rental_marketing_rules/migration.sql)：`rental_marketing_plans`保存可变草稿及当前发布指针，`rental_marketing_plan_versions`只追加完整发布正文，`rental_marketing_plan_events`按修订记录实际操作者和原因。三表复用原经营空间复合外键，写入在原品类/空间锁事务内校验修订，发布正文没有原地更新入口。[仓储](../src/mysql-marketing-plans.ts)
+
+本迁移只创建新表，没有旧方案/报价/订单/已发券回填，也不会自动启用新计价策略。已发行发现清单继续描述原 `0.2.1` 包；源码迁移尚未执行或发布。上线前须核新表、三份迁移摘要、应用/消费端与权限分配；旧程序会拒绝未知迁移，不能以直接回退二进制代替已核定的成对回退。需要回退时保留新方案与版本原文，并沿部署负责人批准的备份/恢复流程处理，不自动删表或改原账。
 
 Rental 数据版本、可读范围、迁移 ID、包内路径和原文摘要由同一[发行声明](../src/data.ts)提供。包内目录名定位 SQL；部署目录及原账名称使用公共 `corePrismaMigrationName`，与 `deploymentMigrationNames` 保持一致。已应用 SQL 不因换行、编码或打包变化改写。
 

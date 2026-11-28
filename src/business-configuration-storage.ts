@@ -4,7 +4,7 @@ import type { RentalCategoryDefinition } from "./contracts";
 import type { CategoryWriteBinding } from "./configuration-basis";
 
 export type RentalBusinessConfigurationTransaction = Pick<Prisma.TransactionClient,
-  "$queryRaw" | "rentalBusinessCalendar"
+  "$queryRaw" | "$executeRaw" | "rentalBusinessCalendar"
   | "rentalCalendarOverrideAuditEntry" | "rentalDiscountPlan" | "rentalNotificationTemplate"
   | "rentalPriceVersion" | "rentalPricingPlan" | "rentalRuleVersion" | "rentalRuleVersionAudit"
   | "rentalValueAddedService" | "rentalValueAddedServiceVersion"> & {

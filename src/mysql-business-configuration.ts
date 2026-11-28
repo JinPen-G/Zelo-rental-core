@@ -28,6 +28,10 @@ import type {
 import { requestFingerprint } from '@rental-os/platform-contracts/request-fingerprint';
 import { RULE_VERSION_ISSUED_STATUSES, type RuleVersionTimelineEntry } from './rule-version-chain';
 import { lockRentalBusinessTenant } from "./mysql-business-fence";
+import { RentalMarketingPlanRepository } from "./mysql-marketing-plans";
+import type { RentalMarketingScope, RentalMarketingAction } from "./marketing-plan";
+import type { RentalMarketingPlan, RentalMarketingPlanHistory, SaveRentalMarketingPlanDraftRequest,
+  ChangeRentalMarketingPlanStatusRequest } from "./contracts";
 
 // 原生成客户端也导出这个runtime单例；类型采用所选schema的官方空值声明。
 const DbNull = objectEnumValues.instances.DbNull as unknown as typeof Prisma.DbNull;
@@ -149,6 +153,10 @@ export interface RentalBusinessConfigStore<TTransaction = RentalBusinessConfigur
   /** A compound write captures only after its complete configuration and price facts. */
   captureOpeningConfiguration?(tenantId: string, tx: TTransaction): Promise<void>;
   upsertDiscountPlan(plan: RentalDiscountPlan, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
+  listMarketingPlans?(scope: RentalMarketingScope): Promise<RentalMarketingPlan[]>;
+  marketingPlanHistory?(scope: RentalMarketingScope, id: string): Promise<RentalMarketingPlanHistory>;
+  writeMarketingPlan?(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string): Promise<RentalMarketingPlan>;
   upsertService(service: RentalValueAddedService, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
   /** Current service admission under the same workspace mutex as service writers. */
   readServicesForExchange?(tenantId: string, workspaceId: string, tx: TTransaction): Promise<RentalValueAddedService[]>;
@@ -238,6 +246,19 @@ export class RentalBusinessConfigRepository<TTransaction extends RentalBusinessC
     private readonly store: RentalBusinessConfigurationStorage<TTransaction>,
     private readonly contacts: RentalBusinessConfigurationContacts<TTransaction>
   ) {}
+
+  listMarketingPlans(scope: RentalMarketingScope) {
+    return new RentalMarketingPlanRepository(this.store, this.contacts).list(scope);
+  }
+
+  marketingPlanHistory(scope: RentalMarketingScope, id: string) {
+    return new RentalMarketingPlanRepository(this.store, this.contacts).history(scope, id);
+  }
+
+  writeMarketingPlan(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
+    input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string) {
+    return new RentalMarketingPlanRepository(this.store, this.contacts).write(scope, binding, action, input, id);
+  }
 
   private async captureOpening(tx: TTransaction, tenantId: string, workspaceId: string) {
     if (!this.contacts.openingConfiguration) return;

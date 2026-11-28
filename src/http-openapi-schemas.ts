@@ -17,6 +17,7 @@ import { ENTERPRISE_ORDER_DELEGATION_SCHEMAS } from "./http-openapi-enterprise-o
 import { RENTAL_ORDER_COMPONENT_SCHEMAS } from "./http-openapi-rental-order-schemas";
 import { RENTAL_ORDER_DOCUMENT_COMPONENT_SCHEMAS } from "./http-openapi-rental-order-document-schemas";
 import { RENTAL_PAYMENT_COMPONENT_SCHEMAS } from "./http-openapi-rental-payment-schemas";
+import { RENTAL_MARKETING_SCHEMAS } from "./http-openapi-marketing-schemas";
 import { JOBS_OPENAPI_SCHEMAS } from "@rental-os/platform-server/jobs";
 import { NOTIFICATIONS_OPENAPI_SCHEMAS } from "@rental-os/platform-server/notifications";
 
@@ -26,6 +27,7 @@ import { aiLeafToOpenApi30 } from "./http-openapi-json-schema";
 import { adminContainerRadiusInput, adminControlRadiusInput, storedAdminRadiusSchema, rentalCategoryCodeSchema, stringSchema, numberSchema, booleanSchema, objectSchema, ref, arrayOf, objectOf, type SchemaObject } from "./http-openapi-contract";
 
 export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
+  ...RENTAL_MARKETING_SCHEMAS,
   ...JOBS_OPENAPI_SCHEMAS,
   ...NOTIFICATIONS_OPENAPI_SCHEMAS,
   ...STAFF_UPLOAD_OBSERVATION_SCHEMAS,

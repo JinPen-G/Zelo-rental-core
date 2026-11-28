@@ -17,6 +17,7 @@ import type { ClientRequestContext } from "./client-context";
 import type { RentalGuardContracts } from "./auth-guard-contracts";
 import { createRentalStaffPolicy } from "./staff-api-policy";
 import { createRentalPlatformAiPolicy } from "./platform-ai-access-policy";
+import { RENTAL_MARKETING_READ_PERMISSIONS, RENTAL_MARKETING_EDIT_PERMISSIONS, RENTAL_MARKETING_PUBLISH_PERMISSIONS } from "./marketing-plan";
 export type RentalGuardDatabase = Pick<PrismaClient, "organizationUnit" | "rentalFulfillmentLocation" | "rentalOrder" | "rentalAsset"
   | "rentalWorkOrder" | "rentalStockDisposition" | "fileUploadSession" | "customerProfile" | "customerCorporateMembership">;
 export interface RentalAuthorizationGuard extends CanActivate {
@@ -807,6 +808,11 @@ function requiredPermissions(method: string, path: string) {
   }
   if (path === "/rental/v1/coupon-templates" || path.startsWith("/rental/v1/coupon-templates/")) {
     return ["rental-os:marketing:manage", "rental-os:price:manage"];
+  }
+  if (path === "/rental/v1/marketing-plans" || path.startsWith("/rental/v1/marketing-plans/")) {
+    if (method === "GET") return [...RENTAL_MARKETING_READ_PERMISSIONS];
+    if (/\/(publish|pause|end)$/u.test(path)) return [...RENTAL_MARKETING_PUBLISH_PERMISSIONS];
+    return [...RENTAL_MARKETING_EDIT_PERMISSIONS];
   }
   if (path.startsWith("/rental/v1/discount-plans") || path.startsWith("/rental/v1/customer-coupons")) {
     return method === "GET" ? ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:view"] : ["rental-os:marketing:manage", "rental-os:price:manage", "rental-os:order:operate"];

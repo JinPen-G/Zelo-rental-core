@@ -30,6 +30,8 @@ import {
   CancelRentalPriceAdjustmentDto,
   RestoreRentalPriceVersionDto,
   SaveRentalDiscountPlanDto,
+  SaveRentalMarketingPlanDraftDto,
+  ChangeRentalMarketingPlanStatusDto,
   SaveRentalNotificationTemplateDto,
   SaveRentalPricingPlanDto,
   SaveRentalRuleVersionDto,
@@ -157,6 +159,28 @@ export class RentalBusinessController {
   @Post("pricing-adjustments/:aid/cancel") async cancelSpacePriceAdjustment(@Req() req: AuthenticatedRequest, @Param("aid") aid: string, @Body() body: CancelRentalPriceAdjustmentDto) { return this.business.cancelSpacePriceAdjustment(req.user.tenantId, (await this.context(req.user.tenantId)), aid, body.reason); }
 
   @Get("discount-plans") async discountPlans(@Req() req: AuthenticatedRequest) { return this.business.listDiscountPlans(req.user.tenantId, (await this.context(req.user.tenantId))); }
+  @Get("marketing-plans") async marketingPlans(@Req() req: AuthenticatedRequest) {
+    return this.business.listMarketingPlans(req.user.tenantId, await this.context(req.user.tenantId));
+  }
+  @Get("marketing-plans/:id/history") async marketingPlanHistory(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
+    return this.business.marketingPlanHistory(req.user.tenantId, await this.context(req.user.tenantId), id);
+  }
+  @Post("marketing-plans") async createMarketingPlan(@Req() req: AuthenticatedRequest, @Body() body: SaveRentalMarketingPlanDraftDto) {
+    if (body.id) throw new BadRequestException("新建营销草稿不能提供已有方案标识");
+    return this.business.saveMarketingPlanDraft(req.user.tenantId, await this.context(req.user.tenantId), body);
+  }
+  @Put("marketing-plans/:id/draft") async saveMarketingPlanDraft(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: SaveRentalMarketingPlanDraftDto) {
+    return this.business.saveMarketingPlanDraft(req.user.tenantId, await this.context(req.user.tenantId), { ...body, id });
+  }
+  @Post("marketing-plans/:id/publish") async publishMarketingPlan(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: ChangeRentalMarketingPlanStatusDto) {
+    return this.business.changeMarketingPlanStatus(req.user.tenantId, await this.context(req.user.tenantId), id, "publish", body);
+  }
+  @Post("marketing-plans/:id/pause") async pauseMarketingPlan(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: ChangeRentalMarketingPlanStatusDto) {
+    return this.business.changeMarketingPlanStatus(req.user.tenantId, await this.context(req.user.tenantId), id, "pause", body);
+  }
+  @Post("marketing-plans/:id/end") async endMarketingPlan(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: ChangeRentalMarketingPlanStatusDto) {
+    return this.business.changeMarketingPlanStatus(req.user.tenantId, await this.context(req.user.tenantId), id, "end", body);
+  }
   @Post("discount-plans") async createDiscountPlan(@Req() req: AuthenticatedRequest, @Body() body: SaveRentalDiscountPlanDto) { return this.committed(req.user.tenantId, await this.business.saveDiscountPlan(req.user.tenantId, (await this.context(req.user.tenantId)), body)); }
   @Put("discount-plans/:id") async updateDiscountPlan(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: SaveRentalDiscountPlanDto) { return this.committed(req.user.tenantId, await this.business.saveDiscountPlan(req.user.tenantId, (await this.context(req.user.tenantId)), { ...body, id })); }
 

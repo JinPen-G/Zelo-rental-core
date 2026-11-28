@@ -6,6 +6,10 @@ import type {
   RentalCouponTemplate,
   RentalCustomerCoupon,
   RentalDiscountPlan,
+  RentalMarketingPlan,
+  RentalMarketingPlanHistory,
+  SaveRentalMarketingPlanDraftRequest,
+  ChangeRentalMarketingPlanStatusRequest,
   RentalPriceAdjustmentPlan,
   RentalPriceAdjustmentPreviewRow,
   RentalPriceVersion,
@@ -100,6 +104,18 @@ export function createRentalCommercialApi(
         data.id ? `/rental/v1/discount-plans/${data.id}` : "/rental/v1/discount-plans",
         { method: data.id ? "put" : "post", data },
       ),
+    marketingPlans: (options?: ReadOptions) => request<RentalMarketingPlan[]>("/rental/v1/marketing-plans", readOptions(options)),
+    marketingPlanHistory: (id: string, options?: ReadOptions) =>
+      request<RentalMarketingPlanHistory>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/history`, readOptions(options)),
+    saveMarketingPlanDraft: (data: SaveRentalMarketingPlanDraftRequest) => request<RentalMarketingPlan>(
+      data.id ? `/rental/v1/marketing-plans/${encodeURIComponent(data.id)}/draft` : "/rental/v1/marketing-plans",
+      { method: data.id ? "put" : "post", data }),
+    publishMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/publish`, { method: "post", data }),
+    pauseMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/pause`, { method: "post", data }),
+    endMarketingPlan: (id: string, data: ChangeRentalMarketingPlanStatusRequest) =>
+      request<RentalMarketingPlan>(`/rental/v1/marketing-plans/${encodeURIComponent(id)}/end`, { method: "post", data }),
     saveValueAddedService: (data: SaveRentalValueAddedServiceRequest) =>
       request<RentalValueAddedService>(
         data.id ? `/rental/v1/value-added-services/${data.id}` : "/rental/v1/value-added-services",

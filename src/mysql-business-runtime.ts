@@ -164,6 +164,8 @@ import { assertTimeBasedOverdueSupported, billedRentalHours, rentalPricingStrate
 import { categoryPricingRuleError } from "./category-pricing-rule-compatibility";
 import { lockActiveCategoryBinding, type CategoryWriteBinding } from "./mysql-category-write";
 import { allocateDiscount, selectDiscountPlans } from "./discount-selection";
+import { assertMarketingAuthority, type RentalMarketingAction } from "./marketing-plan";
+import type { SaveRentalMarketingPlanDraftRequest, ChangeRentalMarketingPlanStatusRequest } from "./contracts";
 import { resolveQuoteServices, resolveExchangeServices } from "./service-catalog";
 import { applyPricingGroupSecurityRateOverrides, computeSecurityAmounts, type SecurityLineInput, type RentalPricingSecurityRateOverride, validateSecurityRateCoverage, validateSecurityRules } from "./security-deposit";
 import { hasOriginalRentalCurrency, roundMoney } from "./money";
@@ -2166,6 +2168,39 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
   }
 
   listDiscountPlans(tenantId: string, context: BusinessContext) { return this.state(tenantId, context).discountPlans; }
+
+  private marketingScope(tenantId: string, context: BusinessContext, action: "read" | RentalMarketingAction) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId), categoryCode: context.category.code };
+    assertMarketingAuthority(getRequestIdentity(), scope, action);
+    return scope;
+  }
+
+  async listMarketingPlans(tenantId: string, context: BusinessContext) {
+    const scope = this.marketingScope(tenantId, context, "read");
+    if (!this.configStore.listMarketingPlans) throw new ServiceUnavailableException("营销方案持久读取不可用");
+    return this.configStore.listMarketingPlans(scope);
+  }
+
+  async marketingPlanHistory(tenantId: string, context: BusinessContext, id: string) {
+    const scope = this.marketingScope(tenantId, context, "read");
+    if (!this.configStore.marketingPlanHistory) throw new ServiceUnavailableException("营销版本历史读取不可用");
+    return this.configStore.marketingPlanHistory(scope, id);
+  }
+
+  async saveMarketingPlanDraft(tenantId: string, context: BusinessContext, input: SaveRentalMarketingPlanDraftRequest) {
+    const scope = this.marketingScope(tenantId, context, "save_draft");
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销草稿持久化或品类依据不可用");
+    return this.configStore.writeMarketingPlan(scope, binding, "save_draft", input, input.id);
+  }
+
+  async changeMarketingPlanStatus(tenantId: string, context: BusinessContext, id: string,
+    action: Exclude<RentalMarketingAction, "save_draft">, input: ChangeRentalMarketingPlanStatusRequest) {
+    const scope = this.marketingScope(tenantId, context, action);
+    const binding = await this.categoryConfigurationBinding(tenantId, context);
+    if (!binding || !this.configStore.writeMarketingPlan) throw new ServiceUnavailableException("营销发布持久化或品类依据不可用");
+    return this.configStore.writeMarketingPlan(scope, binding, action, input, id);
+  }
 
   async saveDiscountPlan(tenantId: string, context: BusinessContext, input: SaveRentalDiscountPlanRequest) {
     const binding = await this.categoryConfigurationBinding(tenantId, context);

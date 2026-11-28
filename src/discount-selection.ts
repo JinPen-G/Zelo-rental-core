@@ -361,7 +361,7 @@ const validDayTypes = (value: unknown): boolean => validIds(value) && value.ever
 const stableCompare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
 
 /** 对受信仓储输入仍做结构检查：坏版本/未知动作不是一条正常的落选规则。 */
-function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
+export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
   if (!plan || plan.pricingPolicy !== RENTAL_SINGLE_MARKETING_RULE_POLICY || plan.appliesTo !== "rental"
     || ![plan.id, plan.tenantId, plan.workspaceId, plan.categoryCode, plan.code, plan.name, plan.version].every(validText)
     || !["draft", "enabled", "disabled"].includes(plan.status)
