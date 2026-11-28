@@ -88,9 +88,16 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
       events: events.map(({ createdAt, ...event }) => ({ ...event, publishedVersion: event.publishedVersion ?? undefined, at: createdAt.toISOString() })) };
   }
 
-  /** 报价已持有原配置事务及空间锁；这里不另开事务或把操作人员管理权限施加给客户报价。 */
-  async configuration(tx: Tx, scope: RentalMarketingScope): Promise<RentalMarketingPlan[]> {
-    return (await this.currentRows(tx, scope)).map(decodePlan);
+  /** 调用方持有原配置事务及品类/空间锁。只提供不可变发布正文与当前适用状态，
+   * 草稿不参加报价，不把运营管理权限施加给客户计价，也不从缓存补缺失版本。 */
+  async configuration(tx: Tx, scope: RentalMarketingScope): Promise<RentalMarketingPlanVersion[]> {
+    const rows = await this.currentRows(tx, scope);
+    if (rows.some(row => row.tenantId !== scope.tenantId || row.workspaceId !== scope.workspaceId
+      || row.categoryCode !== scope.categoryCode) || new Set(rows.map(row => row.id)).size !== rows.length)
+      throw new ConflictException("营销配置来源或方案身份不一致");
+    return rows.map(decodePlan).flatMap(plan => plan.published
+      ? [{ ...plan.published, status: plan.status === "enabled" ? "enabled" as const : "disabled" as const }]
+      : []);
   }
 
   private async validateReferences(tx: Tx, scope: RentalMarketingScope, version: RentalMarketingPlanVersion): Promise<void> {

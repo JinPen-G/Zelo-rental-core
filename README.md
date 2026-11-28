@@ -86,6 +86,8 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 `/api/rental/v1/marketing-plans` 提供读取、新建草稿，以及 `/:id/draft` 保存、`/:id/publish` 发布、`/:id/pause` 暂停、`/:id/end` 结束和 `/:id/history` 历史读取。编辑使用 `rental-os:marketing:edit`（兼容原营销/价格管理权），发布动作另需 `rental-os:marketing:publish`；页面准入不代替服务端复核。草稿、不可变发布版本和审计在原品类/空间锁事务中按 `expectedRevision` 提交，编辑草稿不改当前发布正文。见[仓储](src/mysql-marketing-plans.ts)与[开发数据迁移](prisma/README.md#迁移与历史)。
 
+当前配置读取在原品类/空间锁及调用方事务中加载完整营销发布集合，包含规则版本和当前启停状态；草稿不进入计价读模型。报价保存沿原完整配置摘要复核该集合，发布、暂停或规则变化会使旧计算依据失效。旧适配没有提供营销观察时保持明确缺失，不等于已确认空集合；该配置不得回写旧恢复快照。此接线需要本分支追加的数据迁移就绪，读取失败不会回退缓存或原价。正式金额链仍待单规则策略切换及直接消费者接通，不能将配置复核完成当作营销已生效。
+
 新方案尚未接入正式报价、优惠券、后续订单动作和管理页面；原 `selectDiscountPlans` 继续保留历史行为。新增版本表及 HTTP 存储入口不代表计价策略已经启用，部署仍须固定兼容版本并核定增量迁移。
 
 原客户预约来源通过服务器侧 `RentalOrderCreationParticipant` 参加同一次建单事务，在首个 Tenant 锁前取得来源会话权威，并在写入后复核原材料与自然期限；HTTP 请求不能提供参加者或批准。见[建单端口](src/order-confirmation-ports.ts)和[订单确认](src/mysql-order-confirmation.ts)。

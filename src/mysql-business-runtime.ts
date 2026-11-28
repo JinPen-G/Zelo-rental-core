@@ -82,6 +82,7 @@ import {
   type RentalCustomerCoupon,
   type RentalDayType,
   type RentalDiscountPlan,
+  type RentalMarketingPlanVersion,
   type RentalFulfillmentLocation,
   type RentalFulfillmentOperator,
   type RentalItemGroup,
@@ -221,6 +222,8 @@ interface RentalBusinessState {
   categoryCode: RentalCategoryCode;
   pricingPlans: RentalPricingPlanV1[];
   discountPlans: RentalDiscountPlan[];
+  /** 仅来自当前发布配置读取；缺失不能解释为确定没有适用营销。 */
+  marketingPlans?: RentalMarketingPlanVersion[];
   services: RentalValueAddedService[];
   calendars: RentalCalendarYear[];
   ruleVersions: RentalRuleVersion[];
@@ -614,6 +617,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         // 使快照在读路径上静默胜出。
         state.pricingPlans = config.pricingPlans;
         state.discountPlans = config.discountPlans;
+        state.marketingPlans = config.marketingPlans;
         state.services = config.services;
         state.calendars = config.calendars;
         state.ruleVersions = config.ruleVersions;
@@ -713,7 +717,9 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       state.notificationLogs = notifications;
       // Only notification copies are changed. Keep the original writer and
       // other configuration/financial fields; no new save/cleanup operation.
-      await this.stateRepository.saveBusinessState(tenantId, workspaceId, { ...state, notificationLogs: notifications });
+      // 多规则发布正文只从规范化版本表读取，不扩充旧恢复快照的权威集合。
+      const { marketingPlans: _marketingPlans, ...legacyState } = state;
+      await this.stateRepository.saveBusinessState(tenantId, workspaceId, { ...legacyState, notificationLogs: notifications });
     }
   }
 
@@ -4443,6 +4449,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       }
       const state = this.cachedState(tenantId, context, workspaceId);
       Object.assign(state, { pricingPlans: structuredClone(snapshot.pricingPlans), discountPlans: structuredClone(snapshot.discountPlans),
+        marketingPlans: snapshot.marketingPlans === undefined ? undefined : structuredClone(snapshot.marketingPlans),
         services: structuredClone(snapshot.services), calendars: structuredClone(snapshot.calendars), ruleVersions: structuredClone(snapshot.ruleVersions),
         notificationTemplates: structuredClone(snapshot.notificationTemplates), configPersisted: true });
       return consume(state);
@@ -5812,7 +5819,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
    * an entire history is neither a configuration read nor a new quote basis. */
   private captureQuoteConfiguration(state: RentalBusinessState, couponId?: string): RentalBusinessState {
     return { ...state, ...structuredClone({ pricingPlans: state.pricingPlans,
-      discountPlans: state.discountPlans, services: state.services, calendars: state.calendars,
+      discountPlans: state.discountPlans, marketingPlans: state.marketingPlans, services: state.services, calendars: state.calendars,
       ruleVersions: state.ruleVersions, notificationTemplates: state.notificationTemplates,
       customerCoupons: state.customerCoupons.filter(row => row.id === couponId) }) };
   }
