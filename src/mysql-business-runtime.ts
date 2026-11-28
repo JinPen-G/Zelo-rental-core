@@ -170,7 +170,7 @@ import { allocateDiscount, selectDiscountPlans, selectMarketingRule, RentalMarke
   type RentalMarketingContext } from "./discount-selection";
 import { assertMarketingPricingPolicy } from "./mysql-marketing-pricing-policy";
 import { originalMarketingPlan, isSingleRuleEvaluation } from "./marketing-quote-history";
-import type { RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest, RentalMarketingPricingLine } from "./contracts";
+import type { RentalMarketingPricingPolicy, ChangeRentalMarketingPricingPolicyRequest, RentalMarketingPricingLine, RentalMarketingQualificationSnapshot } from "./contracts";
 import { assertMarketingAuthority, type RentalMarketingAction } from "./marketing-plan";
 import type { SaveRentalMarketingPlanDraftRequest, ImportRentalMarketingPlanRequest, ChangeRentalMarketingPlanStatusRequest, RentalMarketingScheduleQuery } from "./contracts";
 import { buildMarketingSchedule, marketingScheduleRange } from "./marketing-schedule";
@@ -6329,12 +6329,19 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     if (state.marketingPricingPolicy) assertMarketingPricingPolicy(state.marketingPricingPolicy,
       { tenantId, workspaceId: this.workspaceOf(tenantId) });
     const usesSingleRule = state.marketingPricingPolicy?.policy === "single_rule_v1";
+    const marketingQualification: RentalMarketingQualificationSnapshot = {
+      version: "rental-marketing-qualification-1", evaluatedAt: stamp(), timeZone: quoteTimeZone,
+      rentalStartAt: input.startAt, rentalEndAt: input.endAt, fulfillmentMode: input.fulfillmentMode,
+      fulfillmentLocationId: input.fulfillmentLocationId, returnLocationId: input.returnLocationId ?? input.fulfillmentLocationId,
+      audience: sourceSnapshot?.audience
+    };
     const marketingSelection = usesSingleRule ? (() => {
       if (!state.marketingPlans) throw new ServiceUnavailableException("新营销策略缺少完整已发布规则读取结果");
       try { return selectMarketingRule(state.marketingPlans, { ...discountContext, tenantId,
         categoryCode: context.category.code,
         itemGroupIds: [...new Set(discountContext.itemGroupIds)], pricingGroupIds: [...new Set(discountContext.pricingGroupIds)],
         rentalLines: marketingRentalLines,
+        qualification: marketingQualification,
         membershipEligibility: resolvedMembership ? "member" : input.customerId && !this.memberships ? "unavailable" : "not_member" }); }
       catch (error) {
         if (error instanceof RentalMarketingSelectionError) {
@@ -6762,6 +6769,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         ...(marketingSelection ? { marketing: { policy: marketingSelection.pricingPolicy,
           policyRevision: state.marketingPricingPolicy!.revision, baseRentalAmount: marketingSelection.baseRentalAmount,
           marketingRentalAmount: marketingSelection.marketingRentalAmount, selected: marketingSelection.selected,
+          qualification: structuredClone(marketingQualification),
           rentalLines: structuredClone(marketingRentalLines), dayTypes: [...quotedDayTypes] as RentalDayType[] } } : {}),
         dayRates: structuredClone(planRates.filter(row => row.unit === "day_24h" && hitRates.some(hit => pricingTargetId(hit) === pricingTargetId(row)))) },
       depositAmount,
@@ -9238,6 +9246,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
       try { return selectMarketingRule(adoptedMarketingPlan ? [adoptedMarketingPlan] : [], {
         ...repricingDiscountContext, tenantId, categoryCode: originalQuote.categoryCode,
         membershipEligibility: originalQuote.membershipSnapshot ? "member" : "not_member",
+        qualification: originalQuote.pricingContext?.marketing?.qualification ? { ...structuredClone(originalQuote.pricingContext.marketing.qualification),
+          rentalStartAt: pricingStartAt, rentalEndAt: args.newEndAt } : undefined,
         itemGroupIds: [...new Set(repricingDiscountContext.itemGroupIds)],
         pricingGroupIds: [...new Set(repricingDiscountContext.pricingGroupIds)], rentalLines: fullMarketingLines,
         dayTypes: new Set(this.dayTypesForRange(fullCalendars, pricingStartAt, args.newEndAt, timeZone))
@@ -9421,6 +9431,8 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
             policyRevision: originalQuote.pricingContext!.marketing!.policyRevision,
             baseRentalAmount: repricedMarketing.baseRentalAmount, marketingRentalAmount: repricedMarketing.marketingRentalAmount,
             selected: repricedMarketing.selected, rentalLines: structuredClone(fullMarketingLines),
+            qualification: originalQuote.pricingContext?.marketing?.qualification ? { ...structuredClone(originalQuote.pricingContext.marketing.qualification),
+              rentalStartAt: pricingStartAt, rentalEndAt: args.newEndAt } : undefined,
             dayTypes: this.dayTypesForRange(fullCalendars, pricingStartAt, args.newEndAt, timeZone) as RentalDayType[] } } : {}) },
         previousPayableAmount, recalculatedPayableAmount,
         ...(!lineCancellation ? { balanceBasis: { version: 1 as const,

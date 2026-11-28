@@ -159,6 +159,16 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
   }
 
   private async validateReferences(tx: Tx, scope: RentalMarketingScope, version: RentalMarketingPlanVersion): Promise<void> {
+    const qualifications = [version.qualification, ...version.rules.map(rule => rule.conditions.qualification)];
+    const locationIds = [...new Set(qualifications.flatMap(row => [...(row?.fulfillmentLocationIds ?? []), ...(row?.returnLocationIds ?? [])]))];
+    if (locationIds.length) {
+      const identity = this.identity(), allowed = identity?.locationScope ?? (identity?.staffApi ? identity.staffLocationScope : undefined);
+      if (allowed?.mode === "selected" && locationIds.some(id => !allowed.locationIds.includes(id))
+        || !allowed && identity?.dataScope !== "all" && identity?.dataScope !== "own") throw new ConflictException("营销地点不在当前受权范围");
+      const rows = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_fulfillment_locations
+        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id IN (${join(locationIds)}) AND status = 'enabled'`);
+      if (rows.length !== locationIds.length || rows.some(row => !locationIds.includes(row.id))) throw new ConflictException("营销规则包含当前空间不可用的履约地点");
+    }
     const itemIds = [...new Set([...version.applicableItemGroupIds, ...version.rules.flatMap(rule => rule.conditions.applicableItemGroupIds ?? [])])];
     const pricingIds = [...new Set([...(version.applicablePricingGroupIds ?? []), ...version.rules.flatMap(rule => rule.conditions.applicablePricingGroupIds ?? [])])];
     if (itemIds.length) {
@@ -206,7 +216,8 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
         let imported: RentalMarketingPlan | undefined;
         if ("sourcePlanId" in input) {
           if (action !== "save_draft" || id || !this.readLegacy) throw new ConflictException("旧方案转换入口或原读取器不可用");
-          if ((await this.currentRows(tx, scope, legacyMarketingPlanId(scope, input.sourcePlanId))).length)
+          if ((await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
+            WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id = ${legacyMarketingPlanId(scope, input.sourcePlanId)}`)).length)
             throw new ConflictException("该旧方案已建立营销草稿，请沿原方案继续编辑");
           const source = await this.readLegacy(tx, scope, input.sourcePlanId);
           if (!source) throw new NotFoundException("当前空间的旧优惠方案不存在");

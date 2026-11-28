@@ -85,6 +85,7 @@ export function prepareMarketingDraft(scope: RentalMarketingScope, input: SaveRe
     applicablePricingGroupIds: structuredClone(input.applicablePricingGroupIds ?? []),
     applicableDayTypes: structuredClone(input.applicableDayTypes), priority: input.priority,
     effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo,
+    qualification: structuredClone(input.qualification),
     legacySource: structuredClone(current?.draft?.legacySource ?? current?.published?.legacySource),
     rules: input.rules.map(rule => ({ ...structuredClone(rule), version: `draft-${revision}` })),
     createdAt: current?.createdAt ?? at, updatedAt: at

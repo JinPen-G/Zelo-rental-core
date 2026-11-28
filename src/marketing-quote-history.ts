@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { RentalMarketingPlanVersion, RentalMarketingQuoteDiscountEvaluation, RentalQuoteSnapshotV1 } from "./contracts";
 import { assertMarketingPlan, RentalMarketingSelectionError, selectMarketingRule } from "./discount-selection";
 import { roundMoney } from "./money";
+import { marketingQualificationSnapshotError } from "./marketing-qualification";
 
 export function isSingleRuleEvaluation(value: RentalQuoteSnapshotV1["discountEvaluations"][number]): value is RentalMarketingQuoteDiscountEvaluation {
   return "pricingPolicy" in value && value.pricingPolicy === "single_rule_v1";
@@ -31,6 +32,13 @@ export function originalMarketingPlan(quote: RentalQuoteSnapshotV1, workspaceId:
     return undefined;
   }
   const rows = quote.discountEvaluations as RentalMarketingQuoteDiscountEvaluation[];
+  const basis = saved.qualification;
+  if (basis && (marketingQualificationSnapshotError(basis) || basis.timeZone !== quote.pricingContext!.timeZone
+    || basis.rentalStartAt !== quote.request.startAt || basis.rentalEndAt !== quote.request.endAt
+    || basis.fulfillmentLocationId !== quote.request.fulfillmentLocationId
+    || basis.returnLocationId !== (quote.request.returnLocationId ?? quote.request.fulfillmentLocationId)
+    || basis.fulfillmentMode !== quote.request.fulfillmentMode || basis.audience !== quote.sourceSnapshot?.audience
+    || Date.parse(basis.evaluatedAt) > Date.parse(quote.createdAt))) throw new ConflictException("原营销资格依据与原报价不一致");
   const adopted = rows.filter(row => row.applied);
   if (saved.policy !== "single_rule_v1" || !Number.isSafeInteger(saved.policyRevision) || saved.policyRevision < 1
     || !Array.isArray(saved.rentalLines) || !Array.isArray(saved.dayTypes)
@@ -70,7 +78,7 @@ export function originalMarketingPlan(quote: RentalQuoteSnapshotV1, workspaceId:
       bases: { rental: quote.rentalAmount, fulfillment: quote.fulfillmentAmount, service: quote.serviceAmount },
       minimumSpendBase: quote.rentalAmount, itemGroupIds: [...new Set(saved.rentalLines.map(row => row.itemGroupId))],
       pricingGroupIds: [...new Set(saved.rentalLines.flatMap(row => row.pricingGroupId ? [row.pricingGroupId] : []))],
-      rentalLines: saved.rentalLines, dayTypes: new Set(saved.dayTypes), rentalStartAt: quote.request.startAt });
+      rentalLines: saved.rentalLines, dayTypes: new Set(saved.dayTypes), rentalStartAt: quote.request.startAt, qualification: basis });
     if (!replay.selected || replay.discountByTarget.rental !== quote.discountAmount
       || !isDeepStrictEqual(replay.rentalLineDiscounts, selected.rentalAllocations)
       || selected.discountAmount !== quote.discountAmount) throw new ConflictException("原营销金额或逐行分摊无法复算");

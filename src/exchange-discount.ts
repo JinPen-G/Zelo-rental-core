@@ -226,7 +226,8 @@ function replacementMarketing(evaluation: RentalQuoteDiscountEvaluation, segment
       itemGroupIds: [segment.itemGroupId], pricingGroupIds: segment.pricingGroupId ? [segment.pricingGroupId] : [],
       rentalLines: [{ id: segment.orderLineId, itemGroupId: segment.itemGroupId, pricingGroupId: segment.pricingGroupId,
         amount: gross, quantity: segment.quantity, pricingUnit: segment.rate.unit, billableUnits: original.billableUnits }],
-      rentalStartAt: quote.request.startAt, dayTypes: new Set(quote.pricingContext!.marketing!.dayTypes)
+      rentalStartAt: quote.request.startAt, dayTypes: new Set(quote.pricingContext!.marketing!.dayTypes),
+      qualification: structuredClone(quote.pricingContext!.marketing!.qualification)
     });
     return { amount: Math.min(segment.amount, Math.max(0, roundMoney(result.discountByTarget.rental - consumed))),
       eligible: result.evaluations.length === 1 && result.evaluations[0].eligibility.every(row => row.passed) };

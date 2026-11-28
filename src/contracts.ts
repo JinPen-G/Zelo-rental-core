@@ -3527,6 +3527,35 @@ export interface RentalMarketingRentalDuration {
   maximum?: number;
 }
 
+/** 绝对时间边界包含首尾；日内时段按经营空间营业时区、起含止不含，跨午夜时结束小于开始。 */
+export interface RentalMarketingTimeRange { from?: string; to?: string }
+export interface RentalMarketingQualification {
+  activityWindow?: RentalMarketingTimeRange;
+  bookingWindow?: RentalMarketingTimeRange;
+  /** 完整请求租期须在此范围内；原effectiveFrom/effectiveTo仍只约束租期开始。 */
+  rentalWindow?: RentalMarketingTimeRange;
+  bookingTime?: RentalTimeWindow;
+  rentalStartTime?: RentalTimeWindow;
+  advanceBookingHours?: { minimum?: number; maximum?: number };
+  fulfillmentLocationIds?: string[];
+  returnLocationIds?: string[];
+  fulfillmentModes?: RentalFulfillmentMode[];
+  /** 原认证分面，不把客户网站与小程序猜成两个可信渠道。 */
+  audiences?: Array<"operator" | "staff" | "client">;
+}
+/** 服务端原报价冻结的条件输入；请求体不得提供此对象。 */
+export interface RentalMarketingQualificationSnapshot {
+  version: "rental-marketing-qualification-1";
+  evaluatedAt: string;
+  rentalStartAt: string;
+  rentalEndAt: string;
+  timeZone: string;
+  fulfillmentLocationId: string;
+  returnLocationId: string;
+  fulfillmentMode: RentalFulfillmentMode;
+  audience?: "operator" | "staff" | "client";
+}
+
 /** 规则条件是方案公共范围内的进一步限制，不能覆盖或扩大方案范围。 */
 export interface RentalMarketingRuleConditions {
   minimumSpend?: number;
@@ -3537,6 +3566,7 @@ export interface RentalMarketingRuleConditions {
   effectiveFrom?: string;
   effectiveTo?: string;
   rentalDuration?: RentalMarketingRentalDuration;
+  qualification?: RentalMarketingQualification;
 }
 
 /** 百分比10表示减免10%。fixed_price为每件标的完整请求租期固定租金，
@@ -3564,6 +3594,7 @@ export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
   pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
   workspaceId: string;
   appliesTo: "rental";
+  qualification?: RentalMarketingQualification;
   /** 由显式旧方案转换保存的原版本；后续编辑不得改写此来源。 */
   legacySource?: { importedAt: string; plan: RentalDiscountPlan };
   rules: RentalMarketingRule[];
@@ -3577,6 +3608,7 @@ export interface RentalMarketingScheduleQuery {
   to: string;
   status?: RentalMarketingPlanStatus;
   dayType?: RentalDayType;
+  windowKind?: "activity" | "booking" | "rental";
 }
 export interface RentalMarketingSchedule {
   tenantId: string;
@@ -3598,16 +3630,22 @@ export interface RentalMarketingSchedule {
     ruleName: string;
     ruleVersion: string;
     ruleStatus: "enabled" | "disabled";
-    /** 当前正式模型以发布状态控制活动，effectiveFrom/effectiveTo约束用租开始时点。 */
+    /** 发布状态与活动、下单、用租时间条件分开观察；不代表整单满足资格。 */
     versionKind: "draft" | "published";
     publishedAt?: string;
-    orderTimeWindow: "not_configured";
+    orderTimeWindow: "not_configured" | "configured";
+    windowKind: "activity" | "booking" | "rental";
+    windowFrom?: string;
+    windowTo?: string;
+    clockWindows: RentalTimeWindow[];
+    /** 完整用租期的终点也须满足；rentalStartTo仍是原开始时点上限。 */
+    rentalEndTo?: string;
     rentalStartFrom: string;
     rentalStartTo?: string;
     visibleFrom: string;
     visibleTo: string;
     /** 仅该营业日的条件观察；不能代替整个租期及客群/商品的正式营销命中。 */
-    dayCondition: "allowed" | "excluded";
+    dayCondition: "allowed" | "excluded" | "not_evaluated";
   }>;
 }
 
@@ -3738,6 +3776,7 @@ export const RENTAL_DISCOUNT_SKIP_REASONS = [
   "same_price_lower_priority",
   "rule_not_enabled",
   "rental_duration_mismatch",
+  "qualification_mismatch",
   "zero_discount"
 ] as const;
 export type RentalDiscountSkipReason = (typeof RENTAL_DISCOUNT_SKIP_REASONS)[number];
@@ -6553,6 +6592,8 @@ export interface RentalMarketingPricingSnapshot {
   selected?: { planId: string; planVersion: string; ruleId: string; ruleVersion: string };
   rentalLines: RentalMarketingPricingLine[];
   dayTypes: RentalDayType[];
+  /** 老快照缺省时不补当前时钟、身份或地点；带新条件却缺依据必须拒绝复算。 */
+  qualification?: RentalMarketingQualificationSnapshot;
 }
 
 export interface RentalRepricingContext {

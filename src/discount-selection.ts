@@ -5,6 +5,7 @@ import {
   type RentalMarketingPlanVersion,
   type RentalMarketingRule,
   type RentalMarketingQuoteDiscountEvaluation,
+  type RentalMarketingQualificationSnapshot,
   type RentalDayType,
   type RentalPricingUnit,
   type RentalDiscountPlan,
@@ -12,6 +13,7 @@ import {
   type RentalQuoteDiscountEvaluation
 } from "./contracts";
 import { roundMoney } from "./money";
+import { evaluateMarketingQualification, marketingQualificationError } from "./marketing-qualification";
 
 /**
  * 原优惠策略的资格/叠加计算，以及显式版本的新单规则营销选择。
@@ -348,6 +350,7 @@ export interface RentalMarketingSelection {
 export interface RentalMarketingContext extends Omit<RentalDiscountContext, "hasCustomer" | "rentalLines"> {
   tenantId: string;
   categoryCode: string;
+  qualification?: RentalMarketingQualificationSnapshot;
   /** 由原会员域提供；无法读取不等于确认不是会员。 */
   membershipEligibility: "member" | "not_member" | "unavailable";
   rentalLines: Array<{ id: string; itemGroupId: string; pricingGroupId?: string; amount: number;
@@ -381,6 +384,8 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
     || !Array.isArray(plan.rules) || !plan.rules.length || new Set(plan.rules.map(rule => rule?.id)).size !== plan.rules.length) {
     unavailable("营销方案版本或完整规则集合不可用");
   }
+  const commonQualificationError = marketingQualificationError(plan.qualification);
+  if (commonQualificationError) unavailable(commonQualificationError);
   if (plan.legacySource !== undefined) {
     const source = plan.legacySource?.plan;
     if (!validDate(plan.legacySource?.importedAt) || !source || source.tenantId !== plan.tenantId || source.categoryCode !== plan.categoryCode
@@ -394,7 +399,7 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
       || !Number.isSafeInteger(rule.priority) || rule.priority < 0
       || !condition || typeof condition !== "object" || Array.isArray(condition)
       || Object.keys(condition).some(key => !["minimumSpend", "customerScope", "applicableItemGroupIds",
-        "applicablePricingGroupIds", "applicableDayTypes", "effectiveFrom", "effectiveTo", "rentalDuration"].includes(key))
+        "applicablePricingGroupIds", "applicableDayTypes", "effectiveFrom", "effectiveTo", "rentalDuration", "qualification"].includes(key))
       || !action || typeof action !== "object" || Array.isArray(action)
       || !RENTAL_MARKETING_RULE_ACTIONS.includes(action.type)
       || Object.keys(action).some(key => !["type", "value", "thresholdAmount", "maximumDiscount"].includes(key))
@@ -413,6 +418,8 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
         && Date.parse(condition.effectiveTo) <= Date.parse(condition.effectiveFrom)) {
       unavailable("营销规则条件、动作或版本不可用");
     }
+    const qualificationError = marketingQualificationError(condition.qualification);
+    if (qualificationError) unavailable(qualificationError);
     const duration = condition.rentalDuration;
     if (action.type === "fixed_price" && !duration || duration !== undefined && (
       !duration || typeof duration !== "object" || Array.isArray(duration)
@@ -481,6 +488,11 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
     const common = evaluateEligibility(ruleAsDiscountPlan(plan, rule, true), ctx);
     const effective = ruleAsDiscountPlan(plan, rule, false);
     const individual = evaluateEligibility(effective, ctx);
+    const commonQualification = evaluateMarketingQualification(plan.qualification, context.qualification);
+    const ruleQualification = evaluateMarketingQualification(rule.conditions.qualification, context.qualification);
+    if (commonQualification.unavailable || ruleQualification.unavailable) unavailable(commonQualification.unavailable ?? ruleQualification.unavailable!);
+    if (context.qualification && context.qualification.rentalStartAt !== context.rentalStartAt)
+      unavailable("营销条件与本次租期开始依据不一致");
     const matches = (scope: Pick<RentalMarketingPlanVersion, "applicableItemGroupIds" | "applicablePricingGroupIds">,
       line: typeof lines[number]) => (!scope.applicableItemGroupIds?.length || scope.applicableItemGroupIds.includes(line.itemGroupId))
       && (!scope.applicablePricingGroupIds?.length || Boolean(line.pricingGroupId && scope.applicablePricingGroupIds.includes(line.pricingGroupId)));
@@ -496,6 +508,7 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
         && (duration.maximum === undefined || line.billableUnits <= duration.maximum);
     });
     const skipReason = common.skipReason ?? (!scopedLines.length ? "item_group_mismatch" as const : undefined)
+      ?? ([...commonQualification.eligibility, ...ruleQualification.eligibility].some(row => !row.passed) ? "qualification_mismatch" as const : undefined)
       ?? (duration && !matchedLines.length ? "rental_duration_mismatch" as const : undefined)
       ?? (rule.status !== "enabled" ? "rule_not_enabled" as const : individual.skipReason);
     const base = money(matchedLines.reduce((sum, line) => sum + line.amount, 0));
@@ -518,6 +531,8 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
       : formulaFor(effective, base, candidateAmount);
     return { plan, rule, effective, skipReason, candidateAmount, candidateAllocations, base, formula,
       eligibility: [...common.eligibility.map(row => ({ ...row, rule: `plan.${row.rule}` })),
+        ...commonQualification.eligibility.map(row => ({ ...row, rule: `plan.${row.rule}` })),
+        ...ruleQualification.eligibility.map(row => ({ ...row, rule: `rule.${row.rule}` })),
         { rule: "joint_line_scope", passed: scopedLines.length > 0, detail: scopedLines.map(line => line.id).join(",") },
         ...(duration ? [{ rule: "rule.rental_duration", passed: matchedLines.length > 0,
           detail: `${duration.unit} ${duration.minimum ?? "无下限"}～${duration.maximum ?? "无上限"}` }] : []),

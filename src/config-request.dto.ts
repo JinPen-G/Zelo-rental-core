@@ -602,6 +602,31 @@ export class SaveRentalPricingPlanDto implements SaveRentalPricingPlanRequest {
 
 /* ---------- 优惠方案 ---------- */
 
+export class RentalMarketingTimeRangeDto {
+  @IsOptional() @IsISO8601() from?: string;
+  @IsOptional() @IsISO8601() to?: string;
+}
+export class RentalMarketingClockRangeDto {
+  @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/) start!: string;
+  @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/) end!: string;
+}
+export class RentalMarketingAdvanceHoursDto {
+  @IsOptional() @IsNumber() @Min(0) minimum?: number;
+  @IsOptional() @IsNumber() @Min(0) maximum?: number;
+}
+export class RentalMarketingQualificationDto {
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingTimeRangeDto) activityWindow?: RentalMarketingTimeRangeDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingTimeRangeDto) bookingWindow?: RentalMarketingTimeRangeDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingTimeRangeDto) rentalWindow?: RentalMarketingTimeRangeDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingClockRangeDto) bookingTime?: RentalMarketingClockRangeDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingClockRangeDto) rentalStartTime?: RentalMarketingClockRangeDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingAdvanceHoursDto) advanceBookingHours?: RentalMarketingAdvanceHoursDto;
+  @IsOptional() @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) fulfillmentLocationIds?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) returnLocationIds?: string[];
+  @IsOptional() @IsArray() @IsIn(RENTAL_FULFILLMENT_MODES, { each: true }) fulfillmentModes?: (typeof RENTAL_FULFILLMENT_MODES)[number][];
+  @IsOptional() @IsArray() @IsIn(["operator", "staff", "client"], { each: true }) audiences?: Array<"operator" | "staff" | "client">;
+}
+
 export class RentalMarketingRentalDurationDto {
   @IsIn(RENTAL_MARKETING_DURATION_UNITS) unit!: (typeof RENTAL_MARKETING_DURATION_UNITS)[number];
   @IsOptional() @IsNumber() @Min(0) minimum?: number;
@@ -616,6 +641,7 @@ export class ChangeRentalMarketingPricingPolicyDto implements ChangeRentalMarket
 }
 
 export class RentalMarketingRuleConditionsDto implements RentalMarketingRuleConditions {
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingQualificationDto) qualification?: RentalMarketingQualificationDto;
   @IsOptional() @IsNumber() @Min(0) minimumSpend?: number;
   @IsOptional() @IsIn(CUSTOMER_SCOPES) customerScope?: RentalMarketingRuleConditions["customerScope"];
   @IsOptional() @IsArray() @IsString({ each: true }) applicableItemGroupIds?: string[];
@@ -645,6 +671,7 @@ export class RentalMarketingRuleDraftDto implements Omit<RentalMarketingRule, "v
 
 /** 新保存合同不接受发布状态、版本或授权字段；它只保存草稿。 */
 export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanDraftRequest {
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingQualificationDto) qualification?: RentalMarketingQualificationDto;
   @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(191) id?: string;
   @IsInt() @Min(0) expectedRevision!: number;
@@ -684,6 +711,7 @@ export class ReadRentalMarketingOperationDto {
 }
 
 export class RentalMarketingScheduleQueryDto {
+  @IsOptional() @IsIn(["activity", "booking", "rental"]) windowKind?: "activity" | "booking" | "rental";
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/u) from!: string;
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/u) to!: string;
   @IsOptional() @IsIn(["draft", "enabled", "paused", "ended"]) status?: "draft" | "enabled" | "paused" | "ended";

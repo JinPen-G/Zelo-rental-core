@@ -7,6 +7,8 @@ import { ActionButton, Alert, App, Button, DataTableRowActions, DataTableText, F
   ListFilters, ListSection, Modal, RecordDetailLayout, RecordFacts, SaveButton, Select, Table, Tabs, useListFilter } from "@rental-os/platform-admin/ui";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { Pencil } from "lucide-react";
+import { businessDateKey } from "@rental-os/rental-core/business-day";
+import { marketingWindowLabels } from "./MarketingQualificationFields";
 import { resolveCorePageLocation } from "@rental-os/core-contracts";
 import { rentalPagePermissions } from "@rental-os/rental-core/permissions";
 import { RENTAL_PRICING_UNIT_LABELS, type RentalMarketingPlan, type RentalMarketingPlanVersion, type RentalMarketingPricingPolicy,
@@ -77,12 +79,24 @@ function LegacyImport({ open, nonce, rows, disabled, onSave, onClose, onExited, 
   </Modal>;
 }
 
-function MarketingVersion({ version }: { version: RentalMarketingPlanVersion }) {
+function MarketingVersion({ version, timeZone }: { version: RentalMarketingPlanVersion; timeZone?: string }) {
   const { t, locale } = useLocale();
-  const at = (value?: string) => value ? new Date(value).toLocaleString(locale) : t("未设置");
+  const at = (value?: string) => value ? timeZone ? new Date(value).toLocaleString(locale, { timeZone }) : value : t("未设置");
+  const qualification = (value: RentalMarketingPlanVersion["qualification"]) => value && <RecordFacts items={[
+    ...(["activityWindow", "bookingWindow", "rentalWindow"] as const).map((key, index) => ({ key, label: Object.values(marketingWindowLabels)[index],
+      value: value[key] ? `${at(value[key]?.from)} ～ ${at(value[key]?.to)}` : t("未设置") })),
+    { key: "bookingTime", label: "每日下单时段", value: value.bookingTime ? `${value.bookingTime.start}～${value.bookingTime.end}` : t("未设置") },
+    { key: "rentalTime", label: "每日起租时段", value: value.rentalStartTime ? `${value.rentalStartTime.start}～${value.rentalStartTime.end}` : t("未设置") },
+    { key: "advance", label: "提前预订小时", value: value.advanceBookingHours ? `${value.advanceBookingHours.minimum ?? "—"}～${value.advanceBookingHours.maximum ?? "—"}` : t("未设置") },
+    { key: "pickup", label: "适用领取地点", value: ids(value.fulfillmentLocationIds) },
+    { key: "return", label: "适用归还地点", value: ids(value.returnLocationIds) },
+    { key: "modes", label: "适用履约方式", value: ids(value.fulfillmentModes) },
+    { key: "source", label: "受信下单来源", value: ids(value.audiences) }
+  ]} />;
   const ids = (values?: string[]) => values?.length ? values.join(" · ") : t("全部");
   const dayTypes = (values?: Array<keyof typeof marketingDayLabels>) => values?.length ? values.map(value => t(marketingDayLabels[value])).join(" · ") : t("全部");
   return <>
+    {qualification(version.qualification)}
     {version.legacySource && <Alert type="info" title={t("旧单规则转换来源")}
       description={`${version.legacySource.plan.name} · ${version.legacySource.plan.id} · ${version.legacySource.plan.version}`} />}
     <RecordFacts items={[{ key: "name", label: "方案名称", value: version.name }, { key: "version", label: "版本", value: version.version },
@@ -101,7 +115,7 @@ function MarketingVersion({ version }: { version: RentalMarketingPlanVersion }) 
       { title: t("租期条件"), key: "duration", render: (_, row) => row.conditions.rentalDuration
         ? `${t(RENTAL_PRICING_UNIT_LABELS[row.conditions.rentalDuration.unit])} · ${row.conditions.rentalDuration.minimum ?? "—"}～${row.conditions.rentalDuration.maximum ?? "—"}` : t("未限制") },
       { title: t("同价优先级"), dataIndex: "priority" },
-    ]} expandable={{ expandedRowRender: row => <RecordFacts items={[
+    ]} expandable={{ expandedRowRender: row => <>{qualification(row.conditions.qualification)}<RecordFacts items={[
       { key: "customer", label: "适用客户", value: row.conditions.customerScope ? t(marketingCustomerLabels[row.conditions.customerScope]) : t("沿方案公共条件") },
       { key: "items", label: "适用商品原标识", value: ids(row.conditions.applicableItemGroupIds) },
       { key: "pricing", label: "适用定价分组原标识", value: ids(row.conditions.applicablePricingGroupIds) },
@@ -111,7 +125,7 @@ function MarketingVersion({ version }: { version: RentalMarketingPlanVersion }) 
       { key: "cap", label: "最大减免金额", value: row.action.maximumDiscount ?? t("未设置") },
       { key: "from", label: "用租开始时点下限", value: at(row.conditions.effectiveFrom) },
       { key: "to", label: "用租开始时点上限", value: at(row.conditions.effectiveTo) },
-    ]} /> }} />
+    ]} /></> }} />
   </>;
 }
 
@@ -127,6 +141,8 @@ function MarketingWorkspace() {
   const any = (permissions: typeof editPermissions) => permissions.some(permission => host.canAccess("rental", [permission]));
   const canEdit = any(editPermissions), canPublish = any(publishPermissions), canCatalog = any(catalogPermissions), canPrice = any(pricingReadPermissions);
   const canReadLegacy = any(legacyReadPermissions);
+  const locationPermissions = [{ resource: "station", action: "view" }], canLocations = any(locationPermissions);
+  const [calendarDate] = useState(() => businessDateKey(new Date().toISOString(), "UTC"));
   const assertPermission = (permissions: typeof editPermissions) => { assertRead(); if (!any(permissions)) throw new Error(t("当前操作不可用")); };
   const read = async <Value,>(load: () => Promise<Value>, signal: AbortSignal, check = assertRead) => {
     check(); if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -140,6 +156,11 @@ function MarketingWorkspace() {
     queryFn: ({ signal }) => read(() => api.itemGroups({ signal }), signal, () => assertPermission(catalogPermissions)) });
   const pricing = useQuery({ queryKey: [scope, "marketing-rate-groups", canPrice], enabled: Boolean(scope) && canRead && canPrice,
     queryFn: ({ signal }) => read(() => api.pricingGroups({ signal }), signal, () => assertPermission(pricingReadPermissions)) });
+  const locations = useQuery({ queryKey: [scope, "marketing-locations", canLocations], enabled: Boolean(scope) && canRead && canLocations,
+    queryFn: ({ signal }) => read(() => api.locations({ signal }), signal, () => assertPermission(locationPermissions)) });
+  const calendar = useQuery({ queryKey: [scope, "marketing-business-zone", calendarDate], enabled: Boolean(scope) && canRead,
+    queryFn: ({ signal }) => read(() => api.marketingSchedule({ from: calendarDate, to: calendarDate }, { signal }), signal) });
+  const timeZone = canRead && calendar.isSuccess && !calendar.isError ? calendar.data.timeZone : undefined;
   const planId = host.params?.planId;
   const selected = canRead && !plans.isError ? plans.data?.find(row => row.id === planId) : undefined;
   const history = useQuery({ queryKey: [scope, "marketing-history", planId, selected?.revision], enabled: Boolean(scope && selected && planId) && canRead,
@@ -157,7 +178,7 @@ function MarketingWorkspace() {
   const guarded = async <Value,>(work: () => Promise<Value>): Promise<Value> => { try { return await work(); } catch (error) { report(error); throw error; } };
   const refresh = async () => {
     assertRead();
-    const results = await Promise.all([plans.refetch(), policy.refetch(), ...(planId ? [history.refetch()] : [])]);
+    const results = await Promise.all([plans.refetch(), policy.refetch(), calendar.refetch(), ...(planId ? [history.refetch()] : [])]);
     assertRead(); if (results.some(result => result.isError)) throw new Error(t("营销资料刷新失败，请重试"));
   };
   const navigate = (id?: string) => {
@@ -167,7 +188,7 @@ function MarketingWorkspace() {
   };
   const openEditor = (plan?: RentalMarketingPlan) => {
     assertPermission(editPermissions);
-    if (operation.blocked || plans.isError || !plans.data || plan?.status === "ended") return;
+    if (operation.blocked || plans.isError || !plans.data || plan?.status === "ended" || !timeZone) return;
     setEditing({ open: true, nonce: ++nonce.current, plan: plan ? structuredClone(plan) : undefined });
   };
   const openDecision = (action: Exclude<MarketingAction, "save_draft" | "change_policy">, plan: RentalMarketingPlan) => {
@@ -175,7 +196,7 @@ function MarketingWorkspace() {
     setDecision({ open: true, nonce: ++nonce.current, action, plan: structuredClone(plan) });
   };
   const save = async (values: MarketingDraftValues) => guarded(async () => {
-    if (!editing?.open) throw new Error(t("当前操作不可用"));
+    if (!editing?.open || !timeZone) throw new Error(t("当前操作不可用"));
     const original = editing;
     const result = await operation.run("save_draft", original.plan?.id, original.plan?.revision ?? 0,
       () => assertPermission(editPermissions), operationId => api.saveMarketingPlanDraft({ ...values, operationId,
@@ -211,7 +232,7 @@ function MarketingWorkspace() {
       disabled: operation.blocked || plans.isError, open: () => { assertPermission(editPermissions); assertPermission(legacyReadPermissions); setImporting({ open: true, nonce: ++nonce.current }); } }] : []),
     { id: "marketing-calendar", kind: "navigate", label: { default: "活动日历" }, slot: "tools", to: { coreId: "rental", pageId: "marketing-calendar" } },
     ...(canEdit ? [{ id: "edit-marketing", kind: "open" as const, label: { default: selected ? "编辑草稿" : "新建营销方案" }, emphasis: "primary" as const,
-      disabled: operation.blocked || plans.isError || !plans.data || Boolean(planId && !selected) || selected?.status === "ended",
+      disabled: operation.blocked || plans.isError || !plans.data || !timeZone || Boolean(planId && !selected) || selected?.status === "ended",
       open: () => openEditor(selected) }] : []),
     { id: "refresh-marketing", kind: "command", label: { default: "刷新" }, execute: () => guarded(refresh), pending: plans.isFetching || policy.isFetching },
     ...(planId ? [{ id: "back-marketing", kind: "navigate" as const, label: { default: "返回列表" }, slot: "navigation" as const,
@@ -230,8 +251,8 @@ function MarketingWorkspace() {
     summary={t("基础定价 → 单条最低营销价 → 优惠券")}>{pending}</CorePage>;
   const body = <QueryState loading={plans.isPending} error={plans.error} onRetry={refresh} transitionKey={`${scope}:${planId ?? "list"}`}>
     {planId ? selected ? <Tabs items={[
-      { key: "published", label: t("已发布版本"), children: selected.published ? <MarketingVersion version={selected.published} /> : <Alert type="info" title={t("尚未发布，草稿不参与报价")} /> },
-      ...(selected.draft ? [{ key: "draft", label: t("当前草稿"), children: <MarketingVersion version={selected.draft} /> }] : []),
+      { key: "published", label: t("已发布版本"), children: selected.published ? <MarketingVersion version={selected.published} timeZone={timeZone} /> : <Alert type="info" title={t("尚未发布，草稿不参与报价")} /> },
+      ...(selected.draft ? [{ key: "draft", label: t("当前草稿"), children: <MarketingVersion version={selected.draft} timeZone={timeZone} /> }] : []),
       { key: "preview", label: t("金额试算"), children: <MarketingQuotePreview plans={plans.data ?? []} planId={planId} /> },
       { key: "history", label: t("版本与操作记录"), children: <QueryState loading={history.isPending} error={history.error} onRetry={refresh}>
         {!history.isError && <Table rowKey="id" dataSource={history.data?.events ?? []} pagination={false} columns={[
@@ -239,7 +260,7 @@ function MarketingWorkspace() {
           { title: t("发布版本"), dataIndex: "publishedVersion" }, { title: t("操作者"), dataIndex: "actorUserId" },
           { title: t("原因"), dataIndex: "reason" }, { title: t("时间"), dataIndex: "at", render: value => new Date(value).toLocaleString(locale) },
         ]} expandable={{ rowExpandable: row => Boolean(row.publishedVersion && history.data?.versions.some(version => version.version === row.publishedVersion)),
-          expandedRowRender: row => { const version = history.data?.versions.find(item => item.version === row.publishedVersion); return version ? <MarketingVersion version={version} /> : null; } }} />}
+          expandedRowRender: row => { const version = history.data?.versions.find(item => item.version === row.publishedVersion); return version ? <MarketingVersion version={version} timeZone={timeZone} /> : null; } }} />}
       </QueryState> },
     ]} /> : <Alert type="info" title={t("当前范围内未找到营销方案")} /> : <>
       <QueryState loading={policy.isPending} error={policy.error} onRetry={refresh}>
@@ -256,12 +277,12 @@ function MarketingWorkspace() {
           { title: t("发布版本"), key: "version", render: (_, row) => row.published?.version ?? t("未发布") },
           { title: t("已发布规则数"), key: "rules", render: (_, row) => row.published?.rules.length ?? "—" },
           { title: t("有效期"), key: "range", render: (_, row) => { const version = row.published ?? row.draft; return version ? <DataTableText
-            primary={new Date(version.effectiveFrom).toLocaleString(locale)} secondary={version.effectiveTo ? new Date(version.effectiveTo).toLocaleString(locale) : t("长期有效")} /> : "—"; } },
+            primary={timeZone ? new Date(version.effectiveFrom).toLocaleString(locale, { timeZone }) : version.effectiveFrom} secondary={version.effectiveTo ? timeZone ? new Date(version.effectiveTo).toLocaleString(locale, { timeZone }) : version.effectiveTo : t("长期有效")} /> : "—"; } },
           { title: t("适用范围"), key: "scope", render: (_, row) => { const version = row.published ?? row.draft; return version
             ? t("商品 {items} · 定价组 {groups}", { items: version.applicableItemGroupIds.length || t("全部"), groups: version.applicablePricingGroupIds?.length || t("全部") }) : "—"; } },
           { title: t("修订"), dataIndex: "revision" },
           { title: t("操作"), key: "actions", render: (_, row) => <DataTableRowActions details={() => navigate(row.id)} detailLabel={t("详情")} menuLabel={t("更多操作")}
-            actions={canEdit ? [{ id: "edit", label: t("编辑草稿"), icon: Pencil, disabled: operation.blocked || row.status === "ended", onSelect: () => openEditor(row) }] : []} /> },
+            actions={canEdit ? [{ id: "edit", label: t("编辑草稿"), icon: Pencil, disabled: operation.blocked || row.status === "ended" || !timeZone, onSelect: () => openEditor(row) }] : []} /> },
         ]} />
       </ListSection>
     </>}
@@ -269,10 +290,12 @@ function MarketingWorkspace() {
   return <>
     {canRead ? planId ? <RecordDetailLayout title={selected?.code ?? t("营销方案详情")} header={header} onBack={() => navigate()}
       status={selected && t(marketingStatusLabels[selected.status])}>{body}</RecordDetailLayout> : <>{header}{body}</> : <Alert type="warning" title={t("当前页面不可用")} />}
+    {canRead && calendar.isError && <Alert type="error" title={t("营业时区不可用，时间字段暂不可编辑")} action={<Button onClick={() => calendar.refetch()}>{t("重试")}</Button>} />}
     {canRead && editing && <MarketingPlanEditor key={editing.nonce} open={editing.open} plan={editing.plan}
       references={{ items: canCatalog && items.isSuccess && !items.isError ? items.data.map(row => ({ value: row.id, label: row.name })) : undefined,
-        pricing: canPrice && pricing.isSuccess && !pricing.isError ? pricing.data.map(row => ({ value: row.id, label: row.name })) : undefined }}
-      disabled={!canEdit || operation.blocked || !editing.open} onSave={save} onClose={() => setEditing(current => current ? { ...current, open: false } : current)}
+        pricing: canPrice && pricing.isSuccess && !pricing.isError ? pricing.data.map(row => ({ value: row.id, label: row.name })) : undefined,
+        locations: canLocations && locations.isSuccess && !locations.isError ? locations.data.filter(row => row.status === "enabled").map(row => ({ value: row.id, label: row.name })) : undefined, timeZone }}
+      disabled={!canEdit || operation.blocked || !editing.open || !timeZone} onSave={save} onClose={() => setEditing(current => current ? { ...current, open: false } : current)}
       onExited={() => setEditing(current => current?.open ? current : undefined)} onError={report} />}
     {canRead && decision && <MarketingDecision key={decision.nonce} decision={decision} disabled={!canPublish || operation.blocked}
       onSave={decide} onClose={() => setDecision(current => current ? { ...current, open: false } : current)}

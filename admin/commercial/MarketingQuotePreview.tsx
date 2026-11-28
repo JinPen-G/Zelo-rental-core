@@ -11,8 +11,9 @@ import { RENTAL_PRICING_UNIT_LABELS, formatRentalMoney, type RentalQuoteRequest,
 import { rentalPagePermissions } from "@rental-os/rental-core/permissions";
 import { useRentalCommercialWorkspaceAccess } from "./page-context";
 import { detailFulfillmentLabels } from "../orders/orderDetailPresentation";
+import { marketingDateBinding, marketingInstantValid } from "./marketing-date";
 
-type PreviewValues = Omit<RentalQuoteRequest, "startAt" | "endAt" | "bookingIdentity"> & { rentalRange: [Dayjs, Dayjs]; corporateCustomerId?: string };
+type PreviewValues = Omit<RentalQuoteRequest, "bookingIdentity" | "startAt" | "endAt"> & { rentalRange: [string, string]; corporateCustomerId?: string };
 const quotePermissions = [{ resource: "order", action: "create" }, { resource: "order", action: "operate" }];
 const itemPermissions = [{ resource: "catalog", action: "view" }, { resource: "catalog", action: "manage" }, { resource: "order", action: "view" }, { resource: "order", action: "create" }];
 const settingsPermissions = [{ resource: "rules", action: "manage" }, { resource: "price", action: "manage" }, { resource: "order", action: "view" }, { resource: "order", action: "create" }];
@@ -59,7 +60,7 @@ export function MarketingQuotePreview({ plans, planId }: { plans: RentalMarketin
       const input: RentalQuoteRequest = { ...rest, customerId: rest.customerId || undefined,
         bookingIdentity: rest.customerId && rest.customerType === "personal" ? { bookingIdentity: corporateCustomerId ? "enterprise_employee" : "personal", corporateCustomerId,
           enterpriseContractAndPayer: false } : undefined,
-        startAt: rentalRange[0].toISOString(), endAt: rentalRange[1].toISOString(), services: [] };
+        startAt: rentalRange[0], endAt: rentalRange[1], services: [] };
       const value = await api.previewMarketingQuote(input); assert();
       if (generation === epoch.current) setResult(value);
     } catch (error) {
@@ -82,9 +83,15 @@ export function MarketingQuotePreview({ plans, planId }: { plans: RentalMarketin
         onSubmitCapture={event => { event.preventDefault(); event.stopPropagation(); void submit().catch(() => undefined); }}>
         <FormSection title={t("试算条件")}>
           <Row gutter={16}>
-            <Col xs={24} md={12}><Form.Item name="rentalRange" label={t("租赁时间")} rules={[{ required: true }, { validator: async (_, value?: [Dayjs, Dayjs]) => {
-              if (value?.[0] && value[1] && !value[1].isAfter(value[0])) throw new Error(t("结束时点必须晚于开始时点"));
-            } }]}><DatePicker.RangePicker showTime /></Form.Item></Col>
+            <Col xs={24}><Alert type="info" title={t("营业时区：{zone}", { zone: refs.settings.calendar.timeZone ?? "Asia/Shanghai" })} /></Col>
+            <Col xs={24} md={12}><Form.Item name="rentalRange" label={t("租赁时间")}
+              getValueProps={(value?: [string, string]) => ({ value: value?.map(at => marketingDateBinding(refs.settings.calendar.timeZone ?? "Asia/Shanghai").getValueProps(at).value) })}
+              getValueFromEvent={(value?: [Dayjs | null, Dayjs | null] | null) => value?.map(at => marketingDateBinding(refs.settings.calendar.timeZone ?? "Asia/Shanghai").getValueFromEvent(at))}
+              rules={[{ required: true }, { validator: async (_, value?: [string, string]) => {
+                if (!value?.[0] || !value[1]) throw new Error(t("请选择完整租期"));
+                if (value.some(at => !marketingInstantValid(at))) throw new Error(t("该营业时点不存在或有夏令时歧义，请调整时点"));
+                if (Date.parse(value[1]) <= Date.parse(value[0])) throw new Error(t("结束时点必须晚于开始时点"));
+              } }]}><DatePicker.RangePicker showTime /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="fulfillmentMode" label={t("履约方式")} rules={[{ required: true }]}><Select
               options={refs.settings.fulfillment.enabledModes.map(value => ({ value, label: t(detailFulfillmentLabels[value] ?? value) }))} /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="fulfillmentLocationId" label={t("领取地点")} rules={[{ required: true }]}><Select

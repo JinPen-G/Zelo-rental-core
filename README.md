@@ -86,13 +86,15 @@ Core 停用后，受控宿主可通过 `originalReceiptRead` 登记已有操作�
 
 `/api/rental/v1/marketing-plans` 提供读取、新建草稿，以及 `/:id/draft` 保存、`/:id/publish` 发布、`/:id/pause` 暂停、`/:id/end` 结束和 `/:id/history` 历史读取。编辑使用 `rental-os:marketing:edit`（兼容原营销/价格管理权），发布动作另需 `rental-os:marketing:publish`；页面准入不代替服务端复核。草稿、不可变发布版本和审计在原品类/空间锁事务中按 `expectedRevision` 提交，编辑草稿不改当前发布正文。见[仓储](src/mysql-marketing-plans.ts)与[开发数据迁移](prisma/README.md#迁移与历史)。
 
-营销写入同时要求稳定 `operationId`（1～128位字母、数字、下划线或短横线），通过原 Rental 幂等账与同一业务事务登记结果。同键同请求返回原提交正文，同键不同请求拒绝；后继发布、暂停或结束不覆盖旧操作结果。应答未知时使用 `GET /api/rental/v1/marketing-plans/operations/:operationId?action=save_draft|publish|pause|end` 只读核对。它要求当前营销读取权限及原租户/空间，按当前操作者定位本人原操作，仅返回已提交的方案ID/修订或 `unknown`，无收据不证明可重发。该入口未开放停用Core后的额外善后权限；报价链启用仍按下文边界核定。
+营销写入同时要求稳定 `operationId`（1～128位字母、数字、下划线或短横线），通过原 Rental 幂等账与同一业务事务登记结果。同键同请求返回原提交正文，同键不同请求拒绝；后继发布、暂停或结束不覆盖旧操作结果。应答未知时使用 `GET /api/rental/v1/marketing-plans/operations/:operationId?action=save_draft|publish|pause|end` 只读核对。它要求当前营销读取权限及原租户/空间，按当前操作者定位本人原操作，仅返回已提交的方案ID/修订、原账已提交的 `rejected` 结论或 `unknown`，无收据不证明可重发。该入口未开放停用Core后的额外善后权限；报价链启用仍按下文边界核定。
 
 当前配置读取在原品类/空间锁及调用方事务中加载完整营销发布集合和空间策略；草稿不进入计价读模型。报价保存复核同一配置摘要，发布、暂停、规则或策略修订变化会使旧计算依据失效。旧适配没有提供观察时保持明确缺失，不等于已确认空集合；读取失败不回退缓存或原价。正式配置读取器须同时支持发布集合与策略观察。
 
 `GET/PUT /api/rental/v1/marketing-pricing-policy`读取/显式切换当前空间的`legacy`或`single_rule_v1`，切换需要独立发布权、原`operationId`、`expectedRevision`及原因。未切换空间继续旧模式；新策略只影响之后的新报价：基础租金→一个营销方案的一条规则→原优惠券，不再追加独立会员租金/服务折扣，资格、非金额权益与保证金风控保留。原券的范围、门槛、封顶和营销兼容权益保持。切换的本人原收据由`GET /api/rental/v1/marketing-pricing-policy/operations/:operationId`在当前营销读取权限下核对，未知结果保持`unknown`。
 
 原全租期重算消费[冻结的唯一营销规则](src/marketing-quote-history.ts)，为本次动作保存独立依据；独立新增时段继续原续租计价方式，不自动授予旧优惠。原支持的完整单行换货接入原规则、封顶及券的剩余额度，已履行段不改写，缺少完整联合来源的多行/后继情况仍拒绝自动推算。管理页面已接列表、规则草稿、发布历史、策略切换、同源只读试算与按营业日分组的活动日历；各端消费及完整页面验收仍须按实际环境核定。试算不产生下单凭据，日历不在页面重算命中或直接修改发布正文，见[商业后台](admin/commercial/README.md)。开发数据版本`0.1.3`追加空间策略及履历两表，旧方案/报价不回填、不自动转换；部署须固定兼容版本并核定增量迁移，见[数据说明](prisma/README.md#迁移与历史)。
+
+营销条件同时支持方案公共/规则细分的活动有效期、下单时间窗、完整用租窗、营业日内时段、提前预订小时、领取/归还地点、原履约方式及认证分面。新报价冻结服务端计价时点与原受权地点/来源，历史复算不读取当前条件补证；旧开始时点限制保持原语义。活动日历可分别浏览三类时间窗，按营业时区裁剪跨日及夏令时。管理端仅采集条件及展示原计算结果，见[商业后台说明](admin/commercial/README.md)。
 
 原客户预约来源通过服务器侧 `RentalOrderCreationParticipant` 参加同一次建单事务，在首个 Tenant 锁前取得来源会话权威，并在写入后复核原材料与自然期限；HTTP 请求不能提供参加者或批准。见[建单端口](src/order-confirmation-ports.ts)和[订单确认](src/mysql-order-confirmation.ts)。
 
