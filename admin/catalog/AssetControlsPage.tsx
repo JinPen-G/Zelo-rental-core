@@ -3,14 +3,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Dayjs } from "dayjs";
 import { corePageKey, resolveCorePageLocation, type CorePageLocation } from "@rental-os/core-contracts";
 import { CorePage, QueryState, useCorePageHost, type CoreAdminPageAction } from "@rental-os/platform-admin/core";
 import { useLocale } from "@rental-os/platform-admin/locale";
 import { ActionButton, Alert, App, Button, Checkbox, DataTableStatus, DataTableText, DatePicker, Drawer, Form, Input,
   ListFilterBar, ListFilterItem, ListSection, RecordFacts, SaveButton, Select, Table, Tabs } from "@rental-os/platform-admin/ui";
 import type { RentalAssetControl, RentalAssetControlType, RentalWorkOrderType } from "@rental-os/rental-core";
-import { businessDateKey, businessInstantAt, businessTimeOfDay } from "@rental-os/rental-core/business-day";
+import { businessDateBinding, businessInstantValid } from "../business-date";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import { rentalOrderLocation } from "../orders/pages";
 import { useOrderEditor } from "../orders/useOrderEditor";
@@ -19,18 +18,11 @@ import type { RentalCatalogPageContext } from "./page-context";
 import { createAssetControlRecovery, type AssetControlAction } from "./asset-control-operation";
 import styles from "./AssetSchedulePage.module.css";
 
-interface Values { assetId: string; typeCode: string; startAt?: Dayjs; plannedEndAt?: Dayjs; assigneeId?: string; reason: string; confirmed?: boolean;
+interface Values { assetId: string; typeCode: string; startAt?: string; plannedEndAt?: string; assigneeId?: string; reason: string; confirmed?: boolean;
   code: string; name: string; enabled: boolean; blocksRental: boolean; requiresWorkOrder: boolean; releaseRequiresAcceptance: boolean; workOrderType?: RentalWorkOrderType }
-type Editor = { key: number; action: AssetControlAction; control?: RentalAssetControl; type?: RentalAssetControlType };
+type Editor = { key: number; action: AssetControlAction; timeZone: string; control?: RentalAssetControl; type?: RentalAssetControlType };
 const names = { create: "新建管控", emergency: "紧急停租", extend: "延期管控", cancel: "取消未来管控", release: "解除管控", save_type: "配置管控类型" };
 const statuses = { active: "未解除", cancelled: "已取消", released: "已解除" };
-function instant(value: Dayjs | undefined, zone: string) {
-  if (!value) return undefined;
-  const date = value.format("YYYY-MM-DD"), clock = value.format("HH:mm");
-  const at = new Date(businessInstantAt(date, value.hour(), zone) + value.minute() * 60000).toISOString();
-  if (businessDateKey(at, zone) !== date || businessTimeOfDay(at, zone) !== clock) throw new Error("所选营业时间不存在，请重新选择");
-  return at;
-}
 export function AssetControlsPage(context: RentalCatalogPageContext) {
   return <ControlsBody key={context.scopeKey} {...context} />;
 }
@@ -65,6 +57,10 @@ function ControlsBody(context: RentalCatalogPageContext) {
       assertRead(); return { controls, types, options }; } });
   const data = canRead() && !query.isError ? query.data : undefined, selected = data?.controls.find(row => row.id === detailId);
   const zone = data?.options.timeZone;
+  const timeZoneChanged = Boolean(editor && editor.timeZone !== zone);
+  const validateTime = async (_: unknown, value?: string) => {
+    if (!businessInstantValid(value)) throw new Error(t("该营业时点不存在或有夏令时歧义，请调整时点"));
+  };
   const format = (value?: string) => value && zone ? new Intl.DateTimeFormat(locale, { timeZone: zone, dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : t("时间未定");
   const history = useQuery({ queryKey: ["rental-core", "asset-control-history", scopeKey, selected?.id, selected?.revision], enabled: Boolean(selected) && canRead(), retry: false,
     queryFn: async ({ signal }) => { assertRead(); const rows = await api.assetControlHistory(selected!.id, { signal }); assertRead(); return rows; } });
@@ -91,17 +87,18 @@ function ControlsBody(context: RentalCatalogPageContext) {
     assertWrite(action); if (blocked || !data) return;
     setWriteConflicts(undefined); form.resetFields(); form.setFieldsValue({ assetId: assetFilter, typeCode: data.types.find(row => row.enabled)?.code,
       ...(type ? { ...type } : { enabled: true, blocksRental: true, requiresWorkOrder: true, releaseRequiresAcceptance: true, workOrderType: "repair" as const }) });
-    setEditor({ key: ++sequence.current, action, control, type });
+    setEditor({ key: ++sequence.current, action, timeZone: data.options.timeZone, control, type });
   };
   const error = (error: unknown) => { if (active.current && canRead()) message.error(error instanceof Error ? t(error.message) : t("操作失败")); };
   const edit = useOrderEditor({ form, identity: editor ? `${scopeKey}:${editor.key}` : undefined,
-    disabled: !editor || !canWrite(editor.action) || blocked || !data, onError: error,
+    disabled: !editor || !canWrite(editor.action) || blocked || !data || timeZoneChanged, onError: error,
     onSave: async values => {
-      const original = editor; if (!original || !zone || !data) throw new Error(t("当前操作不可用")); assertWrite(original.action);
+      const original = editor; if (!original || !zone || !data || original.timeZone !== zone) throw new Error(t("当前操作不可用")); assertWrite(original.action);
       const action = original.action, target = action === "save_type" ? values.code : original.control?.id ?? values.assetId;
       const expectedRevision = original.control?.revision ?? original.type?.revision ?? 0;
       // 时间转换、配置与确认校验先于保存派发引用，失败不会留下未发送操作。
-      const plannedEndAt = instant(values.plannedEndAt, zone), startAt = instant(values.startAt, zone);
+      await validateTime(undefined, values.plannedEndAt); await validateTime(undefined, values.startAt);
+      const { plannedEndAt, startAt } = values;
       if (action === "emergency" && values.confirmed !== true) throw new Error(t("请确认紧急停租及冲突处理责任"));
       if (action === "save_type" && values.releaseRequiresAcceptance && !values.requiresWorkOrder) throw new Error(t("需要验收必须关联原工单"));
       const result = await recovery.execute(action, target, expectedRevision, () => assertWrite(action), operationId => {
@@ -185,9 +182,10 @@ function ControlsBody(context: RentalCatalogPageContext) {
       </Drawer>
       <Drawer open={Boolean(editor)} onClose={() => edit.dismiss(() => setEditor(undefined))} title={editor ? t(names[editor.action]) : ""}
         footer={<SaveButton label={t("确认提交")} form={boundForm} pending={edit.busy}
-          disabled={!editor || blocked || !canWrite(editor.action)} onSave={edit.submit} />}>
-        <Form form={form} layout="vertical" {...edit.formProps} disabled={edit.busy || blocked}>
+          disabled={!editor || blocked || !canWrite(editor.action) || timeZoneChanged} onSave={edit.submit} />}>
+        <Form form={form} layout="vertical" {...edit.formProps} disabled={edit.busy || blocked || !editor || !canWrite(editor.action) || timeZoneChanged}>
           <p className={styles.help}>{t("所有时间按营业时区填写")} · {zone}</p>
+          {timeZoneChanged && <Alert type="warning" title={t("营业时区已变化，请保留输入并重新打开编辑")} />}
           {writeConflicts && <><Alert type="warning" title={t("管控与原订单冲突，请先处理后重新读取")} />
             {writeConflicts.available && orderAccess ? <Table rowKey="id" dataSource={writeConflicts.orders} pagination={{ pageSize: 5 }} columns={[
               { title: t("订单编号"), dataIndex: "orderNo" }, { title: t("操作"), render: (_value, row) => <Button onClick={() => navigate(rentalOrderLocation(row.id))}>{t("进入订单处理")}</Button> }
@@ -201,11 +199,14 @@ function ControlsBody(context: RentalCatalogPageContext) {
           </> : <>
             {create && <><Form.Item name="assetId" label={t("车辆或资产")} rules={[{ required: true }]}><Select showSearch optionFilterProp="label" options={data?.options.assets.map(row => ({ value: row.id, label: `${row.assetNo} · ${row.itemGroupName}` }))} onChange={() => form.setFieldValue("assigneeId", undefined)} /></Form.Item>
               <Form.Item name="typeCode" label={t("管控类型")} rules={[{ required: true }]}><Select options={data?.types.filter(row => row.enabled && (editor.action !== "emergency" || row.blocksRental)).map(row => ({ value: row.code, label: t(row.name) }))} onChange={() => form.setFieldValue("assigneeId", undefined)} /></Form.Item>
-              {editor.action === "create" && <Form.Item name="startAt" label={t("未来开始时间")} extra={t("留空由服务端立即开始")}><DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" showNow={false} /></Form.Item>}
+              {editor.action === "create" && <Form.Item name="startAt" label={t("未来开始时间")} extra={t("留空由服务端立即开始")}
+                {...businessDateBinding(editor.timeZone)} rules={[{ validator: validateTime }]}><DatePicker needConfirm showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" showNow={false} /></Form.Item>}
               {type?.requiresWorkOrder && <Form.Item name="assigneeId" label={t("处理人")}><Select allowClear loading={assignees.isFetching} options={!assignees.isError ? assignees.data?.map(row => ({ value: row.id, label: row.displayName })) : []} /></Form.Item>}
               {assignees.isError && <Alert type="warning" title={t("处理人读取失败，可留空稍后沿工单派工")} />}
             </>}
-            {(create || editor?.action === "extend") && <Form.Item name="plannedEndAt" label={t("计划结束")} rules={[{ required: editor?.action === "extend" }]} extra={t("预计结束不自动释放库存")}><DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" showNow={false} /></Form.Item>}
+            {(create || editor?.action === "extend") && <Form.Item name="plannedEndAt" label={t("计划结束")}
+              {...businessDateBinding(editor?.timeZone, editor?.control?.plannedEndAt)} rules={[{ required: editor?.action === "extend" }, { validator: validateTime }]}
+              extra={t("预计结束不自动释放库存")}><DatePicker needConfirm showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" showNow={false} /></Form.Item>}
             {editor?.action === "emergency" && <Form.Item name="confirmed" valuePropName="checked" rules={[{ validator: (_rule, value) => value === true ? Promise.resolve() : Promise.reject(new Error(t("请确认紧急停租及冲突处理责任"))) }]}><Checkbox>{t("确认车辆已不可用；原订单由后续业务动作处理，不自动取消、退款或调车。")}</Checkbox></Form.Item>}
             {editor?.action === "release" && <Alert type="info" title={t("仅解除本条管控，其他限制及订单占用继续有效。")} />}
           </>}

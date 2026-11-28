@@ -3594,6 +3594,9 @@ export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
   pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
   workspaceId: string;
   appliesTo: "rental";
+  /** 对客文案随发布版本及报价冻结；缺省名称沿原name，说明缺省时不补造。 */
+  customerDisplayName?: string;
+  customerDescription?: string;
   qualification?: RentalMarketingQualification;
   /** 由显式旧方案转换保存的原版本；后续编辑不得改写此来源。 */
   legacySource?: { importedAt: string; plan: RentalDiscountPlan };
@@ -3827,6 +3830,8 @@ export interface RentalQuoteDiscountEvaluation {
 
 /** 新策略解释携带完整方案和规则；旧解释/AI投影保留原合同，不能补造这些依据。 */
 export interface RentalMarketingQuoteDiscountEvaluation extends Omit<RentalQuoteDiscountEvaluation, "discountType"> {
+  /** 本次营销发布版本的客户说明，历史展示不得回读当前配置。 */
+  planDescription?: string;
   discountType: (typeof RENTAL_MARKETING_RULE_ACTIONS)[number];
   pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
   marketingPlanSnapshot: RentalMarketingPlanVersion;

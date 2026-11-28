@@ -671,6 +671,8 @@ export class RentalMarketingRuleDraftDto implements Omit<RentalMarketingRule, "v
 
 /** 新保存合同不接受发布状态、版本或授权字段；它只保存草稿。 */
 export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanDraftRequest {
+  @IsOptional() @IsString() @MaxLength(191) customerDisplayName?: string;
+  @IsOptional() @IsString() @MaxLength(2000) customerDescription?: string;
   @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingQualificationDto) qualification?: RentalMarketingQualificationDto;
   @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(191) id?: string;

@@ -6368,6 +6368,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     );
     for (const evaluation of discountSelection.evaluations) {
       if (!evaluation.applied) continue;
+      const description = isSingleRuleEvaluation(evaluation) ? evaluation.planDescription : undefined;
       chargeLines.push({
         code: `discount:${evaluation.planCode}`,
         name: evaluation.planName,
@@ -6376,7 +6377,7 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
         sourceId: evaluation.planId,
         sourceVersion: evaluation.planVersion,
         // 明细直接带上作用对象、基数与公式：客服解释优惠不必再去翻方案配置。
-        detail: `作用于${evaluation.appliesTo}；基数 ${evaluation.base}；${evaluation.formula}`
+        detail: `${description ? `${description}；` : ""}作用于${evaluation.appliesTo}；基数 ${evaluation.base}；${evaluation.formula}`
       });
     }
     const customerCoupon = input.customerCouponId ? this.customerCoupon(state, input.customerCouponId) : undefined;

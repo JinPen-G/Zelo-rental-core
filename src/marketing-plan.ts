@@ -63,6 +63,12 @@ function validateVersion(version: RentalMarketingPlanVersion): void {
     throw new BadRequestException("营销方案最多100条规则，标识和名称不得超过191字");
 }
 
+function customerText(value: unknown, maximum: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length > maximum) throw new BadRequestException("客户展示文案长度或格式无效");
+  return value.trim() || undefined;
+}
+
 export function prepareMarketingDraft(scope: RentalMarketingScope, input: SaveRentalMarketingPlanDraftRequest,
   current: RentalMarketingPlan | undefined, at: string): RentalMarketingPlan {
   assertMarketingRevision(current, input.expectedRevision);
@@ -80,6 +86,8 @@ export function prepareMarketingDraft(scope: RentalMarketingScope, input: SaveRe
   const draft: RentalMarketingPlanVersion = {
     id, ...scope, code: input.code.trim(), name: input.name.trim(), status: "draft", version: `draft-${revision}`,
     pricingPolicy: input.pricingPolicy, appliesTo: input.appliesTo,
+    customerDisplayName: customerText(input.customerDisplayName, 191),
+    customerDescription: customerText(input.customerDescription, 2000),
     minimumSpend: input.minimumSpend, customerScope: input.customerScope,
     applicableItemGroupIds: structuredClone(input.applicableItemGroupIds),
     applicablePricingGroupIds: structuredClone(input.applicablePricingGroupIds ?? []),

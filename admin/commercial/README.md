@@ -84,3 +84,5 @@
 ## 验证入口
 
 现有交互用例读取 Core 调价正文，计价用例核初始费率转换和商业英文词条，品类、导航术语与列表呈现用例读取同一通用页面。类型检查同时覆盖 Core 页面和旧消费者。浏览器、真实 HTTP、对象传输与完整标准装配分别验收。[后台类型配置](<../tsconfig.json>) · [列表交互](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-list-interactions.test.cjs>) · [用量计价](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-usage-pricing-admin.test.cjs>) · [品类对齐](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-category-core-alignment.test.cjs>) · [导航术语](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-navigation-terminology.test.cjs>) · [列表呈现](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/rental-order-list-presentation.test.cjs>)
+
+方案可分别保存内部名称、客户展示名称与纯文本说明；留空展示名称沿原名称。文案随发布版本、报价及费用明细冻结，之后修改不改历史。官网和客户小程序直接消费原报价文案，不按当前方案补造。

@@ -1,5 +1,7 @@
 /** 排班文案并入原 LocaleProvider，不创建独立语言状态。 */
 export const rentalScheduleMessages = {
+  "该营业时点不存在或有夏令时歧义，请调整时点": "This business time does not exist or is ambiguous due to daylight saving. Choose another time.",
+  "营业时区已变化，请保留输入并重新打开编辑": "The business time zone changed. Preserve your input and reopen the editor.",
   "人工管控": "Manual control", "人工管控中心": "Asset controls", "逾期未解除": "Overdue, not released", "管控峰值": "Control peak",
   "管控与原订单冲突，请先处理后重新读取": "This control conflicts with existing orders. Resolve them and reload.",
   "新建管控": "Create control", "紧急停租": "Emergency hold", "延期管控": "Extend control", "取消未来管控": "Cancel future control",

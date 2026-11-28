@@ -24,6 +24,8 @@ const conditions = { minimumSpend: money, customerScope: scope, applicableItemGr
 const rule = { id, name: id, status: { type: "string", enum: ["enabled", "disabled"] } as SchemaObject,
   priority: revision, conditions: ref("RentalMarketingRuleConditions"), action: ref("RentalMarketingRuleAction") };
 const common = { code: id, name: id, pricingPolicy: { type: "string", enum: [RENTAL_SINGLE_MARKETING_RULE_POLICY] } as SchemaObject,
+  customerDisplayName: { type: "string", maxLength: 191 } as SchemaObject,
+  customerDescription: { type: "string", maxLength: 2000 } as SchemaObject,
   appliesTo: { type: "string", enum: ["rental"] } as SchemaObject, ...conditions, qualification: ref("RentalMarketingQualification"), priority: revision };
 const commonRequired = ["code", "name", "pricingPolicy", "appliesTo", "minimumSpend", "customerScope",
   "applicableItemGroupIds", "applicableDayTypes", "priority", "effectiveFrom"];

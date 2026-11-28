@@ -100,6 +100,8 @@ function MarketingVersion({ version, timeZone }: { version: RentalMarketingPlanV
     {version.legacySource && <Alert type="info" title={t("旧单规则转换来源")}
       description={`${version.legacySource.plan.name} · ${version.legacySource.plan.id} · ${version.legacySource.plan.version}`} />}
     <RecordFacts items={[{ key: "name", label: "方案名称", value: version.name }, { key: "version", label: "版本", value: version.version },
+      { key: "customerName", label: "客户展示名称", value: version.customerDisplayName ?? version.name },
+      { key: "customerDescription", label: "客户展示说明", value: version.customerDescription ?? t("未设置") },
       { key: "start", label: "用租开始时点下限", value: at(version.effectiveFrom) }, { key: "end", label: "用租开始时点上限", value: at(version.effectiveTo) },
       { key: "customer", label: "适用客户", value: t(marketingCustomerLabels[version.customerScope]) },
       { key: "items", label: "适用商品原标识", value: ids(version.applicableItemGroupIds) },

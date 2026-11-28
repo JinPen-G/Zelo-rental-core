@@ -24,6 +24,7 @@ export const newMarketingRule = (): MarketingDraftValues["rules"][number] => ({ 
 export function marketingDraftValues(plan?: RentalMarketingPlan): MarketingDraftValues {
   const original = plan?.draft ?? plan?.published;
   return original ? { code: original.code, name: original.name, pricingPolicy: "single_rule_v1", appliesTo: "rental",
+    customerDisplayName: original.customerDisplayName, customerDescription: original.customerDescription,
     minimumSpend: original.minimumSpend, customerScope: original.customerScope, applicableItemGroupIds: [...original.applicableItemGroupIds],
     applicablePricingGroupIds: [...(original.applicablePricingGroupIds ?? [])], applicableDayTypes: [...original.applicableDayTypes],
     priority: original.priority, effectiveFrom: original.effectiveFrom, effectiveTo: original.effectiveTo,
@@ -151,6 +152,9 @@ export function MarketingPlanEditor({ open, plan, references, disabled, onSave, 
         <Row gutter={16}>
           <Col xs={24} md={12}><Form.Item name="code" label={t("方案编码")} rules={[{ required: true, whitespace: true, max: 191 }]}><Input disabled={Boolean(plan) || disabled || editor.busy} /></Form.Item></Col>
           <Col xs={24} md={12}><Form.Item name="name" label={t("方案名称")} rules={[{ required: true, whitespace: true, max: 191 }]}><Input /></Form.Item></Col>
+          <Col xs={24}><Form.Item name="customerDisplayName" label={t("客户展示名称")} rules={[{ max: 191 }]}
+            extra={t("留空沿用方案名称，历史报价保留当时文案。")}><Input maxLength={191} /></Form.Item></Col>
+          <Col xs={24}><Form.Item name="customerDescription" label={t("客户展示说明")} rules={[{ max: 2000 }]}><Input.TextArea rows={3} maxLength={2000} /></Form.Item></Col>
           <Col xs={24}><Form.Item name="priority" label={t("同价优先级")} rules={[{ required: true }]}><InputNumber min={0} precision={0} /></Form.Item></Col>
         </Row>
         <Alert type={references.timeZone ? "info" : "warning"} title={references.timeZone ? t("营业时区：{zone}", { zone: references.timeZone }) : t("营业时区不可用，时间字段暂不可编辑")}

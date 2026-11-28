@@ -79,3 +79,5 @@ HTTP公开读口为 `asset-control-types`、`asset-control-options`、`asset-con
 ## 验证入口
 
 类型检查消费 Rental 后台与原宿主入口。现有列表交互、导航术语和后台结构断言定位同一业务正文，原路由边界继续留在旧宿主。浏览器、真实 HTTP、对象存储与完整标准 Core 装配分别验收。[类型配置](<../tsconfig.json>) · [列表交互](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-list-interactions.test.cjs>) · [导航术语](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-navigation-terminology.test.cjs>) · [后台检查器](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/scripts/validate-react-admin.cjs>)
+
+管控的未来开始与计划结束沿Rental后台共用[营业时点转换](../business-date.ts)和公共DatePicker确认入口。新输入遇夏令时重复/不存在时点保留输入并拒绝提交，不按浏览器时区猜选；编辑期间营业时区变化也须重新核对。计划结束仍只是计划，不自动解除管控。

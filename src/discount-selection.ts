@@ -378,6 +378,8 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
     || !["draft", "enabled", "disabled"].includes(plan.status)
     || !validAmount(plan.minimumSpend) || !Number.isSafeInteger(plan.priority) || plan.priority < 0
     || !customerScopes.includes(plan.customerScope) || !validIds(plan.applicableItemGroupIds)
+    || plan.customerDisplayName !== undefined && (!validText(plan.customerDisplayName) || plan.customerDisplayName.length > 191)
+    || plan.customerDescription !== undefined && (!validText(plan.customerDescription) || plan.customerDescription.length > 2000)
     || plan.applicablePricingGroupIds !== undefined && !validIds(plan.applicablePricingGroupIds)
     || !validDayTypes(plan.applicableDayTypes) || !validDate(plan.effectiveFrom)
     || plan.effectiveTo !== undefined && (!validDate(plan.effectiveTo) || Date.parse(plan.effectiveTo) <= Date.parse(plan.effectiveFrom))
@@ -558,7 +560,8 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
       return {
         pricingPolicy: RENTAL_SINGLE_MARKETING_RULE_POLICY, marketingPlanSnapshot: structuredClone(row.plan),
         ruleSnapshot: structuredClone(row.rule), ruleId: row.rule.id, ruleVersion: row.rule.version,
-        planId: row.plan.id, planCode: row.plan.code, planName: row.plan.name, planVersion: row.plan.version,
+        planId: row.plan.id, planCode: row.plan.code, planName: row.plan.customerDisplayName ?? row.plan.name,
+        planDescription: row.plan.customerDescription, planVersion: row.plan.version,
         workspaceId: ctx.workspaceId, appliesTo: "rental", discountType: row.rule.action.type,
         priority: row.rule.priority, stackableWithOtherPlans: false, stackableWithCoupon: true,
         applied, skipReason: reason,

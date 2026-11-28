@@ -1667,7 +1667,8 @@ Page({
         ? evaluation as RentalMarketingQuoteDiscountEvaluation : undefined;
       const label = rule ? `${evaluation.planName} / ${rule.ruleSnapshot?.name ?? "原规则资料缺失"}` : evaluation.planName;
       const key = rule ? JSON.stringify(["marketing", evaluation.planId, evaluation.planVersion, rule.ruleId, rule.ruleVersion, benefits.length]) : `discount-${evaluation.planId}`;
-      benefits.push({ key, text: evaluation.applied ? `${label}：减 ${formatMoney(evaluation.discountAmount, currency || undefined)}` : `${label}：${evaluation.skipDetail ?? "未应用"}`, applied: evaluation.applied });
+      const description = evaluation.applied && rule?.planDescription ? ` · ${rule.planDescription}` : "";
+      benefits.push({ key, text: evaluation.applied ? `${label}：减 ${formatMoney(evaluation.discountAmount, currency || undefined)}${description}` : `${label}：${evaluation.skipDetail ?? "未应用"}`, applied: evaluation.applied });
     }
     if (quote.couponEvaluation) {
       benefits.push({ key: `coupon-${quote.couponEvaluation.couponId}`, text: `优惠券 ${quote.couponEvaluation.templateName}：减 ${formatMoney(quote.couponEvaluation.discountAmount, currency || undefined)}`, applied: quote.couponEvaluation.discountAmount > 0 });

@@ -19,6 +19,7 @@ export function assertSingleRuleEvaluation(evaluation: RentalMarketingQuoteDisco
     throw error;
   }
   if (!rule || plan.workspaceId !== evaluation.workspaceId || plan.id !== evaluation.planId || plan.version !== evaluation.planVersion
+    || evaluation.planName !== (plan.customerDisplayName ?? plan.name) || evaluation.planDescription !== plan.customerDescription
     || rule.id !== evaluation.ruleId || rule.version !== evaluation.ruleVersion
     || evaluation.appliesTo !== "rental" || evaluation.discountType !== rule.action.type
     || !isDeepStrictEqual(plan.rules.find(row => row.id === rule.id), rule)) throw new ConflictException("原单规则营销身份或动作不一致");

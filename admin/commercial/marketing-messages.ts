@@ -2,6 +2,9 @@
 import type { AdminMessages } from "@rental-os/platform-admin/locale";
 
 export const marketingMessages = {
+  "客户展示名称": "Customer-facing name",
+  "客户展示说明": "Customer-facing description",
+  "留空沿用方案名称，历史报价保留当时文案。": "Leave blank to use the plan name. Historical quotes retain the original text.",
   "用租日类型须按实际租期判断": "Rental day types require the actual rental period",
   "营业时区已变化，请保留输入并重新打开编辑": "The business time zone changed. Preserve your input and reopen the editor.",
   "请选择完整租期": "Select the complete rental period",

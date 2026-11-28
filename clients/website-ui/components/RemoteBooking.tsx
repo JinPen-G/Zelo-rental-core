@@ -20,6 +20,7 @@ import type {
   EnterpriseOwnRentalPolicy,
   RentalFulfillmentMode,
   RentalQuoteSnapshotV1,
+  RentalMarketingQuoteDiscountEvaluation,
 } from "@rental-os/shared";
 import {
   formatRentalMoney,
@@ -1307,6 +1308,13 @@ function ManualRemoteBooking({
               <strong>{money(quote.discountAmount, true)}</strong>
             </div>
           ) : null}
+          {quote.discountEvaluations?.filter(row => row.applied).map(row => {
+            const description = "pricingPolicy" in row && row.pricingPolicy === "single_rule_v1"
+              ? (row as RentalMarketingQuoteDiscountEvaluation).planDescription : undefined;
+            return <p className="mock-note" key={`${row.planId}:${row.planVersion}`}>
+              {row.planName}{description ? ` · ${description}` : ""}
+            </p>;
+          })}
           {quote.couponAmount !== 0 ? (
             <div>
               <span>{t("couponDeducted")}</span>
