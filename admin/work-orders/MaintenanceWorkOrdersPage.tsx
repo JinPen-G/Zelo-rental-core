@@ -178,6 +178,7 @@ export function MaintenanceWorkOrdersPage({
   const dispositions = useQuery({ queryKey: ["rental-core", "stock-dispositions", boardScope], queryFn: ({ signal }) => rentalCoreApi.stockDispositions(undefined, { signal }) });
   const workOrders = useQuery({ queryKey: ["rental-core", "work-orders", boardScope], queryFn: ({ signal }) => rentalCoreApi.workOrders(undefined, { signal }) });
   const activeWorkOrder = workOrderId ? workOrders.data?.find(row => row.id === workOrderId) : actionWorkOrder;
+  const independentWorkOrder = Boolean(activeWorkOrder?.assetId && !activeWorkOrder.orderId && !activeWorkOrder.dispositionId);
   const validationTarget = useRef("");
   validationTarget.current = JSON.stringify([
     boardScope, assetFilter, dialogSequence.current, dialog, activeWorkOrder?.id, writeOffTarget?.id, actionDialog.visible,
@@ -216,6 +217,11 @@ export function MaintenanceWorkOrdersPage({
       queryClient.invalidateQueries({ queryKey: ["rental-core", "stocks"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "assets"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "work-order-assets"] }),
+      // 工单流转与库存恢复会改变详情和原履历；这些查询有独立键，不能只刷新列表。
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "work-order-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-detail"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-status-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-work-orders"] }),
       queryClient.invalidateQueries({ queryKey: ["rental-core", "asset-schedule"] })
     ]);
   };
@@ -243,8 +249,11 @@ export function MaintenanceWorkOrdersPage({
       else clearAction();
        message.success(t("操作已完成"));
     },
-    onError: (error: Error, input) => {
+    onError: async (error: Error, input) => {
       if (input.kind === "create" && input.scope !== boardScope) return;
+      if (!activePage.current || liveScope.current !== boardScope || currentScopeKey() !== boardScope) return;
+      // 冲突或未知应答只触发原事实重读；保留当前输入及独立创建的原操作引用。
+      await refresh();
       if (activePage.current && liveScope.current === boardScope && currentScopeKey() === boardScope)
         message.error(error.message ? t(error.message) : t("操作失败，请刷新后重试"));
     }
@@ -556,12 +565,21 @@ export function MaintenanceWorkOrdersPage({
           const next = new URLSearchParams(previous); if (key === "history") next.set("tab", key); else next.delete("tab"); return next;
         })} items={[
           { key: "detail", label: t("处理与验收"), children: <RecordDetailStack>
+            {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
+              description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
             <RecordFacts items={[
+              { key: "source", label: t("工单来源"), value: activeWorkOrder.dispositionId ? t("归还处置") : independentWorkOrder ? t("独立资产养护") : t("来源未完整登记") },
               { key: "reason", label: "处理原因", value: activeWorkOrder.reason || "—", wide: true },
               { key: "result", label: "处理结果", value: activeWorkOrder.result || "—", wide: true },
               { key: "review", label: "验收", value: activeWorkOrder.reviewReason || "—" },
               { key: "reviewer", label: "验收人", value: activeWorkOrder.reviewedBy || "—" }
             ]} />
+            <ListSection title={t("处理时点")}><RecordFacts items={[
+              { key: "created", label: t("创建时间"), value: dateTime(activeWorkOrder.createdAt, locale) },
+              { key: "started", label: t("开始处理时间"), value: activeWorkOrder.startedAt ? dateTime(activeWorkOrder.startedAt, locale) : t("时间未记录") },
+              { key: "submitted", label: t("提交验收时间"), value: activeWorkOrder.submittedAt ? dateTime(activeWorkOrder.submittedAt, locale) : t("时间未记录") },
+              { key: "reviewed", label: t("最近结论时间"), value: activeWorkOrder.reviewedAt ? dateTime(activeWorkOrder.reviewedAt, locale) : t("时间未记录") }
+            ]} /></ListSection>
             <ListSection title={t("关联资源")}><RecordFacts items={[
               { key: "group", label: "商品", value: activeWorkOrder.itemGroupId },
               { key: "location", label: "履约地点", value: activeWorkOrder.locationId },
@@ -624,7 +642,9 @@ export function MaintenanceWorkOrdersPage({
     <Modal {...modalProps} title={`${t("验收工单")}：${activeWorkOrder?.workNo ?? ""}`} open={dialog === "review" && actionDialog.visible} okText={t("确认验收")} onConfirm={() => confirmEditor(reviewForm, reviewEditor.submit)}>
       <Descriptions size="small" column={1} style={{ marginBottom: 16 }} items={[{ key: "reason", label: t("处理原因"), children: activeWorkOrder?.reason }, { key: "result", label: t("处理结果"), children: activeWorkOrder?.result || t("尚未提交") }]} />
       <Form form={reviewForm} layout="vertical" disabled={saving} {...reviewEditor.formProps}>
-        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t("通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
+        {independentWorkOrder && <Alert type="info" showIcon title={t("独立养护的库存恢复")}
+          description={t("验收通过后复核当前库存；其他有效工单、归还隔离、订单占用或其他来源的限制仍会保留。工单完成不代表已恢复可租。")} />}
+        <Form.Item name="decision" label={t("验收结论")} rules={[{ required: true }]}><Select options={[{ value: "approved", label: t(independentWorkOrder ? "通过验收" : "通过并进入周转缓冲") }, { value: "rejected", label: t("驳回，继续隔离") }]} /></Form.Item>
         <Form.Item name="reason" label={t("验收说明")} rules={[{ required: true, message: t("请填写验收说明") }]}><Input.TextArea rows={3} placeholder={t("填写通过或驳回的依据")} /></Form.Item>
       </Form>
     </Modal>
