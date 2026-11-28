@@ -14,6 +14,7 @@ export const ORDER_QUICK_ACTION_LABELS: Record<OrderQuickAction, string> = {
   confirm: "确认订单并核销优惠券", allocation: "资源分配", pickup: "办理领取",
   return: "办理归还", extend: "办理续租", settle: "结算并关闭订单", cancel: "取消并按规则计费",
 };
+export const orderStatusLabels: Record<string, string> = { draft: "软预占", reserved: "已确认", pickup_overdue: "待确认爽约", ready_for_pickup: "待交付", renting: "租赁中", return_inspection: "归还检查", settling: "待结算", completed: "已关闭", cancelled: "已取消", no_show: "已爽约" };
 export function parseOrderQuickAction(value: string | null): OrderQuickAction | undefined {
   return value && Object.hasOwn(ORDER_QUICK_ACTION_LABELS, value) ? value as OrderQuickAction : undefined;
 }

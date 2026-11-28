@@ -1,11 +1,13 @@
 import { objectOf, arrayOf, ref, stringSchema, numberSchema, booleanSchema, type SchemaObject } from "./http-openapi-contract";
-import { RENTAL_WORK_ORDER_TYPES } from "./contracts";
+import { RentalCoreOrderStatus, RENTAL_FULFILLMENT_MODES, RENTAL_WORK_ORDER_TYPES } from "./contracts";
 
 const optionalTime: SchemaObject = { type: "string", format: "date-time", nullable: true };
 export const RENTAL_ASSET_SCHEDULE_SCHEMAS: Record<string, SchemaObject> = {
   RentalAssetScheduleEntry: objectOf({ id: stringSchema, kind: { type: "string", enum: ["reservation", "rental", "preparation", "turnaround", "work_order", "asset_hold"] },
     startAt: optionalTime, endAt: optionalTime, plannedEndAt: { type: "string", format: "date-time" }, overdue: booleanSchema,
     source: { type: "string", enum: ["order", "work_order", "asset_status", "restricted"] }, sourceId: stringSchema, sourceNo: stringSchema,
+    order: objectOf({ status: { type: "string", enum: Object.values(RentalCoreOrderStatus) },
+      fulfillmentMode: { type: "string", enum: [...RENTAL_FULFILLMENT_MODES] } }, ["status", "fulfillmentMode"]),
     status: stringSchema, assigneeName: stringSchema, workOrderType: { type: "string", enum: [...RENTAL_WORK_ORDER_TYPES] },
     bufferBasis: { type: "string", enum: ["historical_rule", "legacy_missing"] } },
   ["id", "kind", "startAt", "endAt", "overdue", "source"]),

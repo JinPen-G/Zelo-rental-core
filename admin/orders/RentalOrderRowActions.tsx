@@ -5,7 +5,7 @@ import { ORDER_QUICK_ACTION_LABELS, orderQuickActions, type OrderActionPermissio
 
 const icons: Record<OrderQuickAction, LucideIcon> = { confirm: CircleCheck, allocation: Layers, pickup: PackageCheck, return: RotateCcw, extend: CalendarClock, settle: Wallet, cancel: CircleX };
 export function RentalOrderRowActions({ order, permissions, openOrder, t, pickupLabel = "领取", returnLabel = "归还" }: {
-  order: RentalOrder;
+  order: Pick<RentalOrder, "id" | "orderNo" | "status" | "fulfillmentMode">;
   permissions: OrderActionPermissions;
   openOrder: (orderId: string, action?: OrderQuickAction) => void;
   t: (text: string) => string;

@@ -4,7 +4,7 @@ import { ConflictException, ForbiddenException, ServiceUnavailableException } fr
 import type { Prisma } from "@prisma/client";
 import { isDeepStrictEqual } from "node:util";
 import type { RentalCoreFactContacts, RentalCoreFactTransaction } from "./core-fact-storage";
-import { RentalAssetStatus, RENTAL_WORK_ORDER_TYPES, type RentalRuleConfig } from "./contracts";
+import { RentalAssetStatus, RentalCoreOrderStatus, RENTAL_FULFILLMENT_MODES, RENTAL_WORK_ORDER_TYPES, type RentalRuleConfig } from "./contracts";
 import type { RentalAssetSchedule, RentalAssetScheduleEntry, RentalAssetScheduleQuery } from "./asset-schedule";
 import { peakReservedQuantity, reservedQuantityPeriods, reservedRentalPeriod } from "./occupancy";
 
@@ -80,7 +80,7 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
   const orderIds = [...new Set(reservations.map(row => row.orderId))];
   const [orders, workOrders, allocations] = await Promise.all([
     scope.readOrders && orderIds.length ? client.rentalOrder.findMany({ where: { AND: [{ tenantId, workspaceId, id: { in: orderIds } }, scope.orders] },
-      select: { id: true }, take: FACT_LIMIT + 1 }) : [],
+      select: { id: true, status: true, fulfillmentMode: true }, take: FACT_LIMIT + 1 }) : [],
     scope.readWorkOrders && visibleIds.length ? client.rentalWorkOrder.findMany({ where: { AND: [{ tenantId, workspaceId, assetId: { in: visibleIds },
       status: { not: "cancelled" }, createdAt: { lt: new Date(to) }, OR: [{ status: { not: "completed" } }, { reviewedAt: null }, { reviewedAt: { gt: new Date(from) } }] }, scope.workOrders] },
       select: { id: true, assetId: true, workNo: true, type: true, status: true, assigneeName: true, createdAt: true, reviewedAt: true },
@@ -90,18 +90,23 @@ export async function readRentalAssetSchedule<Tx extends RentalCoreFactTransacti
       select: { orderId: true, orderLineId: true, itemGroupId: true, assetId: true }, orderBy: { id: "asc" }, take: FACT_LIMIT + 1 }) : []
   ]);
   if ([orders, workOrders, allocations].some(rows => rows.length > FACT_LIMIT)) throw new ServiceUnavailableException("排班来源超出读取上限");
-  const readableOrders = new Set(orders.map(row => row.id));
+  const readableOrders = new Map(orders.map(row => {
+    const status = Object.values(RentalCoreOrderStatus).find(status => status === row.status.toLowerCase());
+    const fulfillmentMode = RENTAL_FULFILLMENT_MODES.find(mode => mode === row.fulfillmentMode);
+    if (!status || !fulfillmentMode) throw new ConflictException("排班订单状态或履约方式无法识别");
+    return [row.id, { status, fulfillmentMode }] as const;
+  }));
   const facts = reservations.map((row, index) => {
     const quantity = Math.max(0, row.quantity - row.releasedQuantity);
     const rule = row.order.ruleSnapshot as unknown as RentalRuleConfig | undefined;
     const period = reservedRentalPeriod(row.startAt.toISOString(), row.endAt.toISOString(), row.status, rule, now);
     const assetIds = [...new Set(allocations.filter(allocation => allocation.orderId === row.orderId && allocation.orderLineId === row.orderLineId
       && (!allocation.itemGroupId || allocation.itemGroupId === row.itemGroupId)).map(row => row.assetId!))];
-    const readable = readableOrders.has(row.orderId);
+    const order = readableOrders.get(row.orderId);
     const overdue = row.status === "FULFILLED" && row.endAt <= now;
     const entry: RentalAssetScheduleEntry = { id: `reservation-${index}`, kind: row.status === "FULFILLED" ? "rental" : "reservation",
       startAt: row.startAt.toISOString(), endAt: overdue ? null : row.endAt.toISOString(), plannedEndAt: row.endAt.toISOString(), overdue,
-      source: readable ? "order" : "restricted", ...(readable ? { sourceId: row.orderId, sourceNo: row.order.orderNo } : {}),
+      source: order ? "order" : "restricted", ...(order ? { sourceId: row.orderId, sourceNo: row.order.orderNo, order } : {}),
       bufferBasis: rule ? "historical_rule" : "legacy_missing" };
     return { row, quantity, assetIds, period, entry, unassigned: Math.max(0, quantity - assetIds.length) };
   }).filter(fact => fact.quantity > 0 && Date.parse(fact.period.startAt) < to && Date.parse(fact.period.endAt) > from);

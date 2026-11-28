@@ -1,5 +1,5 @@
 /** 序列化资产排班的只读投影。占用来自原预占/分配和库存状态，调度仍由原订单命令执行。 */
-import type { RentalAssetStatus, RentalWorkOrderType } from "./contracts";
+import type { RentalAssetStatus, RentalCoreOrderStatus, RentalFulfillmentMode, RentalWorkOrderType } from "./contracts";
 
 export interface RentalAssetScheduleQuery {
   startAt: string;
@@ -24,6 +24,8 @@ export interface RentalAssetScheduleEntry {
   source: "order" | "work_order" | "asset_status" | "restricted";
   sourceId?: string;
   sourceNo?: string;
+  /** 仅在原订单可读时提供同一快照的状态与履约方式，供原页面定位；不代表动作已获准执行。 */
+  order?: { status: RentalCoreOrderStatus; fulfillmentMode: RentalFulfillmentMode };
   status?: string;
   assigneeName?: string;
   workOrderType?: RentalWorkOrderType;

@@ -11,7 +11,8 @@ import { ActionButton, Alert, Button, CalendarOutlined, ContentTransition, DataT
 import { RentalAssetStatus, type RentalAssetSchedule, type RentalAssetScheduleEntry, type RentalAssetScheduleQuery, type RentalAssetScheduleRow, type RentalWorkOrderType } from "@rental-os/rental-core";
 import { businessDateKey } from "@rental-os/rental-core/business-day";
 import { rentalOrderLocation } from "../orders/pages";
-import type { OrderQuickAction } from "../orders/orderQuickActions";
+import { orderQuickActions, orderStatusLabels, type OrderQuickAction } from "../orders/orderQuickActions";
+import { RentalOrderRowActions } from "../orders/RentalOrderRowActions";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import type { RentalCatalogPageContext } from "./page-context";
 import { rentalAssetLocation } from "./pages";
@@ -50,7 +51,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   }, [data, date, timeZone]);
   const [selection, setSelection] = useState<{ snapshot: RentalAssetSchedule; entry?: RentalAssetScheduleEntry; asset?: RentalAssetScheduleRow }>();
   const selected = selection?.snapshot === data ? selection : undefined;
-  const label = (entry: RentalAssetScheduleEntry) => `${t(entry.kind === "work_order" && entry.workOrderType ? workOrderLabels[entry.workOrderType] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
+  const label = (entry: RentalAssetScheduleEntry) => `${t(entry.kind === "work_order" && entry.workOrderType ? workOrderLabels[entry.workOrderType]
+    : ["reservation", "rental"].includes(entry.kind) && entry.order ? orderStatusLabels[entry.order.status] : kindLabels[entry.kind])}${entry.sourceNo ? ` · ${entry.sourceNo}` : ""}${entry.overdue ? ` · ${t("逾期未还")}` : ""}`;
   const overlapLabel = (asset: RentalAssetScheduleRow) => t("{count} 段预占重叠", { count: asset.overlaps.length });
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
@@ -73,13 +75,22 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   };
   const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(entry.sourceId && ((entry.source === "order" && host.canAccess("rental", [{ resource: "order", action: "view" }]))
     || (entry.source === "work_order" && host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
-  const canLocateAllocation = (entry: RentalAssetScheduleEntry) => entry.kind === "reservation" && entry.source === "order"
-    && selectableSource(entry) && host.canAccess("rental", [{ resource: "order", action: "operate" }])
-    && canOpen(rentalOrderLocation(entry.sourceId));
-  const locateAllocation = (entry: RentalAssetScheduleEntry) => {
-    if (!canLocateAllocation(entry)) return;
-    // 只定位原订单的资源分配区；候选、原修订及实际提交仍由原页面与服务端核定。
-    navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "operate" }, undefined, "allocation");
+  const orderPermissions = () => ({
+    operate: host.canAccess("rental", [{ resource: "order", action: "operate" }]),
+    pickup: host.canAccess("rental", [{ resource: "order", action: "pickup" }]),
+    return: host.canAccess("rental", [{ resource: "order", action: "return" }]),
+    extend: host.canAccess("rental", [{ resource: "order", action: "extend" }]),
+    settle: false, cancel: false
+  });
+  const renderOrderActions = (entry: RentalAssetScheduleEntry) => {
+    if (entry.source !== "order" || !entry.sourceId || !selectableSource(entry) || !canOpen(rentalOrderLocation(entry.sourceId))) return null;
+    if (!entry.order) return <Button onClick={() => openSource(entry)}>{t("进入订单处理")}</Button>;
+    return <RentalOrderRowActions order={{ id: entry.sourceId, orderNo: entry.sourceNo ?? entry.sourceId, ...entry.order }}
+      permissions={orderPermissions()} t={t} openOrder={(_id, action) => {
+        if (!selectableSource(entry) || action && !orderQuickActions(entry.order!, orderPermissions()).actions.includes(action)) return;
+        // 复用原动作判定和UIArc行操作，仅定位；改期的试算、付款及库存生效仍在原订单执行。
+        navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "view" }, undefined, action);
+      }} />;
   };
   const resetPage = (change: () => void) => { setPage(1); setSelection(undefined); change(); };
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
@@ -159,9 +170,10 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           <ListSection title={t("待分配预约")}><Table rowKey="id" dataSource={data.unassigned} pagination={{ pageSize: 10 }} columns={[
             { title: t("型号 / 地点"), render: (_: unknown, row) => <DataTableText primary={data.itemGroups.find(group => group.id === row.itemGroupId)?.name ?? row.itemGroupId}
               secondary={data.locations.find(location => location.id === row.locationId)?.name ?? row.locationId} /> },
-            { title: t("数量"), dataIndex: "quantity" }, { title: t("占用区间（含缓冲）"), render: (_: unknown, row) => `${format(row.startAt)} — ${format(row.endAt)}` },
+            { title: t("数量"), dataIndex: "quantity" }, { title: t("订单状态"), render: (_: unknown, row) => row.order ? t(orderStatusLabels[row.order.status]) : "—" },
+            { title: t("占用区间（含缓冲）"), render: (_: unknown, row) => `${format(row.startAt)} — ${format(row.endAt)}` },
             { title: t("原订单"), render: (_: unknown, row) => selectableSource(row) ? <Button onClick={() => openSource(row)}>{row.sourceNo}</Button> : t("来源读取受限") },
-            { title: t("操作"), render: (_: unknown, row) => canLocateAllocation(row) ? <Button onClick={() => locateAllocation(row)}>{t("资源分配")}</Button> : "—" }
+            { title: t("操作"), render: (_: unknown, row) => renderOrderActions(row) ?? "—" }
           ]} /></ListSection>
         </>}
       </QueryState>
@@ -189,13 +201,13 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
         {(selected.entry ? [selected.entry] : selected.asset?.entries ?? []).map(entry => <div key={entry.id} className={styles.detail}>
           <strong>{label(entry)}</strong>
           <RecordFacts items={[{ key: "start", label: t("开始"), value: format(entry.startAt) }, { key: "end", label: t("结束"), value: format(entry.endAt) },
+            ...(entry.order ? [{ key: "orderStatus", label: t("订单状态"), value: t(orderStatusLabels[entry.order.status]) }] : []),
             ...(entry.plannedEndAt ? [{ key: "plannedEnd", label: t("计划结束"), value: format(entry.plannedEndAt) }] : []),
             ...(entry.assigneeName ? [{ key: "assignee", label: t("负责人"), value: entry.assigneeName }] : [])]} />
           {entry.kind === "asset_hold" && <Alert type="info" showIcon title={t("当前库存限制的起止区间未登记；计划结束不能证明已恢复可租。")}/>} 
           {entry.kind === "work_order" && <p className={styles.help}>{t("工单条带表示处理过程，实际库存限制须结合当前资产状态及原验收结果。")}</p>}
           {entry.bufferBasis === "legacy_missing" && <p className={styles.help}>{t("历史规则缺失，缓冲沿原库存兼容口径。")}</p>}
-          {selectableSource(entry) && <Button onClick={() => openSource(entry)}>{entry.source === "order" ? t("进入订单处理") : t("查看工单")}</Button>}
-          {canLocateAllocation(entry) && <Button onClick={() => locateAllocation(entry)}>{t("资源分配")}</Button>}
+          {entry.source === "order" ? renderOrderActions(entry) : selectableSource(entry) && <Button onClick={() => openSource(entry)}>{t("查看工单")}</Button>}
           {entry.source === "restricted" && <p className={styles.help}>{t("来源读取受限")}</p>}
         </div>)}
       </div>}
