@@ -1,4 +1,4 @@
-/** Rental 原库存资源时间轴。UIArc 适配控件承载筛选、详情和导航；不在图上直接写订单日期。 */
+/** Rental 原库存资源时间轴。读取与回调复验当前范围和来源权限，UIArc 承载筛选、详情和导航；不在图上直接写订单日期。 */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
@@ -44,12 +44,30 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   const params: RentalAssetScheduleQuery = { startAt: range.startAt, endAt: range.endAt, page,
     ...(assetId !== undefined ? { assetId } : {}),
     ...(locationId ? { locationId } : {}), ...(itemGroupId ? { itemGroupId } : {}), ...(status ? { status } : {}), ...(keyword ? { keyword } : {}) };
-  const query = useQuery({ queryKey: ["rental-core", "asset-schedule", scopeKey, params],
-    queryFn: ({ signal }) => api.assetSchedule(params, { signal }), retry: false });
-  const data = !query.isError && currentScopeKey() === scopeKey ? query.data : undefined;
-  const active = useRef(true), live = useRef({ data, host, fetching: query.isFetching });
-  live.current = { data, host, fetching: query.isFetching };
+  const active = useRef(false), currentHost = useRef(host);
+  currentHost.current = host;
   useLayoutEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const canRead = () => Boolean(scopeKey) && currentScopeKey() === scopeKey && (
+    currentHost.current.canAccess("rental", [{ resource: "asset", action: "view" }])
+    || currentHost.current.canAccess("rental", [{ resource: "asset", action: "manage" }]));
+  const readSourceAccess = () => JSON.stringify([
+    currentHost.current.canAccess("rental", [{ resource: "order", action: "view" }]),
+    currentHost.current.canAccess("rental", [{ resource: "maintenance", action: "view" }])
+  ]);
+  // 同一资产读取权下，订单/工单权限决定响应中的编号、状态和负责人，不能沿用另一投影的缓存。
+  const sourceAccess = readSourceAccess();
+  const assertRead = () => {
+    if (!active.current || !canRead() || readSourceAccess() !== sourceAccess)
+      throw new DOMException(t("当前排班页面已失效，请重新读取"), "AbortError");
+  };
+  const query = useQuery({ queryKey: ["rental-core", "asset-schedule", scopeKey, params, sourceAccess], enabled: canRead(),
+    queryFn: async ({ signal }) => { assertRead(); const result = await api.assetSchedule(params, { signal }); assertRead(); return result; }, retry: false });
+  const data = canRead() && !query.isError ? query.data : undefined;
+  const live = useRef({ data, host, fetching: query.isFetching });
+  live.current = { data, host, fetching: query.isFetching };
+  const isCurrentSnapshot = (snapshot = data) => Boolean(active.current && snapshot && live.current.data === snapshot
+    && canRead() && readSourceAccess() === sourceAccess);
+  const refresh = async () => { assertRead(); await query.refetch({ throwOnError: true }); assertRead(); };
   useEffect(() => {
     if (data && (timeZone !== data.timeZone || !date)) {
       setTimeZone(data.timeZone); setDate(current => current ?? businessDateKey(data.observedAt, data.timeZone));
@@ -67,24 +85,25 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   const format = (value: string | null | undefined) => value && timeZone
     ? new Intl.DateTimeFormat(locale, { timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : t("时间未定");
   const canOpen = (location: CorePageLocation) => {
+    if (!canRead()) return false;
     const page = live.current.host.pages.get(corePageKey(location.coreId, location.pageId));
     return Boolean(page && live.current.host.canAccess(location.coreId, page.definition.permissions));
   };
   const navigate = (location: CorePageLocation, permission: { resource: string; action: string }, selectedAssetId?: string, action?: OrderQuickAction) => {
-    if (currentScopeKey() !== scopeKey || !host.canAccess("rental", [permission]) || !canOpen(location)) return;
-    const path = resolveCorePageLocation(host.pages, location);
+    if (!isCurrentSnapshot() || !live.current.host.canAccess("rental", [permission]) || !canOpen(location)) return;
+    const path = resolveCorePageLocation(live.current.host.pages, location);
     const search = new URLSearchParams();
     if (selectedAssetId) search.set("assetId", selectedAssetId);
     if (action) search.set("action", action);
-    host.navigate(search.size ? `${path}?${search}` : path);
+    live.current.host.navigate(search.size ? `${path}?${search}` : path);
   };
   const openSource = (entry: RentalAssetScheduleEntry) => {
     if (!entry.sourceId) return;
     if (entry.source === "order") navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "view" });
     if (entry.source === "work_order") navigate(rentalWorkOrderLocation(entry.sourceId), { resource: "maintenance", action: "view" });
   };
-  const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(entry.sourceId && ((entry.source === "order" && host.canAccess("rental", [{ resource: "order", action: "view" }]))
-    || (entry.source === "work_order" && host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
+  const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(canRead() && entry.sourceId && ((entry.source === "order" && live.current.host.canAccess("rental", [{ resource: "order", action: "view" }]))
+    || (entry.source === "work_order" && live.current.host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
   const orderPermissions = () => ({
     operate: live.current.host.canAccess("rental", [{ resource: "order", action: "operate" }]),
     pickup: live.current.host.canAccess("rental", [{ resource: "order", action: "pickup" }]),
@@ -92,8 +111,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
     extend: live.current.host.canAccess("rental", [{ resource: "order", action: "extend" }]),
     settle: false, cancel: false
   });
-  const canPrepare = (entry: RentalAssetScheduleEntry, snapshot = data) => Boolean(active.current && snapshot && live.current.data === snapshot
-    && !live.current.fetching && currentScopeKey() === scopeKey && entry.source === "order" && entry.sourceId
+  const canPrepare = (entry: RentalAssetScheduleEntry, snapshot = data) => Boolean(isCurrentSnapshot(snapshot)
+    && !live.current.fetching && entry.source === "order" && entry.sourceId
     && ["reservation", "rental"].includes(entry.kind) && entry.order?.effectiveEndAt && Number.isFinite(Date.parse(entry.order.effectiveEndAt))
     && live.current.host.canAccess("rental", [{ resource: "order", action: "view" }]) && canOpen(rentalOrderLocation(entry.sourceId))
     && orderQuickActions(entry.order, orderPermissions()).actions.includes("extend"));
@@ -115,7 +134,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
     actions={canOpen(rentalWorkOrderLocation()) ? [{ id: "maintenance", kind: "navigate",
       label: { default: t("养护管控") }, to: rentalWorkOrderLocation(), permissions: [{ resource: "maintenance", action: "view" }] }] : []}>
-    <div className={styles.workspace}>
+    {!canRead() ? <Alert type="warning" showIcon title={t("排班读取受限")} /> : <div className={styles.workspace}>
       {assetId !== undefined && <Alert type="info" showIcon title={t("当前仅查看所选资产")}
         action={<Button onClick={clearAsset}>{t("查看全部资产")}</Button>} />}
       <ListFilterBar>
@@ -138,13 +157,13 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
         </div>
         <Segmented value={zoom} options={[{ value: "day", label: t("日") }, { value: "week", label: t("周") }, { value: "month", label: t("月") }]}
           onChange={value => resetPage(() => setZoom(value as ScheduleZoom))} />
-        <ActionButton label={t("刷新")} pending={query.isFetching} onAction={async () => { const result = await query.refetch(); if (result.isError) throw result.error; }} />
+        <ActionButton label={t("刷新")} pending={query.isFetching} onAction={refresh} />
         <Segmented className={styles.viewSwitch} value={view} options={[
           { value: "gantt", label: <span title={t("甘特")} aria-label={t("甘特")}><CalendarOutlined /></span> },
           { value: "list", label: <span title={t("列表")} aria-label={t("列表")}><FileTextOutlined /></span> }
         ]} onChange={value => setView(String(value))} />
       </div>
-      <QueryState loading={query.isLoading || !query.error && (!date || !timeZone)} error={query.error} onRetry={() => query.refetch()} transitionKey={JSON.stringify(params)}>
+      <QueryState loading={query.isLoading || !query.error && (!date || !timeZone)} error={query.error} onRetry={refresh} transitionKey={JSON.stringify(params)}>
         {data && <>
           <p className={styles.help}>{t("显示当前有效库存事实；可拖动订单末端准备续租，也可在条带详情填写时间，再进入原订单试算确认。")}</p>
           <ContentTransition value={view}>
@@ -201,7 +220,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           ]} /></ListSection>
         </>}
       </QueryState>
-    </div>
+    </div>}
     <Drawer open={Boolean(selected)} title={selected?.asset?.assetNo ?? t("排班详情")} onClose={() => setSelection(undefined)} destroyOnHidden>
       {selected && <div className={styles.workspace}>
         {selected.asset && <RecordFacts items={[{ key: "model", label: t("型号"), value: selected.asset.itemGroupName }, { key: "location", label: t("地点"), value: selected.asset.locationName },

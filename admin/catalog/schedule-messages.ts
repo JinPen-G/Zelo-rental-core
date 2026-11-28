@@ -1,5 +1,6 @@
 /** 排班文案并入原 LocaleProvider，不创建独立语言状态。 */
 export const rentalScheduleMessages = {
+  "排班读取受限": "Schedule access is restricted", "当前排班页面已失效，请重新读取": "This schedule page is no longer current. Reload the schedule.",
   "资产详情": "Asset details", "当前资产页面已失效": "This asset page is no longer current",
   "资产读取受限": "Asset access is restricted", "未找到当前范围内的资产": "No asset was found in the current scope",
   "该资产当前存在库存限制": "This asset currently has an inventory restriction",
