@@ -836,6 +836,7 @@ function requiredPermissions(method: string, path: string) {
     return method === "GET" ? ["rental-core:catalog:view", "rental-core:catalog:manage", "rental-os:order:view", "rental-os:order:create"] : ["rental-core:catalog:manage"];
   }
   if (path === "/rental/v1/work-order-assignees") return ["rental-core:maintenance:view"];
+  if (path === "/rental/v1/asset-schedule") return ["rental-core:asset:view", "rental-core:asset:manage"];
   if (path === "/rental/v1/work-order-assets") return ["rental-core:maintenance:manage"];
   if (path === "/rental/v1/work-orders" || path.startsWith("/rental/v1/work-orders/")) {
     if (method === "GET") return ["rental-core:maintenance:view"];

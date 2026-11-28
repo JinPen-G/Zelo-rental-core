@@ -18,6 +18,7 @@ const pageIcons: ReadonlyMap<string, AnimatedIconName> = new Map([
   ["order-detail", "orders"],
   ["item-groups", "inventory"],
   ["assets", "inventory"],
+  ["asset-schedule", "inventory"],
   ["work-orders", "orders"],
   ["work-order-detail", "orders"],
   ["locations", "inventory"],

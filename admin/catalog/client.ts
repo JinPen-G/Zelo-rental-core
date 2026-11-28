@@ -2,6 +2,8 @@
 import type { AdminRequestOptions, AdminRuntime } from "@rental-os/platform-admin/runtime";
 import type {
   RentalAsset,
+  RentalAssetSchedule,
+  RentalAssetScheduleQuery,
   RentalAssetStatusHistory,
   RentalItemGroup,
   RentalStockBalance,
@@ -46,6 +48,8 @@ export function createRentalCatalogApi(
     itemGroupImageBlob: (id: string, imageId: string, options?: ReadOptions) =>
       requestImage("/rental/v1/item-groups/" + id + "/images/" + imageId, options),
     assets: (options?: ReadOptions) => request<RentalAsset[]>("/rental/v1/assets", options),
+    assetSchedule: (params: RentalAssetScheduleQuery, options?: ReadOptions) =>
+      request<RentalAssetSchedule>("/rental/v1/asset-schedule", { params: { ...params }, ...options }),
     assetStatusHistory: (assetId: string, options?: ReadOptions) =>
       request<RentalAssetStatusHistory[]>(
         "/rental/v1/assets/" + encodeURIComponent(assetId) + "/status-history",

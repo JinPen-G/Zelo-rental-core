@@ -32,6 +32,16 @@
 
 原媒体及来源入口供既有导读沿原路径读取。导读转向本模块后可移除这两处薄转接。[原媒体入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/catalog/CatalogCardMedia.tsx>) · [原来源入口](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/catalog/archive/product-listing/SOURCE.md>)
 
+## 资产排班
+
+[排班页面](AssetSchedulePage.tsx)由同一目录贡献登记为 `asset-schedule`（`/asset-schedule`），沿原 `asset:view` 权限及当前会话请求工厂读取 `GET /rental/v1/asset-schedule`。查询接受带时区偏移的 `startAt/endAt`（半开区间、最多93天）、`locationId/itemGroupId/assetId/keyword/status/page`，返回经营空间时区、50行资产页、完整范围容量和待分配预约。库存资产最多2000条、每种关联事实最多10000条；超限明确拒绝，不显示部分事实为可用。公开类型从 `@rental-os/rental-core` 导出。[合同](../../src/asset-schedule.ts) · [原事实读取](../../src/mysql-asset-schedule.ts)
+
+日/周/月的日界沿 Core 营业时区函数；容量沿原同时占用峰值及历史缓冲计算，未分配预约计入容量，逾期已履约预占保持无确定结束。资产状态筛选、编号搜索与分页只影响车辆行，不缩小容量分母。当前维护/停用等限制的起止时间没有可靠历史时明确未定；工单条带表示原生命周期，不把计划时间或取消工单当成库存释放证据。页面观察的是读取时的当前库存事实，不是任意过去日期的完整历史回放，也不代替提交时的事务复核。
+
+订单/工单来源编号分别核原 `order:view` / `maintenance:view` 以及原对象地点/本人范围；没有来源权限只返回容量所需占用，不返回客户信息。点击已授权来源通过注册导航进入原订单或工单，分配、改配和计价改期仍由原流程确认。每个条带是可聚焦按钮，并提供列表和详情作为键盘/窄屏入口；失败撤下旧数据，不解释为空闲。
+
+筛选、列表、抽屉和动作使用公共 UIArc 适配。时间轴为 Rental 专属资源条带投影；公共出口目前没有可复用的只读 Gantt 组件，本地重建 Pro 项目甘特也没有只读合同，因此没有复制私有镜像或把项目拖拽接成订单写入。页面不宣称使用官方 Pro 原始 TSX；正式浏览器主题、窄屏及交互验收需授权宿主。
+
 ## 验证入口
 
 类型检查消费 Rental 后台与原宿主入口。现有列表交互、导航术语和后台结构断言定位同一业务正文，原路由边界继续留在旧宿主。浏览器、真实 HTTP、对象存储与完整标准 Core 装配分别验收。[类型配置](<../tsconfig.json>) · [列表交互](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-list-interactions.test.cjs>) · [导航术语](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/tests/admin-navigation-terminology.test.cjs>) · [后台检查器](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/scripts/validate-react-admin.cjs>)

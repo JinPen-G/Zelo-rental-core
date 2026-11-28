@@ -644,6 +644,16 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
     summary: "List serialized rental assets", permissions: ["rental-core:asset:view"], responseSchema: "GenericObject"
   },
   {
+    method: "get", path: "/api/rental/v1/asset-schedule", tag: "RentalCore", operationId: "readRentalAssetSchedule",
+    summary: "按当前资产权限读取原库存排班、未配车预占和容量；订单/工单来源另核当前权限与对象范围",
+    permissions: ["rental-core:asset:view", "rental-core:asset:manage"], responseSchema: "RentalAssetSchedule",
+    parameters: [{ name: "startAt", in: "query", required: true, schema: { type: "string", format: "date-time" } },
+      { name: "endAt", in: "query", required: true, schema: { type: "string", format: "date-time", description: "半开区间，不超过93天" } },
+      queryParam("locationId"), queryParam("itemGroupId"), queryParam("assetId"), queryParam("keyword", { type: "string", maxLength: 100 }),
+      queryParam("status", { type: "string", enum: ["available", "reserved", "rented", "inspection", "maintenance", "disabled"] }),
+      queryParam("page", { type: "integer", minimum: 1, maximum: 999999 })]
+  },
+  {
     method: "get", path: "/api/rental/v1/assets/{id}/status-history", tag: "RentalCore", operationId: "listRentalAssetStatusHistory",
     summary: "List serialized asset status history", permissions: ["rental-core:asset:view"], responseSchema: "GenericObject"
   },

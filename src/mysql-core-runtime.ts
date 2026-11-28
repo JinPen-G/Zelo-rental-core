@@ -134,6 +134,8 @@ import {
   type UpdateRentalServiceOccurrenceRequest
 } from "./contracts";
 import { getRequestWorkspaceId, getRequestIdentity, getRequestStaffLocationIds } from "@rental-os/platform-server/request-identity";
+import { parseRentalAssetScheduleQuery } from "./asset-schedule-query";
+import type { RentalAssetSchedule } from "./asset-schedule";
 import { claimCreatedRentalWorkspaceConfiguration } from "./mysql-workspace-scope";
 import { ACTIVE_ASSIGNMENTS, allocationComplete } from "./allocation-policy";
 import { RentalStateRepository } from "./mysql-state";
@@ -1785,6 +1787,29 @@ export class RentalCoreService<TTransaction extends RentalCoreRuntimeTransaction
   async listAssets(tenantId: string) {
     await this.factContext(tenantId);
     return this.factStore.listAssets(tenantId);
+  }
+
+  async readAssetSchedule(tenantId: string, value: unknown): Promise<RentalAssetSchedule> {
+    const query = parseRentalAssetScheduleQuery(value), identity = getRequestIdentity();
+    if (!identity?.userId || !identity.workspaceId || identity.tenantId !== tenantId || identity.isSaasAdmin || identity.audience === "client")
+      throw new ForbiddenException("排班读取缺少当前租户及经营空间");
+    const permitted = (code: string) => Boolean(identity.isPlatformAdmin || identity.permissions?.includes("*") || identity.permissions?.includes(code));
+    if (!permitted("rental-core:asset:view") && !permitted("rental-core:asset:manage")) throw new ForbiddenException("没有资产排班查看权限");
+    if (!this.configStore.readReadinessConfiguration || !this.factStore.readAssetSchedule) throw new ServiceUnavailableException("持久排班读取不可用");
+    const binding = requestFingerprint(identity), workspaceId = identity.workspaceId;
+    const before = await this.configStore.readReadinessConfiguration(tenantId, workspaceId);
+    if (before.tenantId !== tenantId || before.workspaceId !== workspaceId || !before.businessSettings)
+      throw new ConflictException("排班经营时区配置缺失");
+    const timeZone = before.businessSettings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE;
+    if (!isValidTimeZone(timeZone)) throw new ConflictException("排班经营时区无效");
+    const result = await this.factStore.readAssetSchedule(tenantId, workspaceId, query,
+      { readOrders: permitted("rental-os:order:view"), readWorkOrders: permitted("rental-core:maintenance:view") });
+    const after = await this.configStore.readReadinessConfiguration(tenantId, workspaceId);
+    if (after.tenantId !== tenantId || after.workspaceId !== workspaceId || !after.businessSettings
+      || (after.businessSettings.calendar.timeZone ?? DEFAULT_BUSINESS_TIME_ZONE) !== timeZone)
+      throw new ConflictException("排班读取期间经营时区变化，请重新读取");
+    if (requestFingerprint(getRequestIdentity()) !== binding) throw new ForbiddenException("排班读取期间授权范围变化");
+    return { ...result, timeZone };
   }
 
   async listAssetStatusHistory(tenantId: string, assetId: string) {

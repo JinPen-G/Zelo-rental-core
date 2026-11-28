@@ -3,6 +3,7 @@ import type { CoreAdminContribution } from "@rental-os/core-contracts";
 import type { CoreRouteComponent } from "@rental-os/platform-admin/core";
 import { CatalogPage } from "./CatalogPage";
 import { AssetWorkspacePage } from "./AssetWorkspacePage";
+import { AssetSchedulePage } from "./AssetSchedulePage";
 import type { RentalCatalogPageContext } from "./page-context";
 import { RENTAL_CATALOG_CORE_ID, RENTAL_CATALOG_PAGES } from "./pages";
 export * from "./client";
@@ -23,12 +24,14 @@ export function createRentalCatalogAdminContribution(
 ): CoreAdminContribution<CoreRouteComponent> {
   const Catalog: CoreRouteComponent = () => <CatalogPage {...usePageContext()} />;
   const Assets: CoreRouteComponent = () => <AssetWorkspacePage {...usePageContext()} />;
+  const Schedule: CoreRouteComponent = () => <AssetSchedulePage {...usePageContext()} />;
   return {
     coreId: RENTAL_CATALOG_CORE_ID,
     implementationVersion,
     pages: [
       { ...RENTAL_CATALOG_PAGES.catalog, component: Catalog },
       { ...RENTAL_CATALOG_PAGES.assets, component: Assets },
+      { ...RENTAL_CATALOG_PAGES.schedule, component: Schedule },
     ],
   };
 }

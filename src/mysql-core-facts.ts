@@ -51,7 +51,9 @@ import { readOrderInspectionBasisInput } from "./mysql-order-inspection-basis";
 import { readAllocationPickupInput } from "./mysql-order-allocation-pickup";
 import { lockActiveCategoryBinding, replaceCategoryUniqueClaims, validateActiveCategoryWrite, type CategoryWriteBinding } from "./mysql-category-write";
 import { readRentalFulfillmentAdmission } from "./mysql-fulfillment-admission";
-import { bufferedRentalPeriod, peakReservedQuantity } from "./occupancy";
+import { bufferedRentalPeriod, peakReservedQuantity, reservedRentalPeriod } from "./occupancy";
+import type { RentalAssetSchedule, RentalAssetScheduleQuery } from "./asset-schedule";
+import { readRentalAssetSchedule } from "./mysql-asset-schedule";
 import { rentalOrderDueAt } from "./carrier-shipment";
 import { rentalOrderListSort } from "./mysql-order-list-sort";
 import { allocateRentalOrderNumber } from "./mysql-order-number";
@@ -304,6 +306,7 @@ export interface RentalCoreFactStore<TTransaction extends RentalCoreFactTransact
   saveOrderAggregate(order: RentalOrder, assetChanges?: AssetStatusChange[], tx?: TTransaction, stockQuarantines?: StockQuarantineChange[], stockTransfers?: StockReturnTransfer[]): Promise<void>;
   lockInventoryTargets(tenantId: string, locationId: string, targets: InventoryLockTarget[], tx: TTransaction): Promise<void>;
   activeReservations(tenantId: string, tx?: TTransaction): Promise<ActiveReservationRow[]>;
+  readAssetSchedule?: RentalCoreFactRepository<TTransaction>["readAssetSchedule"];
   readAvailabilitySnapshot?(tenantId: string, workspaceId: string, query: RentalAvailabilitySnapshotQuery, tx?: TTransaction): Promise<RentalAvailabilitySnapshot>;
   /**
    * 对该地点下某商品组的资产行加排他锁，供配货使用。
@@ -1563,7 +1566,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       itemGroupId: row.itemGroupId,
       locationId: row.locationId,
       quantity: Math.max(0, row.quantity - row.releasedQuantity),
-      ...bufferedRentalPeriod(iso(row.startAt), row.status === "FULFILLED" && row.endAt <= now ? "9999-12-30T00:00:00.000Z" : iso(row.endAt), row.order.ruleSnapshot as unknown as RentalRuleConfig)
+      ...reservedRentalPeriod(iso(row.startAt), iso(row.endAt), row.status, row.order.ruleSnapshot as unknown as RentalRuleConfig, now)
     }));
   }
 
@@ -1632,8 +1635,7 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
       throw new ForbiddenException('库存读取身份或范围变化');
     return { reservations: reservations.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId,
       quantity: Math.max(0, row.quantity - row.releasedQuantity),
-      ...bufferedRentalPeriod(iso(row.startAt), row.status === 'FULFILLED' && row.endAt <= at
-        ? '9999-12-30T00:00:00.000Z' : iso(row.endAt), row.order.ruleSnapshot as unknown as RentalRuleConfig) })),
+      ...reservedRentalPeriod(iso(row.startAt), iso(row.endAt), row.status, row.order.ruleSnapshot as unknown as RentalRuleConfig, at) })),
       assets: assets.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId, status: lower<RentalAssetStatus>(row.status) })),
       stocks: stocks.map(row => ({ itemGroupId: row.itemGroupId, locationId: row.locationId,
         onHandQuantity: row.onHandQuantity, maintenanceQuantity: row.maintenanceQuantity })) };
@@ -1680,6 +1682,14 @@ export class RentalCoreFactRepository<TTransaction extends RentalCoreFactTransac
   }
 
   /* ---------- 资产 ---------- */
+
+  async readAssetSchedule(tenantId: string, workspaceId: string, query: RentalAssetScheduleQuery,
+    access: { readOrders: boolean; readWorkOrders: boolean }): Promise<Omit<RentalAssetSchedule, "timeZone">> {
+    return readRentalAssetSchedule(this.store, this.contacts, tenantId, workspaceId, query, {
+      assets: await this.assetVisibilityWhere(this.store, tenantId, workspaceId),
+      orders: requestRentalOrderVisibilityWhere(this.contacts), workOrders: this.workOrderVisibilityWhere(), ...access
+    });
+  }
 
   private async assetVisibilityWhere(client: TTransaction, tenantId: string, workspaceId: string, assetId?: string): Promise<Prisma.RentalAssetWhereInput> {
     const ownScope = this.contacts.getRequestDataScope() === "own";

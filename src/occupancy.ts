@@ -10,6 +10,12 @@ export function bufferedRentalPeriod(startAt: string, endAt: string, rule?: Rent
   };
 }
 
+/** 已履约且逾期未释放的原预占没有确定结束；排班与可用量共用此口径。 */
+export function reservedRentalPeriod(startAt: string, endAt: string, status: string, rule: RentalRuleConfig | undefined, now: Date) {
+  return bufferedRentalPeriod(startAt, status === "FULFILLED" && new Date(endAt) <= now
+    ? "9999-12-30T00:00:00.000Z" : endAt, rule);
+}
+
 /** 半开区间内的最大同时占用量；前后串行的订单不能被简单求和成并发占用。 */
 export function peakReservedQuantity(rows: Array<{ startAt: string; endAt: string; quantity: number }>, startAt: string, endAt: string) {
   const from = new Date(startAt).getTime();

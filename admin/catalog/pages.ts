@@ -29,4 +29,11 @@ export const RENTAL_CATALOG_PAGES = {
       order: RENTAL_WORK_ORDER_PAGES.workOrders.menu.order - 10,
     },
   },
+  schedule: {
+    id: "asset-schedule",
+    path: "/asset-schedule",
+    title: { default: "资产排班", translations: { "en-US": "Asset schedule" } },
+    permissions: rentalPagePermissions("asset-schedule"),
+    menu: { group: RENTAL_WORK_ORDER_PAGES.workOrders.menu.group, order: RENTAL_WORK_ORDER_PAGES.workOrders.menu.order - 5 },
+  },
 } satisfies Record<string, CorePageDescriptor>;

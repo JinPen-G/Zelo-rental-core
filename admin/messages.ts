@@ -6,6 +6,7 @@ import { rentalOperationsMessages } from './operations/messages';
 import { rentalChannelsMessages } from './channels/messages';
 import { rentalSetupMessages } from './setup/messages';
 import { rentalPaymentReconciliationMessages } from './payment-reconciliation/messages';
+import { rentalScheduleMessages } from './catalog/schedule-messages';
 
 const ENGLISH = {
   "请选择至少一个经营空间": "Select at least one workspace",
@@ -3997,4 +3998,5 @@ export const rentalAdminMessages: AdminMessages = {
   ...rentalChannelsMessages,
   ...rentalSetupMessages,
   ...rentalPaymentReconciliationMessages,
+  ...rentalScheduleMessages,
 };
