@@ -2,6 +2,8 @@
 
 定价分组、整体价格版本、调价计划、优惠、优惠券和服务容量共用包内页面与客户端。价格、预算、券状态和容量占用读取原服务端事实。[页面贡献](<index.tsx>) · [七页声明](<pages.ts>) · [请求工厂](<client.ts>)
 
+多规则营销使用独立的[版本合同](../../src/contracts.ts)、[选择器](../../src/discount-selection.ts)及[草稿发布入口](../../src/marketing-plan.ts)。`single_rule_v1`只选一个方案的一条规则：规则只减免公共条件和规则条件共同命中的租金行，其他行保持基础价，按整单租金比较。例如A600+B400仅A九折，候选租金940。`fixed_price`表示每件标的完整请求租期的固定租金，只乘数量一次；必须有`rentalDuration`单位及至少一个时长界限，资格使用原基础计价的单位和计费数量，使用量行不能冒充时间单位。封顶按各行实际可减免金额分摊，固定租价高于行原价时不抬价。DTO、发布校验及OpenAPI共用这些语义。现有优惠页面仍消费旧方案；该计算出口不表示经营空间已经切换生产报价策略。
+
 ## 宿主接入
 
 宿主通过 createRentalCommercialPageContext 供给当前 AdminRuntime、原鉴权图片读取、包含租户与经营空间的 scopeKey 和当前身份读取函数，再将上下文交给 createRentalCommercialAdminContribution。JSON 与图片传输在请求前后复验同一身份，查询传递取消信号。[上下文](<page-context.ts>) · [旧宿主上下文](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/features/commercial/legacy-commercial-context.ts>) · [原图片传输](<https://github.com/JinPen-G/Nativark/blob/1999dd8bb0cb84f07a6ef16935853aa895835ba0/apps/admin/src/api/rentalCore.ts>)

@@ -1,9 +1,12 @@
 import {
   RENTAL_SINGLE_MARKETING_RULE_POLICY,
+  RENTAL_MARKETING_RULE_ACTIONS,
+  RENTAL_MARKETING_DURATION_UNITS,
   type RentalMarketingPlanVersion,
   type RentalMarketingRule,
   type RentalMarketingQuoteDiscountEvaluation,
   type RentalDayType,
+  type RentalPricingUnit,
   type RentalDiscountPlan,
   type RentalDiscountTarget,
   type RentalQuoteDiscountEvaluation
@@ -342,11 +345,14 @@ export interface RentalMarketingSelection {
   rentalLineDiscounts: Record<string, number>;
 }
 
-export interface RentalMarketingContext extends Omit<RentalDiscountContext, "hasCustomer"> {
+export interface RentalMarketingContext extends Omit<RentalDiscountContext, "hasCustomer" | "rentalLines"> {
   tenantId: string;
   categoryCode: string;
   /** 由原会员域提供；无法读取不等于确认不是会员。 */
   membershipEligibility: "member" | "not_member" | "unavailable";
+  rentalLines: Array<{ id: string; itemGroupId: string; pricingGroupId?: string; amount: number;
+    /** 仅取正式基础计价结果。条件需要而原依据缺失时拒绝计算。 */
+    quantity?: number; pricingUnit?: RentalPricingUnit; billableUnits?: number }>;
 }
 
 function unavailable(message: string): never { throw new RentalMarketingSelectionError("unavailable", message); }
@@ -382,11 +388,11 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
       || !Number.isSafeInteger(rule.priority) || rule.priority < 0
       || !condition || typeof condition !== "object" || Array.isArray(condition)
       || Object.keys(condition).some(key => !["minimumSpend", "customerScope", "applicableItemGroupIds",
-        "applicablePricingGroupIds", "applicableDayTypes", "effectiveFrom", "effectiveTo"].includes(key))
+        "applicablePricingGroupIds", "applicableDayTypes", "effectiveFrom", "effectiveTo", "rentalDuration"].includes(key))
       || !action || typeof action !== "object" || Array.isArray(action)
-      || !["percentage", "fixed_amount", "threshold_amount"].includes(action.type)
+      || !RENTAL_MARKETING_RULE_ACTIONS.includes(action.type)
       || Object.keys(action).some(key => !["type", "value", "thresholdAmount", "maximumDiscount"].includes(key))
-      || !validAmount(action.value) || action.value <= 0 || action.type === "percentage" && action.value > 100
+      || !validAmount(action.value) || action.type !== "fixed_price" && action.value <= 0 || action.type === "percentage" && action.value > 100
       || action.maximumDiscount !== undefined && (!validAmount(action.maximumDiscount) || action.maximumDiscount <= 0)
       || action.type === "threshold_amount" && (!validAmount(action.thresholdAmount) || action.thresholdAmount <= 0)
       || action.type !== "threshold_amount" && action.thresholdAmount !== undefined
@@ -401,6 +407,17 @@ export function assertMarketingPlan(plan: RentalMarketingPlanVersion): void {
         && Date.parse(condition.effectiveTo) <= Date.parse(condition.effectiveFrom)) {
       unavailable("营销规则条件、动作或版本不可用");
     }
+    const duration = condition.rentalDuration;
+    if (action.type === "fixed_price" && !duration || duration !== undefined && (
+      !duration || typeof duration !== "object" || Array.isArray(duration)
+      || Object.keys(duration).some(key => !["unit", "minimum", "maximum"].includes(key))
+      || !RENTAL_MARKETING_DURATION_UNITS.includes(duration.unit)
+      || duration.minimum === undefined && duration.maximum === undefined
+      || duration.minimum !== undefined && (!validAmount(duration.minimum) || duration.minimum <= 0)
+      || duration.maximum !== undefined && (!validAmount(duration.maximum) || duration.maximum <= 0)
+      || duration.minimum !== undefined && duration.maximum !== undefined && duration.minimum > duration.maximum)) {
+      unavailable("固定租价或租期条件缺少有效的原计价单位和时长范围");
+    }
   }
 }
 
@@ -414,14 +431,14 @@ function ruleAsDiscountPlan(plan: RentalMarketingPlanVersion, rule: RentalMarket
     applicableDayTypes: rule.conditions.applicableDayTypes ?? [],
     effectiveFrom: rule.conditions.effectiveFrom ?? plan.effectiveFrom,
     effectiveTo: rule.conditions.effectiveTo ?? plan.effectiveTo
-  }), discountType: common ? "fixed_amount" : rule.action.type,
+  }), discountType: common || rule.action.type === "fixed_price" ? "fixed_amount" : rule.action.type,
     discountValue: rule.action.value, thresholdAmount: common ? undefined : rule.action.thresholdAmount,
     maximumDiscount: rule.action.maximumDiscount, stackableWithOtherPlans: false, stackableWithCoupon: true };
 }
 
-/** 新策略的无副作用计算入口。已确定的首个切片只接一个完整租金行及原三种优惠动作。
- * 多行和固定租价单位尚未核定时明确拒绝；不自行按行挑选或将 fixed_amount 当固定租价。
- * 每条规则均从同一基础租金计算，用券不参与选择；后续动作须传原快照中的选中规则。 */
+/** 每条规则独立作用于公共条件与规则条件共同命中的行，其余行保持基础价。
+ * 候选按整单租金比较，最多选一条；固定租价只乘数量一次，不能按天或按行拼选。
+ * 用券不参与选择；后续动作须传原快照中的选中规则，不查询当前营销配置。 */
 export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context: RentalMarketingContext): RentalMarketingSelection {
   if (!context || !validText(context.tenantId) || !validText(context.categoryCode)
     || !["member", "not_member", "unavailable"].includes(context.membershipEligibility)) unavailable("营销身份或资格来源不可用");
@@ -434,14 +451,16 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
     || !(ctx.dayTypes instanceof Set) || !ctx.dayTypes.size || !validDayTypes([...ctx.dayTypes])
     || !validIds(ctx.itemGroupIds) || ctx.pricingGroupIds !== undefined && !validIds(ctx.pricingGroupIds)
     || ctx.requestedPlanId !== undefined && !validText(ctx.requestedPlanId)) unavailable("营销报价的受信输入或金额依据不可用");
-  const line = ctx.rentalLines?.[0];
-  if (!Array.isArray(ctx.rentalLines) || ctx.rentalLines.length !== 1 || !line || !validText(line.id)
-    || !validText(line.itemGroupId) || !validAmount(line.amount) || money(line.amount) !== money(ctx.bases.rental)
-    || ctx.itemGroupIds.length !== 1 || ctx.itemGroupIds[0] !== line.itemGroupId
-    || line.pricingGroupId !== undefined && (!validText(line.pricingGroupId)
-      || ctx.pricingGroupIds?.length !== 1 || ctx.pricingGroupIds[0] !== line.pricingGroupId)
-    || line.pricingGroupId === undefined && Boolean(ctx.pricingGroupIds?.length)) {
-    unavailable("当前单规则营销计算需要一个完整租金行；多行作用范围尚未接入");
+  const lines = context.rentalLines;
+  const sameIds = (left: string[], right: string[]) => left.length === new Set(right).size && left.every(id => right.includes(id));
+  if (!Array.isArray(lines) || !lines.length || lines.some(line => !line || !validText(line.id)
+    || !validText(line.itemGroupId) || !validAmount(line.amount)
+    || line.pricingGroupId !== undefined && !validText(line.pricingGroupId))
+    || new Set(lines.map(line => line.id)).size !== lines.length
+    || money(lines.reduce((sum, line) => sum + line.amount, 0)) !== money(ctx.bases.rental)
+    || !sameIds(ctx.itemGroupIds, lines.map(line => line.itemGroupId))
+    || !sameIds(ctx.pricingGroupIds ?? [], lines.flatMap(line => line.pricingGroupId ? [line.pricingGroupId] : []))) {
+    unavailable("营销报价缺少完整、唯一且与基础总额一致的租金行");
   }
   if (!Array.isArray(plans)) unavailable("营销方案读取结果不可用");
   // 先验证完整输入，避免把读取错误/重复版本伪装成自动无命中。
@@ -456,16 +475,46 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
     const common = evaluateEligibility(ruleAsDiscountPlan(plan, rule, true), ctx);
     const effective = ruleAsDiscountPlan(plan, rule, false);
     const individual = evaluateEligibility(effective, ctx);
-    // 新合同的商品与定价组限制同时成立，保留旧策略自身的历史判据不变。
-    const itemScopeMatches = (ids: readonly string[] | undefined) => !ids?.length || ids.includes(line.itemGroupId);
-    const commonItemScope = itemScopeMatches(plan.applicableItemGroupIds);
-    const ruleItemScope = itemScopeMatches(rule.conditions.applicableItemGroupIds);
-    const skipReason = common.skipReason ?? (!commonItemScope || !ruleItemScope ? "item_group_mismatch" as const : undefined)
+    const matches = (scope: Pick<RentalMarketingPlanVersion, "applicableItemGroupIds" | "applicablePricingGroupIds">,
+      line: typeof lines[number]) => (!scope.applicableItemGroupIds?.length || scope.applicableItemGroupIds.includes(line.itemGroupId))
+      && (!scope.applicablePricingGroupIds?.length || Boolean(line.pricingGroupId && scope.applicablePricingGroupIds.includes(line.pricingGroupId)));
+    const scopedLines = lines.filter(line => matches(plan, line) && matches({
+      applicableItemGroupIds: rule.conditions.applicableItemGroupIds ?? [],
+      applicablePricingGroupIds: rule.conditions.applicablePricingGroupIds }, line));
+    const duration = rule.conditions.rentalDuration;
+    const matchedLines = scopedLines.filter(line => {
+      if (!duration) return true;
+      if (!line.pricingUnit || !validAmount(line.billableUnits) || line.billableUnits <= 0)
+        unavailable("营销租期条件所需原计价单位或计费数量不可用");
+      return line.pricingUnit === duration.unit && (duration.minimum === undefined || line.billableUnits >= duration.minimum)
+        && (duration.maximum === undefined || line.billableUnits <= duration.maximum);
+    });
+    const skipReason = common.skipReason ?? (!scopedLines.length ? "item_group_mismatch" as const : undefined)
+      ?? (duration && !matchedLines.length ? "rental_duration_mismatch" as const : undefined)
       ?? (rule.status !== "enabled" ? "rule_not_enabled" as const : individual.skipReason);
-    const candidateAmount = skipReason ? 0 : amountFor(effective, line.amount);
-    return { plan, rule, effective, skipReason, candidateAmount,
+    const base = money(matchedLines.reduce((sum, line) => sum + line.amount, 0));
+    const bases = Object.fromEntries(matchedLines.map(line => [line.id, line.amount]));
+    let candidateAmount = skipReason ? 0 : amountFor(effective, base);
+    let candidateAllocations: Record<string, number> = {};
+    if (!skipReason && rule.action.type === "fixed_price") {
+      const reductions = Object.fromEntries(matchedLines.map(line => {
+        if (!Number.isSafeInteger(line.quantity) || line.quantity! <= 0) unavailable("固定租价缺少原标的数量");
+        const fixed = money(rule.action.value * line.quantity!);
+        if (!validAmount(fixed)) unavailable("固定租价结果超出原金额精度范围");
+        return [line.id, Math.max(0, money(line.amount - fixed))];
+      }));
+      candidateAmount = money(Math.min(Object.values(reductions).reduce((sum, value) => sum + value, 0), rule.action.maximumDiscount ?? base));
+      // 按各行本来可减免的金额分摊封顶，不能把高于基础价的固定租价行变相加价。
+      candidateAllocations = allocateDiscount(candidateAmount, reductions);
+    } else if (!skipReason) candidateAllocations = allocateDiscount(candidateAmount, bases);
+    const formula = rule.action.type === "fixed_price"
+      ? `每件完整租期 ${rule.action.value}，命中 ${matchedLines.map(line => `${line.id} × ${line.quantity ?? "未知"}`).join("、")}；减免 ${candidateAmount}${rule.action.maximumDiscount === undefined ? "" : `，封顶 ${rule.action.maximumDiscount}`}`
+      : formulaFor(effective, base, candidateAmount);
+    return { plan, rule, effective, skipReason, candidateAmount, candidateAllocations, base, formula,
       eligibility: [...common.eligibility.map(row => ({ ...row, rule: `plan.${row.rule}` })),
-        { rule: "plan.item_group", passed: commonItemScope }, { rule: "rule.item_group", passed: ruleItemScope },
+        { rule: "joint_line_scope", passed: scopedLines.length > 0, detail: scopedLines.map(line => line.id).join(",") },
+        ...(duration ? [{ rule: "rule.rental_duration", passed: matchedLines.length > 0,
+          detail: `${duration.unit} ${duration.minimum ?? "无下限"}～${duration.maximum ?? "无上限"}` }] : []),
         { rule: "rule.status", passed: rule.status === "enabled", detail: `状态 ${rule.status}` },
         ...individual.eligibility.map(row => ({ ...row, rule: `rule.${row.rule}` }))] };
   }));
@@ -475,7 +524,7 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
   const winner = judged.filter(row => !row.skipReason && row.candidateAmount > 0).sort(compare)[0];
   if (ctx.requestedPlanId && !winner) throw new RentalMarketingSelectionError("requested_plan_unavailable", "指定营销方案不满足本次报价条件");
   const discount = winner?.candidateAmount ?? 0;
-  const allocations = winner ? allocateDiscount(discount, { [line.id]: line.amount }) : {};
+  const allocations = winner?.candidateAllocations ?? {};
   return {
     pricingPolicy: RENTAL_SINGLE_MARKETING_RULE_POLICY,
     selected: winner ? { planId: winner.plan.id, planVersion: winner.plan.version, ruleId: winner.rule.id, ruleVersion: winner.rule.version } : undefined,
@@ -493,9 +542,9 @@ export function selectMarketingRule(plans: RentalMarketingPlanVersion[], context
         priority: row.rule.priority, stackableWithOtherPlans: false, stackableWithCoupon: true,
         applied, skipReason: reason,
         skipDetail: !applied && !row.skipReason && winner ? `选用 ${winner.plan.code}/${winner.rule.id}，营销后租金 ${money(ctx.bases.rental - discount)}` : undefined,
-        eligibility: row.eligibility, grossAmount: money(line.amount), base: money(line.amount),
+        eligibility: row.eligibility, grossAmount: row.base, base: row.base,
         comparisonRentalAmount: money(ctx.bases.rental), candidateRentalAmount: money(ctx.bases.rental - row.candidateAmount),
-        formula: formulaFor(row.effective, line.amount, row.candidateAmount), candidateAmount: row.candidateAmount,
+        formula: row.formula, candidateAmount: row.candidateAmount,
         discountAmount: applied ? row.candidateAmount : 0, rentalAllocations: applied ? { ...allocations } : undefined,
         maximumDiscount: row.rule.action.maximumDiscount,
         capped: applied && row.rule.action.maximumDiscount !== undefined && row.candidateAmount >= row.rule.action.maximumDiscount

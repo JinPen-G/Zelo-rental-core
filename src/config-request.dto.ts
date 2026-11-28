@@ -2,7 +2,7 @@
  * 只验证输入；业务许可、批准、价格及写入仍由原服务处理。宿主先按原Nest启动加载reflect-metadata。
  * 对象和数组均显式使用Type/ValidateNested，构建保留原装饰器元数据；整体覆盖配置不得漏组。
  * 倍率上界保护直接乘入金额的输入，字段覆盖门禁扫描本实际源码。 */
-import { RENTAL_CURRENCY_CODES, RENTAL_DISCOUNT_TARGETS, RENTAL_DISCOUNT_TYPES, RENTAL_FULFILLMENT_MODES, RENTAL_INSURANCE_PROVIDER_STATUSES, RENTAL_PAYMENT_METHOD_CODES, RENTAL_PRICING_UNIT_CODES, RENTAL_SECURITY_RISK_LEVELS, RENTAL_SERVICE_BILLING_UNITS, RENTAL_SERVICE_SELECTION_MODES, type RentalCurrency, type RentalDayType, type RentalDiscountTarget, type RentalInsuranceProviderStatus, type RentalPricingUnit, type RentalServiceMandatoryRule, type RentalServiceSelectionMode } from "./contracts";
+import { RENTAL_CURRENCY_CODES, RENTAL_DISCOUNT_TARGETS, RENTAL_DISCOUNT_TYPES, RENTAL_MARKETING_RULE_ACTIONS, RENTAL_MARKETING_DURATION_UNITS, RENTAL_FULFILLMENT_MODES, RENTAL_INSURANCE_PROVIDER_STATUSES, RENTAL_PAYMENT_METHOD_CODES, RENTAL_PRICING_UNIT_CODES, RENTAL_SECURITY_RISK_LEVELS, RENTAL_SERVICE_BILLING_UNITS, RENTAL_SERVICE_SELECTION_MODES, type RentalCurrency, type RentalDayType, type RentalDiscountTarget, type RentalInsuranceProviderStatus, type RentalPricingUnit, type RentalServiceMandatoryRule, type RentalServiceSelectionMode } from "./contracts";
 import type {
   ChangeRentalMarketingPlanStatusRequest,
   RentalMarketingRule,
@@ -600,6 +600,12 @@ export class SaveRentalPricingPlanDto implements SaveRentalPricingPlanRequest {
 
 /* ---------- 优惠方案 ---------- */
 
+export class RentalMarketingRentalDurationDto {
+  @IsIn(RENTAL_MARKETING_DURATION_UNITS) unit!: (typeof RENTAL_MARKETING_DURATION_UNITS)[number];
+  @IsOptional() @IsNumber() @Min(0) minimum?: number;
+  @IsOptional() @IsNumber() @Min(0) maximum?: number;
+}
+
 export class RentalMarketingRuleConditionsDto implements RentalMarketingRuleConditions {
   @IsOptional() @IsNumber() @Min(0) minimumSpend?: number;
   @IsOptional() @IsIn(CUSTOMER_SCOPES) customerScope?: RentalMarketingRuleConditions["customerScope"];
@@ -608,11 +614,12 @@ export class RentalMarketingRuleConditionsDto implements RentalMarketingRuleCond
   @IsOptional() @IsArray() @IsIn(DAY_TYPES, { each: true }) applicableDayTypes?: RentalDayType[];
   @IsOptional() @IsISO8601() effectiveFrom?: string;
   @IsOptional() @IsISO8601() effectiveTo?: string;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => RentalMarketingRentalDurationDto) rentalDuration?: RentalMarketingRentalDurationDto;
 }
 
 type MarketingRuleAction = RentalMarketingRule["action"];
 export class RentalMarketingRuleActionDto implements MarketingRuleAction {
-  @IsIn(DISCOUNT_TYPES) type!: RentalMarketingRule["action"]["type"];
+  @IsIn(RENTAL_MARKETING_RULE_ACTIONS) type!: RentalMarketingRule["action"]["type"];
   @IsNumber() @Min(0) value!: number;
   @IsOptional() @IsNumber() @Min(0) thresholdAmount?: number;
   @IsOptional() @IsNumber() @Min(0) maximumDiscount?: number;

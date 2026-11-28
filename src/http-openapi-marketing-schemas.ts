@@ -1,5 +1,5 @@
 /** 多规则营销 HTTP 合同；字段与正式 DTO/服务端版本相同，不将发布权归并为编辑权。 */
-import { RENTAL_DISCOUNT_TYPES, RENTAL_SINGLE_MARKETING_RULE_POLICY } from "./contracts";
+import { RENTAL_MARKETING_RULE_ACTIONS, RENTAL_MARKETING_DURATION_UNITS, RENTAL_SINGLE_MARKETING_RULE_POLICY } from "./contracts";
 import { RENTAL_MARKETING_READ_PERMISSIONS, RENTAL_MARKETING_EDIT_PERMISSIONS, RENTAL_MARKETING_PUBLISH_PERMISSIONS } from "./marketing-plan";
 import { arrayOf, objectOf, objectSchema, ref, type SchemaObject, type ContractOperation } from "./http-openapi-contract";
 
@@ -22,8 +22,10 @@ const commonRequired = ["code", "name", "pricingPolicy", "appliesTo", "minimumSp
   "applicableItemGroupIds", "applicableDayTypes", "priority", "effectiveFrom"];
 
 export const RENTAL_MARKETING_SCHEMAS: Record<string, SchemaObject> = {
-  RentalMarketingRuleConditions: objectOf(conditions, [], false),
-  RentalMarketingRuleAction: objectOf({ type: { type: "string", enum: [...RENTAL_DISCOUNT_TYPES] }, value: money,
+  RentalMarketingRentalDuration: objectOf({ unit: { type: "string", enum: [...RENTAL_MARKETING_DURATION_UNITS] },
+    minimum: { type: "number", minimum: 0, exclusiveMinimum: true }, maximum: { type: "number", minimum: 0, exclusiveMinimum: true } }, ["unit"], false),
+  RentalMarketingRuleConditions: objectOf({ ...conditions, rentalDuration: ref("RentalMarketingRentalDuration") }, [], false),
+  RentalMarketingRuleAction: objectOf({ type: { type: "string", enum: [...RENTAL_MARKETING_RULE_ACTIONS] }, value: money,
     thresholdAmount: money, maximumDiscount: money }, ["type", "value"], false),
   RentalMarketingRuleDraft: objectOf(rule, Object.keys(rule), false),
   RentalMarketingRule: objectOf({ ...rule, version: id }, [...Object.keys(rule), "version"], false),
