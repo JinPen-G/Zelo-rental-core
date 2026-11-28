@@ -3483,6 +3483,49 @@ export type RentalDiscountTarget = (typeof RENTAL_DISCOUNT_TARGETS)[number];
 export const RENTAL_DISCOUNT_TYPES = ["percentage", "fixed_amount", "threshold_amount"] as const;
 export type RentalDiscountType = (typeof RENTAL_DISCOUNT_TYPES)[number];
 
+/** 新营销策略显式声明版本；没有此标识的历史报价仍按原叠加/会员策略解释。 */
+export const RENTAL_SINGLE_MARKETING_RULE_POLICY = "single_rule_v1" as const;
+
+/** 规则条件是方案公共范围内的进一步限制，不能覆盖或扩大方案范围。 */
+export interface RentalMarketingRuleConditions {
+  minimumSpend?: number;
+  customerScope?: RentalDiscountPlan["customerScope"];
+  applicableItemGroupIds?: string[];
+  applicablePricingGroupIds?: string[];
+  applicableDayTypes?: RentalDayType[];
+  effectiveFrom?: string;
+  effectiveTo?: string;
+}
+
+/** 复用原百分比（10 表示减免 10%）、固定减免和满减语义。
+ * 固定租价需要单独确定租期与数量单位，不能伪装成固定减免。 */
+export interface RentalMarketingRule {
+  id: string;
+  version: string;
+  name: string;
+  status: "enabled" | "disabled";
+  priority: number;
+  conditions: RentalMarketingRuleConditions;
+  action: {
+    type: RentalDiscountType;
+    value: number;
+    thresholdAmount?: number;
+    maximumDiscount?: number;
+  };
+}
+
+/** 独立的已发布规则集合合同；尚未替换旧保存 DTO 或持久化模型。
+ * 当前纯计算入口只支持一个租金行，其他费用目标和多行范围待正式接入。 */
+export interface RentalMarketingPlanVersion extends Pick<RentalDiscountPlan,
+  "id" | "tenantId" | "categoryCode" | "code" | "name" | "status" | "version" |
+  "minimumSpend" | "customerScope" | "applicableItemGroupIds" | "applicablePricingGroupIds" |
+  "applicableDayTypes" | "priority" | "effectiveFrom" | "effectiveTo" | "createdAt" | "updatedAt"> {
+  pricingPolicy: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  workspaceId: string;
+  appliesTo: "rental";
+  rules: RentalMarketingRule[];
+}
+
 export interface RentalDiscountPlan {
   id: string;
   tenantId: string;
@@ -3540,6 +3583,9 @@ export const RENTAL_DISCOUNT_SKIP_REASONS = [
   "no_chargeable_target",
   "exclusive_group_lost",
   "not_stackable_with_applied",
+  "lower_marketing_price_available",
+  "same_price_lower_priority",
+  "rule_not_enabled",
   "zero_discount"
 ] as const;
 export type RentalDiscountSkipReason = (typeof RENTAL_DISCOUNT_SKIP_REASONS)[number];
@@ -3551,6 +3597,15 @@ export type RentalDiscountSkipReason = (typeof RENTAL_DISCOUNT_SKIP_REASONS)[num
  * 比大小，而落选方案的实际减免是 0。只存后者就无法解释「它输给谁、差多少」。
  */
 export interface RentalQuoteDiscountEvaluation {
+  /** 新策略保留完整方案集合和选中规则；旧快照不补写这些字段。 */
+  pricingPolicy?: typeof RENTAL_SINGLE_MARKETING_RULE_POLICY;
+  marketingPlanSnapshot?: RentalMarketingPlanVersion;
+  ruleSnapshot?: RentalMarketingRule;
+  ruleId?: string;
+  ruleVersion?: string;
+  /** 各候选共用的原租金总额与用券前候选租金，不以覆盖范围不同的小计比较。 */
+  comparisonRentalAmount?: number;
+  candidateRentalAmount?: number;
   /** 原优惠规则本体；续租重算不回读已修改的营销方案。旧快照可缺省。 */
   planSnapshot?: RentalDiscountPlan;
   planId: string;
