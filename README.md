@@ -231,6 +231,8 @@ Zelo-rental-core/
 
 ### 模块导读入口
 
+可选通用客户端适配见[客户与员工 contribution](clients/contribution/README.md)：普通客户本人订单取消、员工订单服务开始，复用原会话、当前权限和原操作收据；合同固定版本及宿主条件在该说明中维护。
+
 | 模块分层 | 核心目录与说明入口 |
 | --- | --- |
 | **数据与迁移** | [Prisma Schema 与迁移升级说明](prisma/README.md) · [数据发行与迁移摘要](src/data.ts) |

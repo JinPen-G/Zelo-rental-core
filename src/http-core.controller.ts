@@ -197,6 +197,12 @@ function returnedQuantitiesOf(
 
 @Controller("rental/v1")
 export class RentalCoreController {
+  /** 只观察当前普通经营准入；实际动作仍通过原 Guard、对象和事务复验。 */
+  @Get("contribution-access")
+  contributionAccess(@Req() req: AuthenticatedRequest) {
+    if (!hasPermissionCode(req.user, "rental-os:order:operate")) throw new ForbiddenException("无订单操作权限");
+    return { allowed: true as const };
+  }
   private readonly notificationLogger = new Logger(RentalCoreController.name);
   constructor(
     @Inject(RENTAL_HTTP_CORE) private readonly service: RentalHttpApplications["core"],
@@ -2616,6 +2622,10 @@ export class RentalCoreController {
     @Param("occurrenceId") occurrenceId: string,
     @Body() body: UpdateRentalServiceOccurrenceDto
   ) {
+    // 员工分面只开放本期开始动作，不连带开放完成、取消、失败或其他处理。
+    if (getRequestIdentity()?.staffApi && (body.action !== "start" || !idempotencyKeyOf(req))) {
+      throw new ForbiddenException("员工服务开始须使用原操作键，其他服务动作未开放");
+    }
     const tenantId = req.user.tenantId;
     const operationKey = idempotencyKeyOf(req);
     // Complete may be one of many segments. A fixed action fallback cannot
