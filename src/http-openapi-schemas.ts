@@ -1950,6 +1950,11 @@ export const RENTAL_HTTP_COMPONENT_SCHEMAS: Record<string, SchemaObject> = {
     locationId: stringSchema, locationName: stringSchema, status: { type: "string", enum: ["available", "maintenance"] },
     updatedAt: { type: "string", format: "date-time" }
   }, ["id", "assetNo", "itemGroupName", "locationId", "locationName", "status", "updatedAt"]),
+  RentalWorkOrderCreationReceipt: {
+    oneOf: [objectOf({ status: { type: "string", enum: ["unknown"] } }, ["status"], false),
+      objectOf({ status: { type: "string", enum: ["committed"] }, operationId: stringSchema, assetId: stringSchema,
+        workOrderId: stringSchema }, ["status", "operationId", "assetId", "workOrderId"], false)]
+  },
   CreateRentalWorkOrderRequest: {
     ...objectOf({
       dispositionId: { type: "string", minLength: 1, maxLength: 191 },

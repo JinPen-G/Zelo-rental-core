@@ -9,6 +9,16 @@ import { rentalPaymentReconciliationMessages } from './payment-reconciliation/me
 import { rentalScheduleMessages } from './catalog/schedule-messages';
 
 const ENGLISH = {
+  "有一笔养护创建待核对": "A maintenance creation needs verification",
+  "原操作已保留，核对完成后才能再次独立创建养护。": "The original operation is saved. Verify its result before creating another independent maintenance order.",
+  "核对创建结果": "Check creation result",
+  "尚未查到养护创建收据，请稍后继续核对": "No creation receipt was found yet. Check the original operation again later.",
+  "当前浏览器无法安全保存养护操作，请恢复浏览器存储后重试": "This browser cannot safely retain maintenance operations. Restore browser storage and try again.",
+  "另一页面正在核对或提交养护操作，请稍后再试": "Another page is submitting or checking maintenance. Try again later.",
+  "请先核对已有的养护创建结果": "Check the existing maintenance creation result first.",
+  "独立养护缺少资产或原操作号": "Independent maintenance requires an asset and its original operation ID.",
+  "养护创建结果尚未确认，请核对原操作": "Maintenance creation is unconfirmed. Check the original operation.",
+  "原养护操作引用无法读取，请检查浏览器存储": "The original maintenance reference cannot be read. Check browser storage.",
   "请选择至少一个经营空间": "Select at least one workspace",
   "邀请正在处理中": "Invitations are being processed",
   "原邀请已结束，请查看邀请记录": "The original invitation has ended. Check invitation records.",

@@ -5575,6 +5575,11 @@ export interface RentalWorkOrderAssignee {
 /** 独立养护表单的受权资产投影；不包含资产扩展属性或客户/设备资料。 */
 export type RentalWorkOrderAsset = Pick<RentalAsset, "id" | "assetNo" | "itemGroupName" | "locationId" | "locationName" | "status" | "updatedAt">;
 
+/** 只证明原独立创建是否已有收据；工单当前状态仍从原详情读取。 */
+export type RentalWorkOrderCreationReceipt =
+  | { status: "unknown" }
+  | { status: "committed"; operationId: string; assetId: string; workOrderId: string };
+
 export interface RentalWorkOrderHistoryEntry {
   id: string;
   action: string;

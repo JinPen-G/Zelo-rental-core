@@ -948,6 +948,30 @@ export class RentalCoreController {
   @Get("work-order-assets") workOrderAssets(@Req() req: AuthenticatedRequest) {
     return this.service.listWorkOrderAssets(req.user.tenantId);
   }
+  @Get("work-order-creation-receipt")
+  async workOrderCreationReceipt(@Req() req: AuthenticatedRequest, @Query("assetId") assetId: string): Promise<import("./contracts").RentalWorkOrderCreationReceipt> {
+    const key = idempotencyKeyOf(req), identity = getRequestIdentity();
+    if (!key || key.length > 128 || typeof assetId !== "string" || !assetId.trim() || assetId.length > 191)
+      throw new BadRequestException("读取独立养护原收据须提供资产及有效 Idempotency-Key");
+    if (!identity?.workspaceId || identity.tenantId !== req.user.tenantId || identity.userId !== req.user.id)
+      throw new ForbiddenException("独立养护收据缺少当前经营空间与操作账号");
+    // 当前原工单读口核地点与 own 范围；原键、本地引用和旧响应均不能授予读取权。
+    const visible = await this.service.listWorkOrders(req.user.tenantId);
+    const receipt = await this.idempotent.readReceipt({
+      tenantId: req.user.tenantId, action: "work_order.create_manual", key, orderId: null,
+      replay: async response => {
+        const original = response as import("./contracts").RentalWorkOrder | undefined;
+        if (!original?.id || original.tenantId !== req.user.tenantId || original.workspaceId !== identity.workspaceId
+          || original.createdBy !== identity.userId || original.assetId !== assetId || original.dispositionId || original.orderId) return undefined;
+        const current = visible.find(row => row.id === original.id);
+        if (!current || current.assetId !== assetId || current.createdBy !== identity.userId
+          || current.tenantId !== req.user.tenantId || current.workspaceId !== identity.workspaceId
+          || current.dispositionId || current.orderId) return undefined;
+        return { status: "committed" as const, operationId: key, assetId, workOrderId: original.id };
+      }
+    });
+    return receipt ?? { status: "unknown" };
+  }
   @Get("work-orders/:id/history") workOrderHistory(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
     return this.service.listWorkOrderHistory(req.user.tenantId, id);
   }

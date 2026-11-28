@@ -31,6 +31,7 @@ import type { RentalAdminContexts } from "./index";
 import {
   createRentalOrderPageContext,
   rentalOrderSessionIdentity,
+  rentalOrderSessionScope,
   type RentalOrderPageContext,
   type RentalOrderReferenceJournal,
 } from "./orders/page-context";
@@ -274,6 +275,7 @@ export function createRentalAdminHost(options: RentalAdminHostOptions): RentalAd
           api: createRentalWorkOrderApi(scopedRequest),
           scopeKey,
           currentScopeKey,
+          operationScopeKey: scopeKey ? rentalOrderSessionScope(workspaceSession) : undefined,
           permissions: state.workOrderPermissions,
         },
         capability: createRentalCapabilityPageContext({ ...workspace, refreshSession: options.refreshSession }),

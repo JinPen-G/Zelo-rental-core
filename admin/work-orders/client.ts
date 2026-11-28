@@ -9,6 +9,7 @@ import type {
   RentalWorkOrderAsset,
   RentalStockDisposition,
   RentalWorkOrder,
+  RentalWorkOrderCreationReceipt,
   RentalWorkOrderAssignee,
   RentalWorkOrderHistoryEntry,
   ReviewRentalWorkOrderRequest,
@@ -27,7 +28,13 @@ export function createRentalWorkOrderApi(request: AdminRuntime["request"]) {
     workOrders: (status?: string, options: ReadOptions = {}) => request<RentalWorkOrder[]>("/rental/v1/work-orders", { ...options, params: { status } }),
     workOrderAssignees: (locationId?: string, options: ReadOptions = {}) => request<RentalWorkOrderAssignee[]>("/rental/v1/work-order-assignees", { ...options, params: { locationId } }),
     workOrderHistory: (id: string, options?: ReadOptions) => request<RentalWorkOrderHistoryEntry[]>(`/rental/v1/work-orders/${id}/history`, options),
-    createWorkOrder: (data: CreateRentalWorkOrderRequest) => request<RentalWorkOrder>("/rental/v1/work-orders", { method: "post", data }),
+    createWorkOrder: (data: CreateRentalWorkOrderRequest) => request<RentalWorkOrder>("/rental/v1/work-orders", {
+      method: "post", data, ...(data.assetId ? { retryAuthentication: false } : {})
+    }),
+    workOrderCreationReceipt: (assetId: string, operationId: string, options: ReadOptions = {}) =>
+      request<RentalWorkOrderCreationReceipt>("/rental/v1/work-order-creation-receipt", {
+        ...options, params: { assetId }, headers: { "Idempotency-Key": operationId }, retryAuthentication: false
+      }),
     assignWorkOrder: (id: string, data: AssignRentalWorkOrderRequest) => request<RentalWorkOrder>(`/rental/v1/work-orders/${id}/assign`, { method: "put", data }),
     startWorkOrder: (id: string) => request<RentalWorkOrder>(`/rental/v1/work-orders/${id}/start`, { method: "post" }),
     submitWorkOrder: (id: string, data: SubmitRentalWorkOrderRequest) => request<RentalWorkOrder>(`/rental/v1/work-orders/${id}/submit`, { method: "post", data }),

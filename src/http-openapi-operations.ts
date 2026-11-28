@@ -715,6 +715,15 @@ export const RENTAL_HTTP_OPERATIONS: ContractOperation[] = [
     responseSchema: { type: "array", items: { $ref: "#/components/schemas/RentalWorkOrderAsset" } }
   },
   {
+    method: "get", path: "/api/rental/v1/work-order-creation-receipt", tag: "RentalCore", operationId: "readRentalWorkOrderCreationReceipt",
+    summary: "按原操作号读取本人独立养护创建收据；当前工单范围仍须可读，unknown 不表示可重发",
+    permissions: ["rental-core:maintenance:view"], responseSchema: "RentalWorkOrderCreationReceipt",
+    parameters: [
+      { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 128 } },
+      { name: "assetId", in: "query", required: true, schema: { type: "string", minLength: 1, maxLength: 191 } }
+    ]
+  },
+  {
     method: "put", path: "/api/rental/v1/work-orders/{id}/assign", tag: "RentalCore", operationId: "assignRentalWorkOrder",
     summary: "Assign maintenance work order", permissions: ["rental-core:maintenance:manage"], requestSchema: "GenericObject", responseSchema: "GenericObject"
   },
