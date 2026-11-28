@@ -11,6 +11,7 @@ import { ActionButton, Alert, Button, CalendarOutlined, ContentTransition, DataT
 import { RentalAssetStatus, type RentalAssetSchedule, type RentalAssetScheduleEntry, type RentalAssetScheduleQuery, type RentalAssetScheduleRow, type RentalWorkOrderType } from "@rental-os/rental-core";
 import { businessDateKey } from "@rental-os/rental-core/business-day";
 import { rentalOrderLocation } from "../orders/pages";
+import type { OrderQuickAction } from "../orders/orderQuickActions";
 import { rentalWorkOrderLocation } from "../work-orders/pages";
 import type { RentalCatalogPageContext } from "./page-context";
 import { rentalAssetLocation } from "./pages";
@@ -57,10 +58,13 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
     const page = host.pages.get(corePageKey(location.coreId, location.pageId));
     return Boolean(page && host.canAccess(location.coreId, page.definition.permissions));
   };
-  const navigate = (location: CorePageLocation, permission: { resource: string; action: string }, selectedAssetId?: string) => {
+  const navigate = (location: CorePageLocation, permission: { resource: string; action: string }, selectedAssetId?: string, action?: OrderQuickAction) => {
     if (currentScopeKey() !== scopeKey || !host.canAccess("rental", [permission]) || !canOpen(location)) return;
     const path = resolveCorePageLocation(host.pages, location);
-    host.navigate(selectedAssetId ? `${path}?${new URLSearchParams({ assetId: selectedAssetId })}` : path);
+    const search = new URLSearchParams();
+    if (selectedAssetId) search.set("assetId", selectedAssetId);
+    if (action) search.set("action", action);
+    host.navigate(search.size ? `${path}?${search}` : path);
   };
   const openSource = (entry: RentalAssetScheduleEntry) => {
     if (!entry.sourceId) return;
@@ -69,6 +73,14 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
   };
   const selectableSource = (entry: RentalAssetScheduleEntry) => Boolean(entry.sourceId && ((entry.source === "order" && host.canAccess("rental", [{ resource: "order", action: "view" }]))
     || (entry.source === "work_order" && host.canAccess("rental", [{ resource: "maintenance", action: "view" }]))));
+  const canLocateAllocation = (entry: RentalAssetScheduleEntry) => entry.kind === "reservation" && entry.source === "order"
+    && selectableSource(entry) && host.canAccess("rental", [{ resource: "order", action: "operate" }])
+    && canOpen(rentalOrderLocation(entry.sourceId));
+  const locateAllocation = (entry: RentalAssetScheduleEntry) => {
+    if (!canLocateAllocation(entry)) return;
+    // 只定位原订单的资源分配区；候选、原修订及实际提交仍由原页面与服务端核定。
+    navigate(rentalOrderLocation(entry.sourceId), { resource: "order", action: "operate" }, undefined, "allocation");
+  };
   const resetPage = (change: () => void) => { setPage(1); setSelection(undefined); change(); };
   return <CorePage title={t("资产排班")} summary={data ? `${t("共 {count} 辆/件资产", { count: data.total })} · ${data.timeZone} · ${t("读取于")} ${format(data.observedAt)}` : undefined}
     actions={canOpen(rentalWorkOrderLocation()) ? [{ id: "maintenance", kind: "navigate",
@@ -148,7 +160,8 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
             { title: t("型号 / 地点"), render: (_: unknown, row) => <DataTableText primary={data.itemGroups.find(group => group.id === row.itemGroupId)?.name ?? row.itemGroupId}
               secondary={data.locations.find(location => location.id === row.locationId)?.name ?? row.locationId} /> },
             { title: t("数量"), dataIndex: "quantity" }, { title: t("占用区间（含缓冲）"), render: (_: unknown, row) => `${format(row.startAt)} — ${format(row.endAt)}` },
-            { title: t("原订单"), render: (_: unknown, row) => selectableSource(row) ? <Button onClick={() => openSource(row)}>{row.sourceNo}</Button> : t("来源读取受限") }
+            { title: t("原订单"), render: (_: unknown, row) => selectableSource(row) ? <Button onClick={() => openSource(row)}>{row.sourceNo}</Button> : t("来源读取受限") },
+            { title: t("操作"), render: (_: unknown, row) => canLocateAllocation(row) ? <Button onClick={() => locateAllocation(row)}>{t("资源分配")}</Button> : "—" }
           ]} /></ListSection>
         </>}
       </QueryState>
@@ -182,6 +195,7 @@ function AssetScheduleBody({ api, scopeKey, currentScopeKey, assetId, clearAsset
           {entry.kind === "work_order" && <p className={styles.help}>{t("工单条带表示处理过程，实际库存限制须结合当前资产状态及原验收结果。")}</p>}
           {entry.bufferBasis === "legacy_missing" && <p className={styles.help}>{t("历史规则缺失，缓冲沿原库存兼容口径。")}</p>}
           {selectableSource(entry) && <Button onClick={() => openSource(entry)}>{entry.source === "order" ? t("进入订单处理") : t("查看工单")}</Button>}
+          {canLocateAllocation(entry) && <Button onClick={() => locateAllocation(entry)}>{t("资源分配")}</Button>}
           {entry.source === "restricted" && <p className={styles.help}>{t("来源读取受限")}</p>}
         </div>)}
       </div>}

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, InputNumber, Space, Tag, Timeline } from "antd";
-import { ListSection, App } from "@rental-os/platform-admin/ui";
+import { ActionButton, ListSection, App } from "@rental-os/platform-admin/ui";
 import { Alert, Table } from "@rental-os/platform-admin/ui";
 import { Input } from "@rental-os/platform-admin/ui";
 import { Select } from "@rental-os/platform-admin/ui";
@@ -84,12 +84,15 @@ export function OrderAllocationPanel({ order }: { order: RentalOrder }) {
   const active = order.allocations.filter((a) => !["released", "returned", "consumed"].includes(a.status));
   const mutation = useMutation({
     mutationFn: (
-      input: Omit<ManageRentalAllocationRequest, "expectedRevision">,
+      input: Omit<ManageRentalAllocationRequest, "expectedRevision"> & { expectedRevision?: number },
     ) => {
-      if (draftRevision === undefined) throw new Error(t("请重新打开分配窗口获取原版本"));
+      // 表单始终使用打开时冻结的版本；列表直接动作携带点击时的订单版本，
+      // 不借用上次关闭的表单版本，也不在请求时采用后来刷新的候选版本。
+      const expectedRevision = input.expectedRevision ?? draftRevision;
+      if (expectedRevision === undefined) throw new Error(t("请重新打开分配窗口获取原版本"));
       return rentalCoreApi.manageAllocations(order.id, {
         ...input,
-        expectedRevision: draftRevision,
+        expectedRevision,
       });
     },
     onSuccess: async () => {
@@ -100,10 +103,11 @@ export function OrderAllocationPanel({ order }: { order: RentalOrder }) {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["rental-core", "order", order.id] }),
         qc.invalidateQueries({ queryKey: ["rental-core", "orders"] }),
+        qc.invalidateQueries({ queryKey: ["rental-core", "asset-schedule"] }),
       ]);
       message.success(t("分配结果已更新"));
     },
-    onError: (error: Error) => {
+    onError: async (error: Error) => {
       const detail = isAxiosError(error)
         ? error.response?.data?.message
         : undefined;
@@ -112,9 +116,10 @@ export function OrderAllocationPanel({ order }: { order: RentalOrder }) {
           error.message ||
           t("资源已变化，请刷新后重试"),
       );
-      void qc.invalidateQueries({
-        queryKey: ["rental-core", "order", order.id],
-      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["rental-core", "order", order.id] }),
+        qc.invalidateQueries({ queryKey: ["rental-core", "asset-schedule"] }),
+      ]);
     },
   });
   const begin = () => {
@@ -192,28 +197,28 @@ export function OrderAllocationPanel({ order }: { order: RentalOrder }) {
               <Button disabled={locked || mutation.isPending} onClick={begin}>
                 {t("选择资源 / 改配")}
               </Button>
-              <Button
+              <ActionButton
+                label={t("自动补齐预分配")}
+                variant="secondary"
+                pending={mutation.isPending}
                 disabled={
                   locked ||
                   progress.assigned >= progress.required ||
                   mutation.isPending
                 }
-                onClick={() => mutation.mutate({ action: "preassign" })}
-              >
-                {t("自动补齐预分配")}
-              </Button>
-              <Button
-                type="primary"
+                onAction={() => mutation.mutateAsync({ action: "preassign", expectedRevision: order.assignment?.revision ?? 0 })}
+              />
+              <ActionButton
+                label={t("锁定已分配资源")}
+                pending={mutation.isPending}
                 disabled={
                   locked ||
                   !progress.assigned ||
                   progress.locked >= progress.assigned ||
                   mutation.isPending
                 }
-                onClick={() => mutation.mutate({ action: "lock" })}
-              >
-                {t("锁定已分配资源")}
-              </Button>
+                onAction={() => mutation.mutateAsync({ action: "lock", expectedRevision: order.assignment?.revision ?? 0 })}
+              />
             </Space>
           )
         }>
@@ -311,18 +316,19 @@ export function OrderAllocationPanel({ order }: { order: RentalOrder }) {
                 editable && canOperate ? (
                   <Space>
                     {a.status === "pre_assigned" && (
-                      <Button
-                        type="link"
+                      <ActionButton
+                        label={t("锁定")}
+                        variant="secondary"
+                        pending={mutation.isPending}
                         disabled={locked || mutation.isPending}
-                        onClick={() =>
-                          mutation.mutate({
+                        onAction={() =>
+                          mutation.mutateAsync({
                             action: "lock",
                             allocationIds: [a.id],
+                            expectedRevision: order.assignment?.revision ?? 0,
                           })
                         }
-                      >
-                        {t("锁定")}
-                      </Button>
+                      />
                     )}
                     {canReassign &&
                       ["locked", "allocated"].includes(a.status) && (
