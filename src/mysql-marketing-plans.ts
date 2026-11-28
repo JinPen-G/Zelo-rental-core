@@ -1,5 +1,5 @@
 /** 多规则营销持久化。复用业务配置仓储的原数据库、品类锁和事务；
- * 只追加发布正文/事件，以修订核对草稿与生命周期，不迁移旧方案或计价。 */
+ * 原幂等账与草稿/版本/事件共用同一事务；原操作者在当前读取权限下核对旧结果，不迁移旧方案或计价。 */
 import { ConflictException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { sqltag as sql, join } from "@prisma/client/runtime/library";
 import { requestFingerprint } from "@rental-os/platform-contracts/request-fingerprint";
@@ -7,10 +7,18 @@ import type { RequestIdentity } from "@rental-os/platform-server/request-identit
 import type { RentalBusinessConfigurationTransaction, RentalBusinessConfigurationStorage, RentalBusinessConfigurationContacts } from "./business-configuration-storage";
 import type { CategoryWriteBinding } from "./configuration-basis";
 import type { ChangeRentalMarketingPlanStatusRequest, RentalMarketingPlan, RentalMarketingPlanEvent,
-  RentalMarketingPlanHistory, RentalMarketingPlanVersion, SaveRentalMarketingPlanDraftRequest } from "./contracts";
+  RentalMarketingPlanHistory, RentalMarketingPlanVersion, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest } from "./contracts";
 import { assertMarketingPlan, RentalMarketingSelectionError } from "./discount-selection";
-import { assertMarketingAuthority, marketingEvent, prepareMarketingDraft, transitionMarketingPlan,
-  type RentalMarketingAction, type RentalMarketingScope } from "./marketing-plan";
+import { assertMarketingAuthority, assertMarketingOperation, marketingEvent, prepareMarketingDraft, transitionMarketingPlan,
+  type RentalMarketingAction, type RentalMarketingScope, type RentalMarketingOperationScope } from "./marketing-plan";
+import { RentalIdempotencyRepository } from "./mysql-idempotency";
+import { RentalIdempotentActionService } from "./mysql-idempotent-actions";
+import { readRentalOriginalReceipt } from "./mysql-business-fence";
+
+type OperationResult = { actorUserId: string; action: RentalMarketingAction; operationId: string; result: RentalMarketingPlan };
+const operationAction = (action: RentalMarketingAction) => `marketing_plan.${action}`;
+const operationKey = (scope: RentalMarketingOperationScope, actorUserId: string, operationId: string) =>
+  requestFingerprint({ tenantId: scope.tenantId, workspaceId: scope.workspaceId, actorUserId, operationId });
 
 type PlanRow = Omit<RentalMarketingPlan, "draft" | "published" | "createdAt" | "updatedAt"> & {
   draft: unknown; published: unknown; publishedVersion: string | null; createdAt: Date; updatedAt: Date;
@@ -46,6 +54,50 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
     private readonly contacts: RentalBusinessConfigurationContacts<Tx>) {}
 
   private identity() { return this.contacts.getRequestIdentity() as Partial<RequestIdentity> | undefined; }
+
+  private operations(scope: RentalMarketingOperationScope) {
+    const records = new RentalIdempotencyRepository<Tx>(this.database, {
+      workspaceId: async (tenantId, tx) => {
+        const current = await this.contacts.resolveWorkspaceId(tx ?? this.database, tenantId);
+        if (tenantId !== scope.tenantId || current !== scope.workspaceId) throw new ConflictException("营销原操作经营空间已变化");
+        return current;
+      }
+    });
+    return { records, actions: new RentalIdempotentActionService<Tx>(this.database, records) };
+  }
+
+  private originalResult(value: unknown, scope: RentalMarketingOperationScope, actorUserId: string,
+    action: RentalMarketingAction, operationId: string, id?: string): OperationResult {
+    const saved = value as OperationResult | undefined, plan = saved?.result;
+    if (!saved || saved.actorUserId !== actorUserId || saved.action !== action || saved.operationId !== operationId
+      || !plan || plan.tenantId !== scope.tenantId || plan.workspaceId !== scope.workspaceId || id !== undefined && plan.id !== id
+      || typeof plan.createdAt !== "string" || !Number.isFinite(Date.parse(plan.createdAt))
+      || typeof plan.updatedAt !== "string" || !Number.isFinite(Date.parse(plan.updatedAt)))
+      throw new ConflictException("营销原操作收据与当前身份或对象不一致");
+    // 原提交正文来自同事务收据。后继暂停、结束或新草稿不能覆盖它，也不以当前规则补造。
+    const result = decodePlan({ ...plan, draft: plan.draft ?? null, published: plan.published ?? null,
+      publishedVersion: plan.published?.version ?? null, createdAt: new Date(plan.createdAt), updatedAt: new Date(plan.updatedAt) });
+    return { actorUserId, action, operationId, result };
+  }
+
+  async original(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string): Promise<RentalMarketingPlanOperationReceipt> {
+    scope = structuredClone(scope);
+    assertMarketingOperation(action, operationId);
+    const actorUserId = assertMarketingAuthority(this.identity(), scope, "read"), identity = requestFingerprint(this.identity());
+    const current = async () => {
+      assertMarketingAuthority(this.identity(), scope, "read");
+      if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId
+        || identity !== requestFingerprint(this.identity())) throw new ConflictException("营销原操作读取期间身份或空间已变化");
+    };
+    return readRentalOriginalReceipt(scope.tenantId, null, async () => {
+      await current();
+      const hit = await this.operations(scope).records.find(scope.tenantId, operationAction(action), operationKey(scope, actorUserId, operationId));
+      if (hit && (hit.orderId !== null || hit.status !== "succeeded")) throw new ConflictException("营销原操作收据状态或关联无效");
+      const original = hit ? this.originalResult(hit.response, scope, actorUserId, action, operationId) : undefined;
+      await current();
+      return original ? { status: "committed", operationId, action, planId: original.result.id, revision: original.result.revision } : { status: "unknown" };
+    });
+  }
   private async currentRows(tx: RentalBusinessConfigurationTransaction, scope: RentalMarketingScope, id?: string): Promise<PlanRow[]> {
     return tx.$queryRaw<PlanRow[]>(sql`
       SELECT p.*, v.snapshot AS published FROM rental_marketing_plans p
@@ -121,52 +173,64 @@ export class RentalMarketingPlanRepository<Tx extends RentalBusinessConfiguratio
     scope = structuredClone(scope);
     expectedBinding = structuredClone(expectedBinding);
     input = structuredClone(input);
+    assertMarketingOperation(action, input.operationId);
     const actorUserId = assertMarketingAuthority(this.identity(), scope, action);
     const identity = requestFingerprint(this.identity());
     if (!expectedBinding?.categoryVersionId || !Number.isSafeInteger(expectedBinding.adoptionRevision))
       throw new ServiceUnavailableException("营销写入缺少当前品类绑定依据");
     if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId)
       throw new ConflictException("营销写入空间已变化");
-    return this.database.$transaction(async tx => {
-      await this.contacts.lockCategoryBinding(tx, scope.tenantId, scope.workspaceId, expectedBinding, scope.categoryCode);
-      assertMarketingAuthority(this.identity(), scope, action);
-      if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销写入期间身份已变化");
-      const rows = id ? await this.currentRows(tx, scope, id) : [];
-      if (id && !rows.length) throw new NotFoundException("营销方案不存在");
-      const current = rows[0] ? decodePlan(rows[0]) : undefined;
-      const at = new Date().toISOString();
-      const next = action === "save_draft"
-        ? prepareMarketingDraft(scope, { ...input as SaveRentalMarketingPlanDraftRequest, id }, current, at)
-        : current ? transitionMarketingPlan(current, action, input, at) : undefined;
-      if (!next) throw new NotFoundException("营销方案不存在");
-      if (action === "save_draft" || action === "publish") await this.validateReferences(tx, scope, action === "save_draft" ? next.draft! : next.published!);
-      const duplicate = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
-        WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND code = ${next.code} AND id <> ${next.id}`);
-      if (duplicate.length) throw new ConflictException("营销方案编码已存在");
-      const draft = next.draft ? JSON.stringify(next.draft) : null;
-      if (!current) {
-        await tx.$executeRaw(sql`INSERT INTO rental_marketing_plans
-          (tenantId, workspaceId, id, categoryCode, code, status, revision, draft, publishedVersion, createdAt, updatedAt)
-          VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${scope.categoryCode}, ${next.code}, ${next.status},
-            ${next.revision}, ${draft}, NULL, ${new Date(at)}, ${new Date(at)})`);
-      } else {
-        const count = await tx.$executeRaw(sql`UPDATE rental_marketing_plans SET status = ${next.status}, revision = ${next.revision},
-          draft = ${draft}, publishedVersion = ${next.published?.version ?? null}, updatedAt = ${new Date(at)}
-          WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id = ${next.id} AND revision = ${input.expectedRevision}`);
-        if (count !== 1) throw new ConflictException("营销方案修订已变化");
+    const { actions } = this.operations(scope);
+    const key = operationKey(scope, actorUserId, input.operationId);
+    const original = await actions.execute<OperationResult>({ tenantId: scope.tenantId, action: operationAction(action), key, fallbackKey: key,
+      request: { tenantId: scope.tenantId, workspaceId: scope.workspaceId, actorUserId, action, id: id ?? null, input },
+      replay: async response => {
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (await this.contacts.resolveWorkspaceId(this.database, scope.tenantId) !== scope.workspaceId
+          || identity !== requestFingerprint(this.identity())) throw new ConflictException("营销回读期间身份或空间已变化");
+        return this.originalResult(response, scope, actorUserId, action, input.operationId, id);
+      }, run: async tx => {
+        await this.contacts.lockCategoryBinding(tx, scope.tenantId, scope.workspaceId, expectedBinding, scope.categoryCode);
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销写入期间身份已变化");
+        const rows = id ? await this.currentRows(tx, scope, id) : [];
+        if (id && !rows.length) throw new NotFoundException("营销方案不存在");
+        const current = rows[0] ? decodePlan(rows[0]) : undefined;
+        const at = new Date().toISOString();
+        const next = action === "save_draft"
+          ? prepareMarketingDraft(scope, { ...input as SaveRentalMarketingPlanDraftRequest, id }, current, at)
+          : current ? transitionMarketingPlan(current, action, input, at) : undefined;
+        if (!next) throw new NotFoundException("营销方案不存在");
+        if (action === "save_draft" || action === "publish") await this.validateReferences(tx, scope, action === "save_draft" ? next.draft! : next.published!);
+        const duplicate = await tx.$queryRaw<Array<{ id: string }>>(sql`SELECT id FROM rental_marketing_plans
+          WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND code = ${next.code} AND id <> ${next.id}`);
+        if (duplicate.length) throw new ConflictException("营销方案编码已存在");
+        const draft = next.draft ? JSON.stringify(next.draft) : null;
+        if (!current) {
+          await tx.$executeRaw(sql`INSERT INTO rental_marketing_plans
+            (tenantId, workspaceId, id, categoryCode, code, status, revision, draft, publishedVersion, createdAt, updatedAt)
+            VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${scope.categoryCode}, ${next.code}, ${next.status},
+              ${next.revision}, ${draft}, NULL, ${new Date(at)}, ${new Date(at)})`);
+        } else {
+          const count = await tx.$executeRaw(sql`UPDATE rental_marketing_plans SET status = ${next.status}, revision = ${next.revision},
+            draft = ${draft}, publishedVersion = ${next.published?.version ?? null}, updatedAt = ${new Date(at)}
+            WHERE tenantId = ${scope.tenantId} AND workspaceId = ${scope.workspaceId} AND id = ${next.id} AND revision = ${input.expectedRevision}`);
+          if (count !== 1) throw new ConflictException("营销方案修订已变化");
+        }
+        if (action === "publish") await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_versions
+          (tenantId, workspaceId, planId, version, snapshot, publishedBy, createdAt)
+          VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${next.published!.version},
+            ${JSON.stringify(next.published)}, ${actorUserId}, ${new Date(at)})`);
+        const event = marketingEvent(next, action, actorUserId, input);
+        await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_events
+          (tenantId, workspaceId, id, planId, revision, action, publishedVersion, actorUserId, reason, createdAt)
+          VALUES (${scope.tenantId}, ${scope.workspaceId}, ${event.id}, ${next.id}, ${next.revision}, ${action},
+            ${event.publishedVersion ?? null}, ${actorUserId}, ${event.reason}, ${new Date(at)})`);
+        assertMarketingAuthority(this.identity(), scope, action);
+        if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销提交前身份已变化");
+        return { actorUserId, action, operationId: input.operationId, result: next };
       }
-      if (action === "publish") await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_versions
-        (tenantId, workspaceId, planId, version, snapshot, publishedBy, createdAt)
-        VALUES (${scope.tenantId}, ${scope.workspaceId}, ${next.id}, ${next.published!.version},
-          ${JSON.stringify(next.published)}, ${actorUserId}, ${new Date(at)})`);
-      const event = marketingEvent(next, action, actorUserId, input);
-      await tx.$executeRaw(sql`INSERT INTO rental_marketing_plan_events
-        (tenantId, workspaceId, id, planId, revision, action, publishedVersion, actorUserId, reason, createdAt)
-        VALUES (${scope.tenantId}, ${scope.workspaceId}, ${event.id}, ${next.id}, ${next.revision}, ${action},
-          ${event.publishedVersion ?? null}, ${actorUserId}, ${event.reason}, ${new Date(at)})`);
-      assertMarketingAuthority(this.identity(), scope, action);
-      if (identity !== requestFingerprint(this.identity())) throw new ConflictException("营销提交前身份已变化");
-      return next;
-    }, { isolationLevel: "ReadCommitted" });
+    });
+    return original.result;
   }
 }

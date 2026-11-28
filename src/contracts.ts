@@ -3546,6 +3546,8 @@ export interface RentalMarketingPlan {
 export interface SaveRentalMarketingPlanDraftRequest extends Omit<RentalMarketingPlanVersion,
   "id" | "tenantId" | "workspaceId" | "categoryCode" | "status" | "version" | "rules" | "createdAt" | "updatedAt"> {
   id?: string;
+  /** 同一提交意图的稳定原操作号；未知结果仅查询原收据，不换号自动重发。 */
+  operationId: string;
   /** 新建为0；修改必须是本次读取到的原修订，不由服务端静默补齐。 */
   expectedRevision: number;
   rules: Array<Omit<RentalMarketingRule, "version">>;
@@ -3553,6 +3555,7 @@ export interface SaveRentalMarketingPlanDraftRequest extends Omit<RentalMarketin
 }
 
 export interface ChangeRentalMarketingPlanStatusRequest {
+  operationId: string;
   expectedRevision: number;
   changeReason: string;
 }
@@ -3572,6 +3575,15 @@ export interface RentalMarketingPlanHistory {
   versions: RentalMarketingPlanVersion[];
   events: RentalMarketingPlanEvent[];
 }
+
+/** 当前有读取权限的原操作者核对自己的原操作；无收据不代表失败或可重做。 */
+export type RentalMarketingPlanOperationReceipt = { status: "unknown" } | {
+  status: "committed";
+  operationId: string;
+  action: RentalMarketingPlanEvent["action"];
+  planId: string;
+  revision: number;
+};
 
 export interface RentalDiscountPlan {
   id: string;

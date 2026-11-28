@@ -629,6 +629,7 @@ export class RentalMarketingRuleDraftDto implements Omit<RentalMarketingRule, "v
 
 /** 新保存合同不接受发布状态、版本或授权字段；它只保存草稿。 */
 export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanDraftRequest {
+  @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(191) id?: string;
   @IsInt() @Min(0) expectedRevision!: number;
   @IsString() @IsNotEmpty() @MaxLength(191) code!: string;
@@ -649,8 +650,13 @@ export class SaveRentalMarketingPlanDraftDto implements SaveRentalMarketingPlanD
 }
 
 export class ChangeRentalMarketingPlanStatusDto implements ChangeRentalMarketingPlanStatusRequest {
+  @IsString() @Matches(/^[A-Za-z0-9_-]{1,128}$/) operationId!: string;
   @IsInt() @Min(1) expectedRevision!: number;
   @IsString() @IsNotEmpty() @MaxLength(500) changeReason!: string;
+}
+
+export class ReadRentalMarketingOperationDto {
+  @IsIn(["save_draft", "publish", "pause", "end"]) action!: "save_draft" | "publish" | "pause" | "end";
 }
 
 export class SaveRentalDiscountPlanDto implements SaveRentalDiscountPlanRequest {

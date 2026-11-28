@@ -17,11 +17,18 @@ export const RENTAL_MARKETING_EDIT_PERMISSIONS = ["rental-os:marketing:edit", "r
 export const RENTAL_MARKETING_PUBLISH_PERMISSIONS = ["rental-os:marketing:publish"] as const;
 
 export interface RentalMarketingScope { tenantId: string; workspaceId: string; categoryCode: string }
+export type RentalMarketingOperationScope = Pick<RentalMarketingScope, "tenantId" | "workspaceId">;
 export type RentalMarketingAction = RentalMarketingPlanEvent["action"];
+
+export function assertMarketingOperation(action: RentalMarketingAction, operationId: string): void {
+  if (!["save_draft", "publish", "pause", "end"].includes(action)
+    || typeof operationId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId))
+    throw new BadRequestException("营销原操作类型或操作号无效");
+}
 
 /** 原 Auth/Guard/ALS 身份是唯一授权来源；页面准入和旧编辑权限不产生发布权。
  * 保留当前空间管理员及显式*的原授权，SaaS/client不进入经营配置。 */
-export function assertMarketingAuthority(identity: Partial<RequestIdentity> | undefined, scope: RentalMarketingScope,
+export function assertMarketingAuthority(identity: Partial<RequestIdentity> | undefined, scope: RentalMarketingOperationScope,
   action: "read" | RentalMarketingAction): string {
   const permissions = action === "read" ? RENTAL_MARKETING_READ_PERMISSIONS
     : action === "save_draft" ? RENTAL_MARKETING_EDIT_PERMISSIONS : RENTAL_MARKETING_PUBLISH_PERMISSIONS;

@@ -29,8 +29,8 @@ import { requestFingerprint } from '@rental-os/platform-contracts/request-finger
 import { RULE_VERSION_ISSUED_STATUSES, type RuleVersionTimelineEntry } from './rule-version-chain';
 import { lockRentalBusinessTenant } from "./mysql-business-fence";
 import { RentalMarketingPlanRepository } from "./mysql-marketing-plans";
-import type { RentalMarketingScope, RentalMarketingAction } from "./marketing-plan";
-import type { RentalMarketingPlan, RentalMarketingPlanVersion, RentalMarketingPlanHistory, SaveRentalMarketingPlanDraftRequest,
+import type { RentalMarketingScope, RentalMarketingAction, RentalMarketingOperationScope } from "./marketing-plan";
+import type { RentalMarketingPlan, RentalMarketingPlanVersion, RentalMarketingPlanHistory, RentalMarketingPlanOperationReceipt, SaveRentalMarketingPlanDraftRequest,
   ChangeRentalMarketingPlanStatusRequest } from "./contracts";
 
 // 原生成客户端也导出这个runtime单例；类型采用所选schema的官方空值声明。
@@ -157,6 +157,7 @@ export interface RentalBusinessConfigStore<TTransaction = RentalBusinessConfigur
   upsertDiscountPlan(plan: RentalDiscountPlan, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
   listMarketingPlans?(scope: RentalMarketingScope): Promise<RentalMarketingPlan[]>;
   marketingPlanHistory?(scope: RentalMarketingScope, id: string): Promise<RentalMarketingPlanHistory>;
+  marketingPlanOperation?(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string): Promise<RentalMarketingPlanOperationReceipt>;
   writeMarketingPlan?(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,
     input: SaveRentalMarketingPlanDraftRequest | ChangeRentalMarketingPlanStatusRequest, id?: string): Promise<RentalMarketingPlan>;
   upsertService(service: RentalValueAddedService, expectedBinding?: CategoryWriteBinding, tx?: TTransaction): Promise<void>;
@@ -255,6 +256,10 @@ export class RentalBusinessConfigRepository<TTransaction extends RentalBusinessC
 
   marketingPlanHistory(scope: RentalMarketingScope, id: string) {
     return new RentalMarketingPlanRepository(this.store, this.contacts).history(scope, id);
+  }
+
+  marketingPlanOperation(scope: RentalMarketingOperationScope, action: RentalMarketingAction, operationId: string) {
+    return new RentalMarketingPlanRepository(this.store, this.contacts).original(scope, action, operationId);
   }
 
   writeMarketingPlan(scope: RentalMarketingScope, binding: CategoryWriteBinding, action: RentalMarketingAction,

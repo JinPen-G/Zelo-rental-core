@@ -32,6 +32,7 @@ import {
   SaveRentalDiscountPlanDto,
   SaveRentalMarketingPlanDraftDto,
   ChangeRentalMarketingPlanStatusDto,
+  ReadRentalMarketingOperationDto,
   SaveRentalNotificationTemplateDto,
   SaveRentalPricingPlanDto,
   SaveRentalRuleVersionDto,
@@ -161,6 +162,10 @@ export class RentalBusinessController {
   @Get("discount-plans") async discountPlans(@Req() req: AuthenticatedRequest) { return this.business.listDiscountPlans(req.user.tenantId, (await this.context(req.user.tenantId))); }
   @Get("marketing-plans") async marketingPlans(@Req() req: AuthenticatedRequest) {
     return this.business.listMarketingPlans(req.user.tenantId, await this.context(req.user.tenantId));
+  }
+  @Get("marketing-plans/operations/:operationId") async marketingPlanOperation(@Req() req: AuthenticatedRequest,
+    @Param("operationId") operationId: string, @Query() query: ReadRentalMarketingOperationDto) {
+    return this.business.marketingPlanOperation(req.user.tenantId, query.action, operationId);
   }
   @Get("marketing-plans/:id/history") async marketingPlanHistory(@Req() req: AuthenticatedRequest, @Param("id") id: string) {
     return this.business.marketingPlanHistory(req.user.tenantId, await this.context(req.user.tenantId), id);

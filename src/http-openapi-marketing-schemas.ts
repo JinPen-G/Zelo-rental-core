@@ -10,6 +10,8 @@ const revision: SchemaObject = { type: "integer", minimum: 0 };
 const scope: SchemaObject = { type: "string", enum: ["all", "personal", "corporate", "member"] };
 const days = arrayOf({ type: "string", enum: ["workday", "weekend", "statutory_holiday", "makeup_workday", "tenant_special"] });
 const reason: SchemaObject = { type: "string", minLength: 1, maxLength: 500 };
+const operationId: SchemaObject = { type: "string", pattern: "^[A-Za-z0-9_-]{1,128}$", minLength: 1, maxLength: 128 };
+const operationAction: SchemaObject = { type: "string", enum: ["save_draft", "publish", "pause", "end"] };
 const conditions = { minimumSpend: money, customerScope: scope, applicableItemGroupIds: arrayOf(id),
   applicablePricingGroupIds: arrayOf(id), applicableDayTypes: days, effectiveFrom: date, effectiveTo: date };
 const rule = { id, name: id, status: { type: "string", enum: ["enabled", "disabled"] } as SchemaObject,
@@ -25,10 +27,13 @@ export const RENTAL_MARKETING_SCHEMAS: Record<string, SchemaObject> = {
     thresholdAmount: money, maximumDiscount: money }, ["type", "value"], false),
   RentalMarketingRuleDraft: objectOf(rule, Object.keys(rule), false),
   RentalMarketingRule: objectOf({ ...rule, version: id }, [...Object.keys(rule), "version"], false),
-  SaveRentalMarketingPlanDraftRequest: objectOf({ ...common, id, expectedRevision: revision,
+  SaveRentalMarketingPlanDraftRequest: objectOf({ ...common, id, operationId, expectedRevision: revision,
     rules: { ...arrayOf("RentalMarketingRuleDraft"), minItems: 1, maxItems: 100 }, changeReason: reason },
-    [...commonRequired, "expectedRevision", "rules", "changeReason"], false),
-  ChangeRentalMarketingPlanStatusRequest: objectOf({ expectedRevision: { ...revision, minimum: 1 }, changeReason: reason }, ["expectedRevision", "changeReason"], false),
+    [...commonRequired, "operationId", "expectedRevision", "rules", "changeReason"], false),
+  ChangeRentalMarketingPlanStatusRequest: objectOf({ operationId, expectedRevision: { ...revision, minimum: 1 }, changeReason: reason }, ["operationId", "expectedRevision", "changeReason"], false),
+  RentalMarketingPlanOperationReceipt: { oneOf: [objectOf({ status: { type: "string", enum: ["unknown"] } }, ["status"], false),
+    objectOf({ status: { type: "string", enum: ["committed"] }, operationId, action: operationAction, planId: id, revision: { ...revision, minimum: 1 } },
+      ["status", "operationId", "action", "planId", "revision"], false)] },
   RentalMarketingPlanVersion: objectOf({ ...common, id, tenantId: id, workspaceId: id, categoryCode: id,
     status: { type: "string", enum: ["draft", "enabled", "disabled"] }, version: id,
     rules: arrayOf("RentalMarketingRule"), createdAt: date, updatedAt: date },
@@ -50,6 +55,9 @@ const errors = { "400": { description: "规则或请求字段无效", schema: ob
 const operations: Omit<ContractOperation, "tag">[] = [
   { method: "get", path: "/api/rental/v1/marketing-plans", operationId: "listRentalMarketingPlans", summary: "读取营销草稿及当前发布版本",
     permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: arrayOf("RentalMarketingPlan") },
+  { method: "get", path: "/api/rental/v1/marketing-plans/operations/{operationId}", operationId: "readRentalMarketingPlanOperation", summary: "只读核对本人原营销操作收据",
+    permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: "RentalMarketingPlanOperationReceipt",
+    parameters: [{ name: "operationId", in: "path", required: true, schema: operationId }, { name: "action", in: "query", required: true, schema: operationAction }] },
   { method: "get", path: "/api/rental/v1/marketing-plans/{id}/history", operationId: "readRentalMarketingPlanHistory", summary: "读取不可变营销版本及操作记录",
     permissions: [...RENTAL_MARKETING_READ_PERMISSIONS], responseSchema: "RentalMarketingPlanHistory" },
   { method: "post", path: "/api/rental/v1/marketing-plans", operationId: "createRentalMarketingPlanDraft", summary: "新建多规则营销草稿",

@@ -2193,6 +2193,13 @@ export class RentalBusinessService<TTransaction extends RentalBusinessRuntimeTra
     return this.configStore.marketingPlanHistory(scope, id);
   }
 
+  async marketingPlanOperation(tenantId: string, action: RentalMarketingAction, operationId: string) {
+    const scope = { tenantId, workspaceId: this.workspaceOf(tenantId) };
+    assertMarketingAuthority(getRequestIdentity(), scope, "read");
+    if (!this.configStore.marketingPlanOperation) throw new ServiceUnavailableException("营销原操作读取不可用");
+    return this.configStore.marketingPlanOperation(scope, action, operationId);
+  }
+
   async saveMarketingPlanDraft(tenantId: string, context: BusinessContext, input: SaveRentalMarketingPlanDraftRequest) {
     input = structuredClone(input);
     const scope = this.marketingScope(tenantId, context, "save_draft");
